@@ -1,0 +1,48 @@
+[
+	{
+		"id": "pbc_trees",
+		"name": "trees",
+		"type": "base",
+		"system": false,
+		"listRule": "@request.auth.id != \"\"",
+		"viewRule": "@request.auth.id != \"\"",
+		"createRule": "@request.auth.id != \"\"",
+		"updateRule": "@request.auth.id != \"\"",
+		"deleteRule": "@request.auth.id != \"\"",
+		"fields": [
+			{
+				"hidden": false,
+				"id": "text_client_id",
+				"name": "clientId",
+				"type": "text",
+				"system": false,
+				"required": true,
+				"presentable": false,
+				"unique": true,
+				"min": null,
+				"max": null,
+				"pattern": ""
+			},
+			{
+				"hidden": false,
+				"id": "json_payload",
+				"name": "payload",
+				"type": "json",
+				"system": false,
+				"required": true,
+				"presentable": false,
+				"maxSize": 0
+			},
+			{
+				"hidden": false,
+				"id": "bool_deleted",
+				"name": "deleted",
+				"type": "bool",
+				"system": false,
+				"required": false,
+				"presentable": false
+			}
+		],
+		"indexes": []
+	}
+]

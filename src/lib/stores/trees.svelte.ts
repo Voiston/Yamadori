@@ -7,6 +7,8 @@ import {
 	type TreeVisit
 } from '$lib/types/tree';
 import type { ClimateHistory } from '$lib/types/climate';
+import { notifyTreeChanged, notifyTreeDeleted } from '$lib/sync/engine.svelte';
+import { toStorable } from '$lib/utils/idb-store';
 
 const STORAGE_KEY = 'yamadori-trees';
 
@@ -86,7 +88,7 @@ export async function initTrees(): Promise<void> {
 }
 
 async function persist(): Promise<void> {
-	await set(STORAGE_KEY, $state.snapshot(treeStore.trees));
+	await set(STORAGE_KEY, toStorable($state.snapshot(treeStore.trees)));
 }
 
 export async function addTree(tree: NewTree): Promise<Tree> {
@@ -108,6 +110,7 @@ export async function addTree(tree: NewTree): Promise<Tree> {
 
 	treeStore.trees = [entry, ...treeStore.trees];
 	await persist();
+	void notifyTreeChanged(entry.id);
 	return entry;
 }
 
@@ -131,6 +134,7 @@ export function getTreeById(id: string): Tree | undefined {
 export async function toggleFavorite(id: string): Promise<void> {
 	updateTreeById(id, (tree) => ({ ...tree, isFavorite: !tree.isFavorite }));
 	await persist();
+	void notifyTreeChanged(id);
 }
 
 export async function updateTree(
@@ -139,6 +143,7 @@ export async function updateTree(
 ): Promise<void> {
 	updateTreeById(id, (tree) => ({ ...tree, species: data.species, notes: data.notes }));
 	await persist();
+	void notifyTreeChanged(id);
 }
 
 export async function updateAssessment(
@@ -147,11 +152,13 @@ export async function updateAssessment(
 ): Promise<void> {
 	updateTreeById(id, (tree) => ({ ...tree, assessment: { ...assessment } }));
 	await persist();
+	void notifyTreeChanged(id);
 }
 
 export async function updateClimate(id: string, climateHistory: ClimateHistory): Promise<void> {
 	updateTreeById(id, (tree) => ({ ...tree, climateHistory }));
 	await persist();
+	void notifyTreeChanged(id);
 }
 
 export async function addVisit(
@@ -170,6 +177,7 @@ export async function addVisit(
 		return { ...tree, visits, photos: collectPhotosFromVisits(visits) };
 	});
 	await persist();
+	void notifyTreeChanged(treeId);
 }
 
 export async function updateVisit(
@@ -186,6 +194,7 @@ export async function updateVisit(
 		return { ...tree, visits, photos: collectPhotosFromVisits(visits) };
 	});
 	await persist();
+	void notifyTreeChanged(treeId);
 }
 
 export async function deleteVisit(treeId: string, visitId: string): Promise<void> {
@@ -194,11 +203,13 @@ export async function deleteVisit(treeId: string, visitId: string): Promise<void
 		return { ...tree, visits, photos: collectPhotosFromVisits(visits) };
 	});
 	await persist();
+	void notifyTreeChanged(treeId);
 }
 
 export async function deleteTree(id: string): Promise<void> {
 	treeStore.trees = treeStore.trees.filter((t) => t.id !== id);
 	await persist();
+	void notifyTreeDeleted(id);
 }
 
 export function treesWithGps(): Tree[] {
