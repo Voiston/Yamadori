@@ -21,3 +21,11 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# PocketBase (local server data — never commit)
+pb_data/
+pocketbase.exe
+**/logs/
+
+# Windows sync scripts — config locale par machine
+scripts/windows/yamadori-sync.config.ps1
