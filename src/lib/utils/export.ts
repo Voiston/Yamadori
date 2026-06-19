@@ -51,7 +51,8 @@ export function exportTreesCsv(trees: Tree[]): void {
 		'deadwood',
 		'sizeClass',
 		'caliber',
-		'potentialScore'
+		'potentialScore',
+		'hasVoiceNote'
 	];
 
 	const rows = trees.map((tree) =>
@@ -76,7 +77,8 @@ export function exportTreesCsv(trees: Tree[]): void {
 			labelFor(DEADWOOD_OPTIONS, tree.assessment.deadwood),
 			labelFor(SIZE_OPTIONS, tree.assessment.sizeClass),
 			labelFor(CALIBER_OPTIONS, tree.assessment.caliber),
-			formatNullable(tree.assessment.potentialScore)
+			formatNullable(tree.assessment.potentialScore),
+			tree.voiceNote ? 'oui' : 'non'
 		]
 			.map((field) => escapeCsvField(field))
 			.join(',')

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { DEFAULT_ASSESSMENT } from '$lib/types/tree';
+	import { DEFAULT_ASSESSMENT, type VoiceNote } from '$lib/types/tree';
 	import { addTree } from '$lib/stores/trees.svelte';
 	import { goHome } from '$lib/utils/app-navigation';
 	import { formatBiologicalAltitude } from '$lib/utils/altitude';
@@ -14,9 +14,11 @@
 	import { getSpeciesSuggestionsForPosition } from '$lib/utils/species-suggestions';
 	import { onMount } from 'svelte';
 	import PhotoPreview from './PhotoPreview.svelte';
+	import VoiceNoteRecorder from './VoiceNoteRecorder.svelte';
 
 	let species = $state('');
 	let notes = $state('');
+	let voiceNote = $state<VoiceNote | null>(null);
 	let photoFile = $state<File | null>(null);
 	let photoPreview = $state('');
 	let submitting = $state(false);
@@ -143,6 +145,7 @@
 				species: trimmedSpecies,
 				notes: notes.trim(),
 				photos,
+				voiceNote,
 				latitude,
 				longitude,
 				accuracyMeters,
@@ -231,6 +234,8 @@
 			class="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
 		></textarea>
 	</div>
+
+	<VoiceNoteRecorder bind:value={voiceNote} disabled={submitting} />
 
 	<PhotoPreview bind:preview={photoPreview} {frontLabel} onfile={handlePhoto} />
 

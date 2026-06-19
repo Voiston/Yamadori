@@ -7,6 +7,7 @@
 	import TreeAssessmentPanel from '$lib/components/TreeAssessmentPanel.svelte';
 	import TreeDetailActions from '$lib/components/TreeDetailActions.svelte';
 	import VisitTimeline from '$lib/components/VisitTimeline.svelte';
+	import VoiceNotePlayer from '$lib/components/VoiceNotePlayer.svelte';
 	import { deleteTree, getTreeById, toggleFavorite, updateTree } from '$lib/stores/trees.svelte';
 	import { goHome } from '$lib/utils/app-navigation';
 	import { formatDate } from '$lib/utils/date';
@@ -186,6 +187,10 @@
 					<h3 class="text-sm font-medium text-forest-900">Notes</h3>
 					<p class="mt-2 whitespace-pre-wrap text-base text-forest-900/90">{tree.notes}</p>
 				</section>
+			{/if}
+
+			{#if tree.voiceNote}
+				<VoiceNotePlayer voiceNote={tree.voiceNote} />
 			{/if}
 
 			<section class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">

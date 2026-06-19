@@ -11,6 +11,13 @@ export interface TreeVisit {
 	photoBase64: string;
 }
 
+export interface VoiceNote {
+	recordedAt: string;
+	durationMs: number;
+	mimeType: string;
+	audioBase64: string;
+}
+
 export interface TreeAssessment {
 	nebari: NebariType | null;
 	trunkDiameterCm: number | null;
@@ -38,6 +45,7 @@ export interface Tree {
 	photos: string[];
 	visits: TreeVisit[];
 	assessment: TreeAssessment;
+	voiceNote: VoiceNote | null;
 	latitude: number | null;
 	longitude: number | null;
 	accuracyMeters: number | null;

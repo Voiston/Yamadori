@@ -50,6 +50,7 @@ function normalizeTree(raw: LegacyTree): Tree {
 		accuracyMeters: raw.accuracyMeters ?? null,
 		altitudeMeters: raw.altitudeMeters ?? null,
 		frontHeadingDegrees: raw.frontHeadingDegrees ?? null,
+		voiceNote: raw.voiceNote ?? null,
 		isFavorite: raw.isFavorite ?? false,
 		capturedAt: raw.capturedAt
 	};
