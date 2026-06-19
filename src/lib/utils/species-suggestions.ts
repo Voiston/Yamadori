@@ -1,3 +1,4 @@
+import { getBonsaiPriorityRank } from '$lib/constants/bonsai-species';
 import { BIOTOPE_REGIONS, type BiotopeRegion, type BoundingBox } from '$lib/constants/regions';
 
 export function isInBoundingBox(latitude: number, longitude: number, bbox: BoundingBox): boolean {
@@ -13,6 +14,13 @@ export type SpeciesSuggestions = {
 	regions: BiotopeRegion[];
 	species: string[];
 };
+
+function sortSpeciesByBonsaiPriority(species: string[]): string[] {
+	return [...species].sort((a, b) => {
+		const diff = getBonsaiPriorityRank(a) - getBonsaiPriorityRank(b);
+		return diff !== 0 ? diff : a.localeCompare(b, 'fr');
+	});
+}
 
 export function getSpeciesSuggestionsForPosition(
 	latitude: number,
@@ -31,5 +39,5 @@ export function getSpeciesSuggestionsForPosition(
 		}
 	}
 
-	return { regions, species };
+	return { regions, species: sortSpeciesByBonsaiPriority(species) };
 }
