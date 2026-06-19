@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Tree } from '$lib/types/tree';
-	import { goto } from '$app/navigation';
+	import { base } from '$app/paths';
 	import { copyCoordinates } from '$lib/utils/clipboard';
 	import { openNavigation } from '$lib/utils/navigation';
 	import { shareTree } from '$lib/utils/share';
@@ -22,10 +22,6 @@
 		openNavigation(tree.latitude, tree.longitude, tree.species);
 	}
 
-	function handleMap() {
-		void goto(`/map?focus=${tree.id}`);
-	}
-
 	async function handleShare() {
 		const result = await shareTree(tree, pageUrl);
 		if (result === 'shared') {
@@ -42,16 +38,12 @@
 		const ok = await copyCoordinates(tree.latitude, tree.longitude);
 		onfeedback?.(ok ? 'Coordonnées copiées' : 'Copie impossible');
 	}
-	function handleCompass() {
-		void goto(`/tree/${tree.id}/compass`);
-	}
 </script>
 
 <div class="grid grid-cols-2 gap-3">
 	{#if tree.latitude !== null && tree.longitude !== null}
-		<button
-			type="button"
-			onclick={handleCompass}
+		<a
+			href="{base}/tree/{tree.id}/compass"
 			class="flex h-12 items-center justify-center gap-2 rounded-xl bg-forest-800 text-sm font-semibold text-white transition active:scale-[0.98]"
 		>
 			<svg
@@ -68,7 +60,7 @@
 				<path d="M12 8l3 8-3-2-3 2 3-8z" fill="currentColor" stroke="none" />
 			</svg>
 			Boussole
-		</button>
+		</a>
 
 		<button
 			type="button"
@@ -89,9 +81,8 @@
 			Y aller
 		</button>
 
-		<button
-			type="button"
-			onclick={handleMap}
+		<a
+			href="{base}/map?focus={tree.id}"
 			class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
 		>
 			<svg
@@ -107,7 +98,7 @@
 				<path d="M8 2v16M16 6v16" />
 			</svg>
 			Carte
-		</button>
+		</a>
 
 		<button
 			type="button"

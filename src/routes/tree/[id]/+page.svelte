@@ -14,7 +14,7 @@
 
 	let treeId = $derived(page.params.id ?? '');
 	let tree = $derived(treeId ? getTreeById(treeId) : undefined);
-	let pageUrl = $derived(`${page.url.origin}/tree/${treeId}`);
+	let pageUrl = $derived(`${page.url.origin}${base}/tree/${treeId}`);
 
 	let showDeleteDialog = $state(false);
 	let editing = $state(false);

@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => {
 				},
 				workbox: {
 					globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-					navigateFallback: `${base}/200.html`,
+					navigateFallback: `${base}/404.html`,
 					runtimeCaching: [
 						{
 							urlPattern: /^https:\/\/.*\.tile\.openstreetmap\.org\/.*/i,
