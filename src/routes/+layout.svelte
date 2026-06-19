@@ -4,26 +4,14 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import { getTreeById, initTrees, treeStore } from '$lib/stores/trees.svelte';
+	import { initOnlineState, onlineState } from '$lib/utils/online.svelte';
 	import { onMount } from 'svelte';
 
 	let { children } = $props();
 
-	let online = $state(true);
-
 	onMount(() => {
 		void initTrees();
-		online = navigator.onLine;
-
-		const handleOnline = () => (online = true);
-		const handleOffline = () => (online = false);
-
-		window.addEventListener('online', handleOnline);
-		window.addEventListener('offline', handleOffline);
-
-		return () => {
-			window.removeEventListener('online', handleOnline);
-			window.removeEventListener('offline', handleOffline);
-		};
+		return initOnlineState();
 	});
 
 	let routeId = $derived(page.route.id);
@@ -93,7 +81,7 @@
 				{/if}
 			</div>
 
-			{#if !online}
+			{#if !onlineState.online}
 				<span
 					class="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800"
 					role="status"

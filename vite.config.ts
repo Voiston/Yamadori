@@ -44,12 +44,12 @@ export default defineConfig(({ mode }) => {
 					navigateFallback: `${base}/404.html`,
 					runtimeCaching: [
 						{
-							urlPattern: /^https:\/\/.*\.tile\.openstreetmap\.org\/.*/i,
+							urlPattern: /^https:\/\/data\.geopf\.fr\/.*/i,
 							handler: 'CacheFirst',
 							options: {
-								cacheName: 'osm-tiles',
+								cacheName: 'ign-tiles',
 								expiration: {
-									maxEntries: 500,
+									maxEntries: 300,
 									maxAgeSeconds: 60 * 60 * 24 * 30
 								}
 							}

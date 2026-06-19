@@ -3,6 +3,7 @@
 	import { base } from '$app/paths';
 	import { copyCoordinates } from '$lib/utils/clipboard';
 	import { openNavigation } from '$lib/utils/navigation';
+	import { onlineState } from '$lib/utils/online.svelte';
 	import { shareTree } from '$lib/utils/share';
 
 	let {
@@ -83,21 +84,27 @@
 
 		<a
 			href="{base}/map?focus={tree.id}"
-			class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
+			class="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
+			title={!onlineState.online ? 'Carte IGN indisponible hors-ligne — boussole recommandée' : undefined}
 		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				class="h-4 w-4"
-				aria-hidden="true"
-			>
-				<path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" />
-				<path d="M8 2v16M16 6v16" />
-			</svg>
-			Carte
+			<span class="flex items-center gap-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					class="h-4 w-4"
+					aria-hidden="true"
+				>
+					<path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" />
+					<path d="M8 2v16M16 6v16" />
+				</svg>
+				Carte
+			</span>
+			{#if !onlineState.online}
+				<span class="text-[10px] font-normal text-amber-700">Boussole recommandée</span>
+			{/if}
 		</a>
 
 		<button

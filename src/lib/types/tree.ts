@@ -1,3 +1,5 @@
+import type { ClimateHistory } from './climate';
+
 export type NebariType = 'plat_rayonnant' | 'unilateral_asymetrique' | 'enroche_fissure';
 export type BarkType = 'lisse_jeune' | 'ecaillee_mature' | 'cretelee_profonde';
 export type DeadwoodType = 'aucun' | 'jin' | 'shari' | 'sabamiki';
@@ -52,6 +54,7 @@ export interface Tree {
 	altitudeMeters: number | null;
 	frontHeadingDegrees: number | null;
 	isFavorite: boolean;
+	climateHistory: ClimateHistory | null;
 	capturedAt: string;
 }
 

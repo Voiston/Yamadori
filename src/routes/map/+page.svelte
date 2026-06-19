@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import TreeMap from '$lib/components/TreeMap.svelte';
+	import MapOfflineView from '$lib/components/MapOfflineView.svelte';
+	import TopoMap from '$lib/components/TopoMap.svelte';
+	import { onlineState } from '$lib/utils/online.svelte';
 
 	let focusTreeId = $derived(page.url.searchParams.get('focus') ?? undefined);
 </script>
@@ -9,4 +11,8 @@
 	<title>Carte — Yamadori Scouting</title>
 </svelte:head>
 
-<TreeMap {focusTreeId} />
+{#if onlineState.online}
+	<TopoMap {focusTreeId} />
+{:else}
+	<MapOfflineView {focusTreeId} />
+{/if}

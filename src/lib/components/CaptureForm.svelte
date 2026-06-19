@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { DEFAULT_ASSESSMENT, type VoiceNote } from '$lib/types/tree';
+	import type { ClimateHistory } from '$lib/types/climate';
 	import { addTree } from '$lib/stores/trees.svelte';
 	import { goHome } from '$lib/utils/app-navigation';
 	import { formatBiologicalAltitude } from '$lib/utils/altitude';
+	import { fetchClimateHistory } from '$lib/utils/climate';
 	import {
 		formatFrontLabel,
 		requestOrientationPermission,
@@ -13,6 +15,7 @@
 	import { compressImage } from '$lib/utils/photo';
 	import { getSpeciesSuggestionsForPosition } from '$lib/utils/species-suggestions';
 	import { onMount } from 'svelte';
+	import ClimatePanel from './ClimatePanel.svelte';
 	import PhotoPreview from './PhotoPreview.svelte';
 	import VoiceNoteRecorder from './VoiceNoteRecorder.svelte';
 
@@ -30,8 +33,12 @@
 		latitude: number;
 		longitude: number;
 		altitudeMeters: number | null;
+		accuracyMeters: number | null;
 	} | null>(null);
 	let gpsLoading = $state(true);
+	let climateHistory = $state<ClimateHistory | null>(null);
+	let climateLoading = $state(false);
+	let climateError = $state('');
 	let currentHeading = $state<number | null>(null);
 	let frontHeadingDegrees = $state<number | null>(null);
 
@@ -61,6 +68,55 @@
 
 	const frontLabel = $derived(formatFrontLabel(frontHeadingDegrees));
 
+	const showClimatePanel = $derived(
+		capturePosition !== null && !isPoorAccuracy(capturePosition.accuracyMeters)
+	);
+
+	$effect(() => {
+		const position = capturePosition;
+		if (!position || isPoorAccuracy(position.accuracyMeters)) {
+			climateHistory = null;
+			climateError = '';
+			climateLoading = false;
+			return;
+		}
+
+		const { latitude, longitude } = position;
+		const debounceId = setTimeout(() => {
+			void (async () => {
+				climateLoading = true;
+				climateError = '';
+				try {
+					const result = await fetchClimateHistory(latitude, longitude);
+					if (
+						capturePosition?.latitude === latitude &&
+						capturePosition?.longitude === longitude
+					) {
+						climateHistory = result;
+					}
+				} catch (err) {
+					if (
+						capturePosition?.latitude === latitude &&
+						capturePosition?.longitude === longitude
+					) {
+						climateHistory = null;
+						climateError =
+							err instanceof Error ? err.message : 'Erreur lors de la récupération du climat.';
+					}
+				} finally {
+					if (
+						capturePosition?.latitude === latitude &&
+						capturePosition?.longitude === longitude
+					) {
+						climateLoading = false;
+					}
+				}
+			})();
+		}, 2000);
+
+		return () => clearTimeout(debounceId);
+	});
+
 	onMount(() => {
 		let watchId: number | null = null;
 		let unsubscribeOrientation: (() => void) | null = null;
@@ -79,7 +135,8 @@
 					capturePosition = {
 						latitude: pos.coords.latitude,
 						longitude: pos.coords.longitude,
-						altitudeMeters: pos.coords.altitude ?? null
+						altitudeMeters: pos.coords.altitude ?? null,
+						accuracyMeters: pos.coords.accuracy ?? null
 					};
 					gpsLoading = false;
 				},
@@ -148,6 +205,7 @@
 				altitudeMeters,
 				frontHeadingDegrees,
 				isFavorite: false,
+				climateHistory,
 				assessment: { ...DEFAULT_ASSESSMENT }
 			});
 
@@ -218,6 +276,10 @@
 			<p class="text-sm text-muted">Aucune suggestion pour cette zone.</p>
 		{/if}
 	</div>
+
+	{#if showClimatePanel}
+		<ClimatePanel climate={climateHistory} loading={climateLoading} error={climateError} />
+	{/if}
 
 	<div class="flex flex-col gap-2">
 		<label for="notes" class="text-sm font-medium text-forest-900">Notes</label>

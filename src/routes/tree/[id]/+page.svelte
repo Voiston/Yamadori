@@ -2,19 +2,21 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import AddVisitForm from '$lib/components/AddVisitForm.svelte';
+	import ClimatePanel from '$lib/components/ClimatePanel.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import PhotoGallery from '$lib/components/PhotoGallery.svelte';
 	import TreeAssessmentPanel from '$lib/components/TreeAssessmentPanel.svelte';
 	import TreeDetailActions from '$lib/components/TreeDetailActions.svelte';
 	import VisitTimeline from '$lib/components/VisitTimeline.svelte';
 	import VoiceNotePlayer from '$lib/components/VoiceNotePlayer.svelte';
-	import { deleteTree, getTreeById, toggleFavorite, updateTree } from '$lib/stores/trees.svelte';
+	import { deleteTree, getTreeById, toggleFavorite, updateClimate, updateTree } from '$lib/stores/trees.svelte';
 	import { goHome } from '$lib/utils/app-navigation';
 	import { formatDate } from '$lib/utils/date';
 	import {
 		formatBiologicalAltitude,
 		getBiologicalTier
 	} from '$lib/utils/altitude';
+	import { fetchClimateHistory } from '$lib/utils/climate';
 	import { formatFrontHeading } from '$lib/utils/compass';
 	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
 
@@ -38,6 +40,38 @@
 
 	let editSpecies = $state('');
 	let editNotes = $state('');
+	let climateLoading = $state(false);
+	let climateError = $state('');
+
+	const hasGps = $derived(tree?.latitude !== null && tree?.longitude !== null);
+
+	$effect(() => {
+		const currentTree = tree;
+		if (
+			!currentTree ||
+			currentTree.climateHistory ||
+			currentTree.latitude === null ||
+			currentTree.longitude === null ||
+			!navigator.onLine
+		) {
+			return;
+		}
+
+		const { id, latitude, longitude } = currentTree;
+		void (async () => {
+			climateLoading = true;
+			climateError = '';
+			try {
+				const result = await fetchClimateHistory(latitude, longitude);
+				await updateClimate(id, result);
+			} catch (err) {
+				climateError =
+					err instanceof Error ? err.message : 'Données climatiques non disponibles';
+			} finally {
+				climateLoading = false;
+			}
+		})();
+	});
 
 	function showFeedback(message: string) {
 		feedback = message;
@@ -240,6 +274,14 @@
 					<p class="mt-2 text-sm text-muted">Position non enregistrée</p>
 				{/if}
 			</section>
+
+			{#if hasGps}
+				<ClimatePanel
+					climate={tree.climateHistory}
+					loading={climateLoading}
+					error={climateError}
+				/>
+			{/if}
 		{/if}
 
 		{#if !editing}

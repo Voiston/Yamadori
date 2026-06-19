@@ -6,6 +6,7 @@ import {
 	type TreeAssessment,
 	type TreeVisit
 } from '$lib/types/tree';
+import type { ClimateHistory } from '$lib/types/climate';
 
 const STORAGE_KEY = 'yamadori-trees';
 
@@ -52,6 +53,7 @@ function normalizeTree(raw: LegacyTree): Tree {
 		frontHeadingDegrees: raw.frontHeadingDegrees ?? null,
 		voiceNote: raw.voiceNote ?? null,
 		isFavorite: raw.isFavorite ?? false,
+		climateHistory: raw.climateHistory ?? null,
 		capturedAt: raw.capturedAt
 	};
 
@@ -144,6 +146,11 @@ export async function updateAssessment(
 	assessment: TreeAssessment
 ): Promise<void> {
 	updateTreeById(id, (tree) => ({ ...tree, assessment: { ...assessment } }));
+	await persist();
+}
+
+export async function updateClimate(id: string, climateHistory: ClimateHistory): Promise<void> {
+	updateTreeById(id, (tree) => ({ ...tree, climateHistory }));
 	await persist();
 }
 
