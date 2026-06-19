@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -28,16 +28,21 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: |
-          npm config set engine-strict false
-          npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build for GitHub Pages
         run: npm run build:pages
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: build
+
+      - name: Publish gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
+          publish_branch: gh-pages
 
   deploy:
     needs: build
