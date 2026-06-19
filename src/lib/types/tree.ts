@@ -55,6 +55,7 @@ export interface Tree {
 	frontHeadingDegrees: number | null;
 	isFavorite: boolean;
 	climateHistory: ClimateHistory | null;
+	locationLabel: string | null;
 	capturedAt: string;
 }
 

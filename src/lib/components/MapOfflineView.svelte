@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { base } from '$app/paths';
+	import ParkingPanel from '$lib/components/ParkingPanel.svelte';
+	import { parkingStore } from '$lib/stores/parking.svelte';
 	import { getTreeById, treesWithGps } from '$lib/stores/trees.svelte';
 	import { formatDistance, haversineDistanceM } from '$lib/utils/haversine';
 	import {
@@ -62,6 +64,29 @@
 			pour vous orienter vers vos arbres en forêt.
 		</p>
 	</div>
+
+	{#if parkingStore.position}
+		<a
+			href="{base}/parking/compass"
+			class="flex h-14 items-center justify-center gap-2 rounded-xl bg-forest-800 text-sm font-semibold text-white transition active:scale-[0.98]"
+		>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				class="h-5 w-5"
+				aria-hidden="true"
+			>
+				<circle cx="12" cy="12" r="10" />
+				<path d="M12 8l3 8-3-2-3 2 3-8z" fill="currentColor" stroke="none" />
+			</svg>
+			Retour au parking
+		</a>
+	{/if}
+
+	<ParkingPanel variant="inline" />
 
 	{#if focusHasGps && focusTree}
 		<a

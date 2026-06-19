@@ -5,6 +5,7 @@
 	import { goHome } from '$lib/utils/app-navigation';
 	import { formatBiologicalAltitude } from '$lib/utils/altitude';
 	import { fetchClimateHistory } from '$lib/utils/climate';
+	import { reverseGeocode } from '$lib/utils/geocoding';
 	import {
 		formatFrontLabel,
 		requestOrientationPermission,
@@ -39,6 +40,8 @@
 	let climateHistory = $state<ClimateHistory | null>(null);
 	let climateLoading = $state(false);
 	let climateError = $state('');
+	let locationLabel = $state<string | null>(null);
+	let locationLoading = $state(false);
 	let currentHeading = $state<number | null>(null);
 	let frontHeadingDegrees = $state<number | null>(null);
 
@@ -113,6 +116,47 @@
 				}
 			})();
 		}, 2000);
+
+		return () => clearTimeout(debounceId);
+	});
+
+	$effect(() => {
+		const position = capturePosition;
+		if (!position || isPoorAccuracy(position.accuracyMeters)) {
+			locationLabel = null;
+			locationLoading = false;
+			return;
+		}
+
+		const { latitude, longitude } = position;
+		const debounceId = setTimeout(() => {
+			void (async () => {
+				locationLoading = true;
+				try {
+					const result = await reverseGeocode(latitude, longitude);
+					if (
+						capturePosition?.latitude === latitude &&
+						capturePosition?.longitude === longitude
+					) {
+						locationLabel = result;
+					}
+				} catch {
+					if (
+						capturePosition?.latitude === latitude &&
+						capturePosition?.longitude === longitude
+					) {
+						locationLabel = null;
+					}
+				} finally {
+					if (
+						capturePosition?.latitude === latitude &&
+						capturePosition?.longitude === longitude
+					) {
+						locationLoading = false;
+					}
+				}
+			})();
+		}, 500);
 
 		return () => clearTimeout(debounceId);
 	});
@@ -206,6 +250,7 @@
 				frontHeadingDegrees,
 				isFavorite: false,
 				climateHistory,
+				locationLabel,
 				assessment: { ...DEFAULT_ASSESSMENT }
 			});
 
@@ -255,6 +300,13 @@
 				<p class="text-sm font-medium text-forest-800" role="status">
 					{liveAltitudeLabel}
 				</p>
+				{#if locationLoading}
+					<p class="text-sm text-muted" role="status">Identification du lieu…</p>
+				{:else if locationLabel}
+					<p class="text-sm font-medium text-forest-800" role="status">
+						Repéré à : {locationLabel}
+					</p>
+				{/if}
 			{/if}
 
 			{#if !gpsLoading && capturePosition && suggestions.species.length > 0}

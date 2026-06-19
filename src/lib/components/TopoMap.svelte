@@ -12,9 +12,11 @@
 	import {
 		createIgnMapStyle,
 		setBasemapVisibility,
-		type MapBasemap
+	type MapBasemap
 	} from '$lib/utils/map/styles';
 	import { getTreeById, treeStore, treesWithGps } from '$lib/stores/trees.svelte';
+	import { parkingStore } from '$lib/stores/parking.svelte';
+	import ParkingPanel from '$lib/components/ParkingPanel.svelte';
 	import {
 		requestCurrentPosition,
 		startWatchingPosition,
@@ -26,6 +28,11 @@
 	import { onMount } from 'svelte';
 	import type { GeoJSONSource, Map as MaplibreMap, Marker, Popup } from 'maplibre-gl';
 
+	type ViewMode = 'topdown' | 'oblique';
+
+	const PITCH_TOPDOWN = 0;
+	const PITCH_OBLIQUE = 45;
+
 	let {
 		focusTreeId
 	}: {
@@ -35,6 +42,7 @@
 	let mapContainer: HTMLDivElement | undefined = $state();
 	let map: MaplibreMap | undefined = $state();
 	let basemap = $state<MapBasemap>('topo');
+	let viewMode = $state<ViewMode>('topdown');
 
 	const defaultCenter: [number, number] = [2.5, 46.5];
 	const defaultZoom = 6;
@@ -42,8 +50,18 @@
 	const markers = new Map<string, Marker>();
 	const popups = new Map<string, Popup>();
 	let userMarker: Marker | undefined;
+	let parkingMarker: Marker | undefined;
 	let mapReady = $state(false);
 	let tileError = $state('');
+
+	function getPitch(): number {
+		return viewMode === 'oblique' ? PITCH_OBLIQUE : PITCH_TOPDOWN;
+	}
+
+	function setViewMode(next: ViewMode): void {
+		viewMode = next;
+		map?.easeTo({ pitch: getPitch(), duration: 400 });
+	}
 
 	function escapeHtml(text: string): string {
 		return text
@@ -55,11 +73,14 @@
 
 	function buildPopupHtml(tree: Tree): string {
 		const link = `${base}/tree/${tree.id}`;
+		const locationLine = tree.locationLabel
+			? `<br><span style="color:#374151;font-size:13px;">${escapeHtml(tree.locationLabel)}</span>`
+			: '';
 		const accuracyLine =
 			tree.accuracyMeters !== null
 				? `<br><span style="color:#6b7280;font-size:12px;">${escapeHtml(formatAccuracy(tree.accuracyMeters))}</span>`
 				: '';
-		return `<strong>${escapeHtml(tree.species)}</strong>${accuracyLine}<br><a href="${link}" style="color:#2d4a2d;font-weight:600;">Voir</a>`;
+		return `<strong>${escapeHtml(tree.species)}</strong>${locationLine}${accuracyLine}<br><a href="${link}" style="color:#2d4a2d;font-weight:600;">Voir</a>`;
 	}
 
 	function createTreeMarkerElement(): HTMLDivElement {
@@ -73,6 +94,13 @@
 		const el = document.createElement('div');
 		el.style.cssText =
 			'background:#2563eb;width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 1px 6px rgba(0,0,0,0.35);';
+		return el;
+	}
+
+	function createParkingMarkerElement(): HTMLDivElement {
+		const el = document.createElement('div');
+		el.style.cssText =
+			'background:#ea580c;width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 1px 6px rgba(0,0,0,0.35);';
 		return el;
 	}
 
@@ -161,6 +189,52 @@
 		}
 	}
 
+	function syncParkingApproachLine(): void {
+		if (!map) return;
+
+		const source = map.getSource('parking-approach') as GeoJSONSource | undefined;
+		if (!source) return;
+
+		const parking = parkingStore.position;
+		const userPos = userPositionState.position;
+
+		if (parking && userPos) {
+			source.setData({
+				type: 'FeatureCollection',
+				features: [
+					createApproachLine(
+						userPos.longitude,
+						userPos.latitude,
+						parking.longitude,
+						parking.latitude
+					)
+				]
+			});
+		} else {
+			source.setData(emptyFeatureCollection());
+		}
+	}
+
+	function syncParkingMarker(): void {
+		if (!map) return;
+
+		const parking = parkingStore.position;
+		if (!parking) {
+			parkingMarker?.remove();
+			parkingMarker = undefined;
+			return;
+		}
+
+		const lngLat: [number, number] = [parking.longitude, parking.latitude];
+		if (!parkingMarker) {
+			parkingMarker = new maplibregl.Marker({ element: createParkingMarkerElement() })
+				.setLngLat(lngLat)
+				.addTo(map);
+		} else {
+			parkingMarker.setLngLat(lngLat);
+		}
+	}
+
 	function syncUserMarker(): void {
 		if (!map) return;
 
@@ -197,7 +271,7 @@
 			map.flyTo({
 				center: [focusTree.longitude, focusTree.latitude],
 				zoom: 16,
-				pitch: basemap === 'topo' ? 45 : 0,
+				pitch: getPitch(),
 				duration: 800
 			});
 			focusMarker.togglePopup();
@@ -214,11 +288,11 @@
 			map.flyTo({
 				center: [tree.longitude!, tree.latitude!],
 				zoom: 14,
-				pitch: basemap === 'topo' ? 45 : 0,
+				pitch: getPitch(),
 				duration: 800
 			});
 		} else {
-			map.flyTo({ center: defaultCenter, zoom: defaultZoom, pitch: 0, duration: 800 });
+			map.flyTo({ center: defaultCenter, zoom: defaultZoom, pitch: getPitch(), duration: 800 });
 		}
 	}
 
@@ -226,11 +300,10 @@
 		basemap = next;
 		if (!map) return;
 		setBasemapVisibility(map, next);
-		map.easeTo({ pitch: next === 'topo' ? 45 : 0, duration: 400 });
 	}
 
 	function resetNorthView(): void {
-		map?.easeTo({ bearing: 0, pitch: basemap === 'topo' ? 45 : 0, duration: 400 });
+		map?.easeTo({ bearing: 0, pitch: getPitch(), duration: 400 });
 	}
 
 	onMount(() => {
@@ -244,7 +317,7 @@
 			style: createIgnMapStyle(),
 			center: defaultCenter,
 			zoom: defaultZoom,
-			pitch: 45,
+			pitch: PITCH_TOPDOWN,
 			attributionControl: { compact: true },
 			maxPitch: 60
 		});
@@ -260,7 +333,9 @@
 			mapReady = true;
 			syncTreeMarkers();
 			syncUserMarker();
+			syncParkingMarker();
 			syncApproachLine();
+			syncParkingApproachLine();
 			fitMapToTrees();
 		});
 
@@ -271,6 +346,8 @@
 			popups.clear();
 			userMarker?.remove();
 			userMarker = undefined;
+			parkingMarker?.remove();
+			parkingMarker = undefined;
 			instance.remove();
 			map = undefined;
 			mapReady = false;
@@ -289,6 +366,14 @@
 		void focusTreeId;
 		syncUserMarker();
 		syncApproachLine();
+		syncParkingApproachLine();
+	});
+
+	$effect(() => {
+		if (!mapReady || !map) return;
+		void parkingStore.position;
+		syncParkingMarker();
+		syncParkingApproachLine();
 	});
 
 	let gpsCount = $derived(treesWithGps().length);
@@ -316,6 +401,26 @@
 				onclick={() => setBasemap('satellite')}
 			>
 				Satellite
+			</button>
+		</div>
+		<div class="flex overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+			<button
+				type="button"
+				class="px-3 py-2 text-xs font-semibold transition {viewMode === 'topdown'
+					? 'bg-forest-800 text-white'
+					: 'text-forest-900'}"
+				onclick={() => setViewMode('topdown')}
+			>
+				Vue de dessus
+			</button>
+			<button
+				type="button"
+				class="px-3 py-2 text-xs font-semibold transition {viewMode === 'oblique'
+					? 'bg-forest-800 text-white'
+					: 'text-forest-900'}"
+				onclick={() => setViewMode('oblique')}
+			>
+				Vue oblique
 			</button>
 		</div>
 		<button
@@ -347,5 +452,11 @@
 		class="pointer-events-none absolute right-2 bottom-2 max-w-[55%] rounded bg-white/80 px-2 py-1 text-[10px] text-gray-600"
 	>
 		{IGN_ATTRIBUTION}
+	</div>
+
+	<div class="pointer-events-none absolute inset-x-4 bottom-4 z-10">
+		<div class="pointer-events-auto">
+			<ParkingPanel />
+		</div>
 	</div>
 </div>

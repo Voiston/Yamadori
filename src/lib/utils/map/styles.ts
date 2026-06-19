@@ -36,6 +36,10 @@ export function createIgnMapStyle(): StyleSpecification {
 				type: 'geojson',
 				data: { type: 'FeatureCollection', features: [] }
 			},
+			'parking-approach': {
+				type: 'geojson',
+				data: { type: 'FeatureCollection', features: [] }
+			},
 			'accuracy-circles': {
 				type: 'geojson',
 				data: { type: 'FeatureCollection', features: [] }
@@ -94,6 +98,20 @@ export function createIgnMapStyle(): StyleSpecification {
 				},
 				paint: {
 					'line-color': '#1a4d1a',
+					'line-width': 3,
+					'line-dasharray': [2, 2]
+				}
+			},
+			{
+				id: 'parking-approach-line',
+				type: 'line',
+				source: 'parking-approach',
+				layout: {
+					'line-cap': 'round',
+					'line-join': 'round'
+				},
+				paint: {
+					'line-color': '#ea580c',
 					'line-width': 3,
 					'line-dasharray': [2, 2]
 				}

@@ -9,7 +9,7 @@
 	import TreeDetailActions from '$lib/components/TreeDetailActions.svelte';
 	import VisitTimeline from '$lib/components/VisitTimeline.svelte';
 	import VoiceNotePlayer from '$lib/components/VoiceNotePlayer.svelte';
-	import { deleteTree, getTreeById, toggleFavorite, updateClimate, updateTree } from '$lib/stores/trees.svelte';
+	import { deleteTree, getTreeById, toggleFavorite, updateClimate, updateLocationLabel, updateTree } from '$lib/stores/trees.svelte';
 	import { goHome } from '$lib/utils/app-navigation';
 	import { formatDate } from '$lib/utils/date';
 	import {
@@ -17,6 +17,7 @@
 		getBiologicalTier
 	} from '$lib/utils/altitude';
 	import { fetchClimateHistory } from '$lib/utils/climate';
+	import { formatLocationLabel, reverseGeocode } from '$lib/utils/geocoding';
 	import { formatFrontHeading } from '$lib/utils/compass';
 	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
 
@@ -44,6 +45,7 @@
 	let climateError = $state('');
 
 	const hasGps = $derived(tree?.latitude !== null && tree?.longitude !== null);
+	const locationLabel = $derived(tree ? formatLocationLabel(tree) : null);
 
 	$effect(() => {
 		const currentTree = tree;
@@ -69,6 +71,29 @@
 					err instanceof Error ? err.message : 'Données climatiques non disponibles';
 			} finally {
 				climateLoading = false;
+			}
+		})();
+	});
+
+	$effect(() => {
+		const currentTree = tree;
+		if (
+			!currentTree ||
+			currentTree.locationLabel ||
+			currentTree.latitude === null ||
+			currentTree.longitude === null ||
+			!navigator.onLine
+		) {
+			return;
+		}
+
+		const { id, latitude, longitude } = currentTree;
+		void (async () => {
+			try {
+				const label = await reverseGeocode(latitude, longitude);
+				await updateLocationLabel(id, label);
+			} catch {
+				// Enrichissement optionnel — pas de message d'erreur
 			}
 		})();
 	});
@@ -244,6 +269,11 @@
 				<section class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
 					<h3 class="text-sm font-medium text-forest-900">Position GPS</h3>
 					{#if tree.latitude !== null && tree.longitude !== null}
+						{#if locationLabel}
+							<p class="mt-2 text-base font-medium text-forest-900">
+								Repéré à : {locationLabel}
+							</p>
+						{/if}
 						<p class="mt-2 font-mono text-sm text-forest-600">
 							{tree.latitude.toFixed(5)}, {tree.longitude.toFixed(5)}
 						</p>

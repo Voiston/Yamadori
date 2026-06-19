@@ -56,6 +56,7 @@ function normalizeTree(raw: LegacyTree): Tree {
 		voiceNote: raw.voiceNote ?? null,
 		isFavorite: raw.isFavorite ?? false,
 		climateHistory: raw.climateHistory ?? null,
+		locationLabel: raw.locationLabel ?? null,
 		capturedAt: raw.capturedAt
 	};
 
@@ -157,6 +158,12 @@ export async function updateAssessment(
 
 export async function updateClimate(id: string, climateHistory: ClimateHistory): Promise<void> {
 	updateTreeById(id, (tree) => ({ ...tree, climateHistory }));
+	await persist();
+	void notifyTreeChanged(id);
+}
+
+export async function updateLocationLabel(id: string, locationLabel: string): Promise<void> {
+	updateTreeById(id, (tree) => ({ ...tree, locationLabel }));
 	await persist();
 	void notifyTreeChanged(id);
 }

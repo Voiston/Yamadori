@@ -74,7 +74,11 @@
 			<p class="mt-0.5 text-sm text-muted">{formatDate(tree.capturedAt)}</p>
 			{#if tree.latitude !== null && tree.longitude !== null}
 				<p class="mt-1 truncate text-xs text-forest-600">
-					{tree.latitude.toFixed(5)}, {tree.longitude.toFixed(5)}
+					{#if tree.locationLabel}
+						{tree.locationLabel}
+					{:else}
+						{tree.latitude.toFixed(5)}, {tree.longitude.toFixed(5)}
+					{/if}
 					{#if formatAltitudeWithTierShort(tree.altitudeMeters)}
 						· {formatAltitudeWithTierShort(tree.altitudeMeters)}
 					{/if}

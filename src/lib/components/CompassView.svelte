@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Tree } from '$lib/types/tree';
+	import type { CompassTarget } from '$lib/types/compass';
 	import {
 		formatDistance,
 		getRelativeDirection,
@@ -20,7 +20,7 @@
 	} from '$lib/utils/userPosition.svelte';
 	import { onMount } from 'svelte';
 
-	let { tree }: { tree: Tree } = $props();
+	let { target }: { target: CompassTarget } = $props();
 
 	let heading = $state<number | null>(null);
 	let orientationEnabled = $state(false);
@@ -30,28 +30,28 @@
 	let distance = $derived.by(() => {
 		if (
 			!userPositionState.position ||
-			tree.latitude === null ||
-			tree.longitude === null
+			target.latitude === null ||
+			target.longitude === null
 		) {
 			return null;
 		}
 		return haversineDistanceM(
 			userPositionState.position.latitude,
 			userPositionState.position.longitude,
-			tree.latitude,
-			tree.longitude
+			target.latitude,
+			target.longitude
 		);
 	});
 
 	let bearing = $derived.by(() => {
-		if (!userPositionState.position || tree.latitude === null || tree.longitude === null) {
+		if (!userPositionState.position || target.latitude === null || target.longitude === null) {
 			return null;
 		}
 		return haversineBearingDeg(
 			userPositionState.position.latitude,
 			userPositionState.position.longitude,
-			tree.latitude,
-			tree.longitude
+			target.latitude,
+			target.longitude
 		);
 	});
 
@@ -100,11 +100,11 @@
 </script>
 
 <div class="flex flex-col items-center gap-6 py-6">
-	{#if tree.latitude === null || tree.longitude === null}
-		<p class="text-center text-muted">Cet arbre n'a pas de coordonnées GPS.</p>
+	{#if target.latitude === null || target.longitude === null}
+		<p class="text-center text-muted">Aucune coordonnée GPS disponible.</p>
 	{:else}
 		<div class="text-center">
-			<h2 class="text-xl font-semibold text-forest-900">{tree.species}</h2>
+			<h2 class="text-xl font-semibold text-forest-900">{target.label}</h2>
 			{#if distance !== null}
 				<p class="mt-2 text-2xl font-semibold text-forest-800">{formatDistance(distance)}</p>
 			{:else}

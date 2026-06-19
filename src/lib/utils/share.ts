@@ -11,6 +11,9 @@ function buildShareText(tree: Tree, url: string): string {
 	];
 
 	if (tree.latitude !== null && tree.longitude !== null) {
+		if (tree.locationLabel) {
+			lines.push(`Repéré à : ${tree.locationLabel}`);
+		}
 		lines.push(
 			`GPS : ${tree.latitude.toFixed(5)}, ${tree.longitude.toFixed(5)}`,
 			`Précision : ${formatAccuracy(tree.accuracyMeters)}`

@@ -13,7 +13,13 @@
 </svelte:head>
 
 {#if tree}
-	<CompassView {tree} />
+	<CompassView
+		target={{
+			label: tree.species,
+			latitude: tree.latitude,
+			longitude: tree.longitude
+		}}
+	/>
 {:else}
 	<div class="flex flex-col items-center py-16 text-center">
 		<h2 class="text-xl font-semibold text-forest-900">Arbre introuvable</h2>

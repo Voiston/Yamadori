@@ -5,6 +5,7 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import { getTreeById, initTrees, treeStore } from '$lib/stores/trees.svelte';
+	import { initParking, parkingStore } from '$lib/stores/parking.svelte';
 	import { initSyncEngine, stopSyncEngine, syncState } from '$lib/sync/engine.svelte';
 	import { initOnlineState, onlineState } from '$lib/utils/online.svelte';
 	import { onMount } from 'svelte';
@@ -12,7 +13,7 @@
 	let { children } = $props();
 
 	onMount(() => {
-		void initTrees().then(() => initSyncEngine());
+		void Promise.all([initTrees(), initParking()]).then(() => initSyncEngine());
 		const cleanupOnline = initOnlineState();
 		return () => {
 			stopSyncEngine();
@@ -27,13 +28,18 @@
 	let isCapture = $derived(routeId === '/capture');
 	let isMap = $derived(routeId === '/map');
 	let isCompass = $derived(routeId === '/tree/[id]/compass');
+	let isParkingCompass = $derived(routeId === '/parking/compass');
 	let isDetail = $derived(routeId === '/tree/[id]');
 	let showBottomNav = $derived(routeId === '/' || routeId === '/map');
 	let isSettings = $derived(routeId === '/settings');
-	let showBack = $derived(isCapture || isDetail || isCompass || isSettings);
+	let showBack = $derived(isCapture || isDetail || isCompass || isParkingCompass || isSettings);
 
 	let backHref = $derived(
-		isCompass && treeId ? `${base}/tree/${treeId}` : `${base}/`
+		isParkingCompass
+			? `${base}/map`
+			: isCompass && treeId
+				? `${base}/tree/${treeId}`
+				: `${base}/`
 	);
 
 	let headerTitle = $derived(
@@ -41,16 +47,20 @@
 			? 'Nouveau repérage'
 			: isMap
 				? 'Carte'
-				: isCompass
-					? 'Boussole'
-					: isSettings
-						? 'Réglages'
-						: isDetail
-							? (detailTree?.species ?? 'Détail')
-							: 'Yamadori'
+				: isParkingCompass
+					? 'Point de départ'
+					: isCompass
+						? 'Boussole'
+						: isSettings
+							? 'Réglages'
+							: isDetail
+								? (detailTree?.species ?? 'Détail')
+								: 'Yamadori'
 	);
 
-	let headerSubtitle = $derived(!isCapture && !isMap && !isDetail && !isCompass ? 'Scouting' : '');
+	let headerSubtitle = $derived(
+		!isCapture && !isMap && !isDetail && !isCompass && !isParkingCompass ? 'Scouting' : ''
+	);
 
 	let syncLabel = $derived.by(() => {
 		if (syncState.status === 'syncing') return 'Sync…';
@@ -156,7 +166,7 @@
 			? 'px-0 py-0'
 			: 'px-4 py-6 lg:px-6'}"
 	>
-		{#if treeStore.loaded}
+		{#if treeStore.loaded && parkingStore.loaded}
 			{@render children()}
 		{:else}
 			<div class="flex items-center justify-center py-20">
