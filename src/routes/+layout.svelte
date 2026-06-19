@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import BottomNav from '$lib/components/BottomNav.svelte';
+	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import { getTreeById, initTrees, treeStore } from '$lib/stores/trees.svelte';
 	import { onMount } from 'svelte';
@@ -25,20 +26,20 @@
 		};
 	});
 
-	let pathname = $derived(page.url.pathname);
-	let treeId = $derived(
-		pathname.startsWith('/tree/') ? pathname.split('/').filter(Boolean)[1] : null
-	);
+	let routeId = $derived(page.route.id);
+	let treeId = $derived(page.params.id ?? null);
 	let detailTree = $derived(treeId ? getTreeById(treeId) : undefined);
 
-	let isCapture = $derived(pathname === '/capture');
-	let isMap = $derived(pathname === '/map');
-	let isCompass = $derived(pathname.endsWith('/compass'));
-	let isDetail = $derived(pathname.startsWith('/tree/') && !isCompass);
-	let showBottomNav = $derived(pathname === '/' || pathname === '/map');
+	let isCapture = $derived(routeId === '/capture');
+	let isMap = $derived(routeId === '/map');
+	let isCompass = $derived(routeId === '/tree/[id]/compass');
+	let isDetail = $derived(routeId === '/tree/[id]');
+	let showBottomNav = $derived(routeId === '/' || routeId === '/map');
 	let showBack = $derived(isCapture || isDetail || isCompass);
 
-	let backHref = $derived(isCompass && treeId ? `/tree/${treeId}` : '/');
+	let backHref = $derived(
+		isCompass && treeId ? `${base}/tree/${treeId}` : `${base}/`
+	);
 
 	let headerTitle = $derived(
 		isCapture
@@ -57,6 +58,7 @@
 
 <svelte:head>
 	<title>Yamadori Scouting</title>
+	<link rel="apple-touch-icon" href="{base}/icons/icon.svg" />
 </svelte:head>
 
 <div class="mx-auto flex min-h-dvh max-w-lg flex-col px-safe">

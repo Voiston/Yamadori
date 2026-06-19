@@ -1,28 +1,29 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { page } from '$app/state';
 
 	const tabs = [
 		{
-			href: '/',
+			href: `${base}/`,
 			label: 'Liste',
-			match: (path: string) => path === '/',
+			routeId: '/',
 			icon: 'list'
 		},
 		{
-			href: '/map',
+			href: `${base}/map`,
 			label: 'Carte',
-			match: (path: string) => path === '/map',
+			routeId: '/map',
 			icon: 'map'
 		},
 		{
-			href: '/capture',
+			href: `${base}/capture`,
 			label: 'Ajouter',
-			match: (path: string) => path === '/capture',
+			routeId: '/capture',
 			icon: 'add'
 		}
 	] as const;
 
-	let pathname = $derived(page.url.pathname);
+	let routeId = $derived(page.route.id);
 </script>
 
 <nav
@@ -31,7 +32,7 @@
 >
 	<div class="mx-auto flex h-16 max-w-lg items-stretch">
 		{#each tabs as tab (tab.href)}
-			{@const active = tab.match(pathname)}
+			{@const active = routeId === tab.routeId}
 			<a
 				href={tab.href}
 				class="flex flex-1 flex-col items-center justify-center gap-1 transition active:scale-95 {active

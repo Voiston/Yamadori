@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Tree } from '$lib/types/tree';
+	import { base } from '$app/paths';
 	import { POOR_ACCURACY_THRESHOLD_M } from '$lib/utils/geo';
 	import { formatAccuracy } from '$lib/utils/gps';
 	import { getTreeById, treesWithGps } from '$lib/stores/trees.svelte';
@@ -27,7 +28,7 @@
 	});
 
 	function buildPopupContent(tree: Tree): string {
-		const link = `/tree/${tree.id}`;
+		const link = `${base}/tree/${tree.id}`;
 		const accuracyLine =
 			tree.accuracyMeters !== null
 				? `<br><span style="color:#6b7280;font-size:12px;">${escapeHtml(formatAccuracy(tree.accuracyMeters))}</span>`

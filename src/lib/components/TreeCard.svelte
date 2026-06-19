@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getCoverPhoto } from '$lib/types/tree';
 	import type { Tree } from '$lib/types/tree';
+	import { base } from '$app/paths';
 	import { formatDate } from '$lib/utils/date';
 	import { hasApproximateGps } from '$lib/utils/gps';
 
@@ -14,7 +15,7 @@
 </script>
 
 <a
-	href="/tree/{tree.id}"
+	href="{base}/tree/{tree.id}"
 	class="block transition active:scale-[0.98]"
 	aria-label="Voir le détail de {tree.species}"
 >

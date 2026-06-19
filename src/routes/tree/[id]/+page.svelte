@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import AddVisitForm from '$lib/components/AddVisitForm.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
@@ -238,7 +239,7 @@
 		<h2 class="text-xl font-semibold text-forest-900">Arbre introuvable</h2>
 		<p class="mt-2 text-muted">Cet enregistrement n'existe plus ou a été supprimé.</p>
 		<a
-			href="/"
+			href="{base}/"
 			class="mt-6 flex h-12 items-center justify-center rounded-xl bg-forest-800 px-6 text-base font-semibold text-white transition active:scale-[0.98]"
 		>
 			Retour à la liste
