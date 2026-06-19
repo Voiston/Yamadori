@@ -15,10 +15,29 @@ export function getDeviceHeading(event: DeviceOrientationEvent): number | null {
 	if (typeof webkitHeading === 'number') {
 		return webkitHeading;
 	}
-	if (event.alpha !== null) {
+	if (event.alpha !== null && event.absolute) {
 		return (360 - event.alpha) % 360;
 	}
 	return null;
+}
+
+function handleOrientationEvent(
+	event: DeviceOrientationEvent,
+	handler: (heading: number) => void
+): void {
+	const value = getDeviceHeading(event);
+	if (value !== null) {
+		handler(value);
+	}
+}
+
+export function subscribeDeviceOrientation(handler: (heading: number) => void): () => void {
+	const listener = (event: DeviceOrientationEvent) => handleOrientationEvent(event, handler);
+	const eventName: 'deviceorientationabsolute' | 'deviceorientation' =
+		'ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation';
+
+	window.addEventListener(eventName, listener, true);
+	return () => window.removeEventListener(eventName, listener, true);
 }
 
 export async function requestOrientationPermission(): Promise<boolean> {

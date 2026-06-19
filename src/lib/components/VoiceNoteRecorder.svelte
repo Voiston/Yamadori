@@ -6,6 +6,8 @@
 		VoiceRecorderSession,
 		createVoiceNoteFromBlob,
 		formatVoiceDuration,
+		getVoiceRecordingErrorMessage,
+		isVoiceRecordingPermissionError,
 		isVoiceRecordingSupported
 	} from '$lib/utils/voice';
 	import { onDestroy } from 'svelte';
@@ -79,13 +81,12 @@
 			}, 200);
 		} catch (err) {
 			session = null;
-			if (err instanceof DOMException && err.name === 'NotAllowedError') {
+			if (isVoiceRecordingPermissionError(err)) {
 				recorderState = 'permission_denied';
-				hint = 'Accès au micro refusé. Autorisez le micro dans les réglages du navigateur.';
 			} else {
 				recorderState = 'idle';
-				hint = err instanceof Error ? err.message : 'Impossible de démarrer l\'enregistrement';
 			}
+			hint = getVoiceRecordingErrorMessage(err);
 		}
 	}
 

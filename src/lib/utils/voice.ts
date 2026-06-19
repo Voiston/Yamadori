@@ -3,7 +3,7 @@ import type { VoiceNote } from '$lib/types/tree';
 export const MAX_DURATION_MS = 30_000;
 export const MIN_DURATION_MS = 1_500;
 
-const MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
+const MIME_CANDIDATES = ['audio/mp4', 'audio/aac', 'audio/webm;codecs=opus', 'audio/webm'];
 
 export function isVoiceRecordingSupported(): boolean {
 	return (
@@ -22,6 +22,29 @@ export function getPreferredAudioMimeType(): string {
 	return '';
 }
 
+export function getVoiceRecordingErrorMessage(err: unknown): string {
+	if (err instanceof DOMException) {
+		switch (err.name) {
+			case 'NotAllowedError':
+				return 'Accès au micro refusé. Dans Brave : menu du site → Réglages du site → Microphone → Autoriser.';
+			case 'NotFoundError':
+				return 'Aucun micro détecté sur cet appareil.';
+			case 'NotReadableError':
+				return 'Le micro est utilisé par une autre application.';
+			default:
+				return err.message || 'Impossible de démarrer l\'enregistrement';
+		}
+	}
+	if (err instanceof Error) {
+		return err.message;
+	}
+	return 'Impossible de démarrer l\'enregistrement';
+}
+
+export function isVoiceRecordingPermissionError(err: unknown): boolean {
+	return err instanceof DOMException && err.name === 'NotAllowedError';
+}
+
 export function formatVoiceDuration(ms: number): string {
 	const totalSeconds = Math.max(0, Math.floor(ms / 1000));
 	const minutes = Math.floor(totalSeconds / 60);
@@ -38,6 +61,18 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
 	});
 }
 
+function createMediaRecorder(stream: MediaStream): MediaRecorder {
+	const preferredMime = getPreferredAudioMimeType();
+	if (preferredMime) {
+		try {
+			return new MediaRecorder(stream, { mimeType: preferredMime });
+		} catch {
+			/* fallback below */
+		}
+	}
+	return new MediaRecorder(stream);
+}
+
 export class VoiceRecorderSession {
 	private stream: MediaStream | null = null;
 	private recorder: MediaRecorder | null = null;
@@ -50,14 +85,17 @@ export class VoiceRecorderSession {
 			throw new Error('Micro non supporté sur ce navigateur');
 		}
 
-		this.mimeType = getPreferredAudioMimeType();
-		if (!this.mimeType) {
-			throw new Error('Format audio non supporté sur ce navigateur');
+		this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+		this.chunks = [];
+		try {
+			this.recorder = createMediaRecorder(this.stream);
+		} catch (err) {
+			this.cleanup();
+			throw err;
 		}
 
-		this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-		this.chunks = [];
-		this.recorder = new MediaRecorder(this.stream, { mimeType: this.mimeType });
+		this.mimeType = this.recorder.mimeType || getPreferredAudioMimeType() || 'audio/mp4';
 		this.startedAt = Date.now();
 
 		this.recorder.ondataavailable = (event) => {
@@ -80,9 +118,10 @@ export class VoiceRecorderSession {
 
 			recorder.onstop = () => {
 				const durationMs = Date.now() - this.startedAt;
-				const blob = new Blob(this.chunks, { type: this.mimeType });
+				const mimeType = recorder.mimeType || this.mimeType;
+				const blob = new Blob(this.chunks, { type: mimeType });
 				this.cleanup();
-				resolve({ blob, durationMs, mimeType: this.mimeType });
+				resolve({ blob, durationMs, mimeType });
 			};
 
 			recorder.onerror = () => {

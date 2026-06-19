@@ -5,8 +5,8 @@
 	import { formatBiologicalAltitude } from '$lib/utils/altitude';
 	import {
 		formatFrontLabel,
-		getDeviceHeading,
-		requestOrientationPermission
+		requestOrientationPermission,
+		subscribeDeviceOrientation
 	} from '$lib/utils/compass';
 	import { getCoordinates } from '$lib/utils/geo';
 	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
@@ -61,19 +61,15 @@
 
 	const frontLabel = $derived(formatFrontLabel(frontHeadingDegrees));
 
-	function handleOrientation(event: DeviceOrientationEvent) {
-		const value = getDeviceHeading(event);
-		if (value !== null) {
-			currentHeading = value;
-		}
-	}
-
 	onMount(() => {
 		let watchId: number | null = null;
+		let unsubscribeOrientation: (() => void) | null = null;
 
 		void requestOrientationPermission().then((granted) => {
 			if (granted) {
-				window.addEventListener('deviceorientation', handleOrientation, true);
+				unsubscribeOrientation = subscribeDeviceOrientation((value) => {
+					currentHeading = value;
+				});
 			}
 		});
 
@@ -101,7 +97,7 @@
 		}
 
 		return () => {
-			window.removeEventListener('deviceorientation', handleOrientation, true);
+			unsubscribeOrientation?.();
 			if (watchId !== null) {
 				navigator.geolocation.clearWatch(watchId);
 			}

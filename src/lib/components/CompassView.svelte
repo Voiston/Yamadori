@@ -7,7 +7,11 @@
 		haversineDistanceM,
 		normalizeAngle
 	} from '$lib/utils/haversine';
-	import { getDeviceHeading, requestOrientationPermission } from '$lib/utils/compass';
+	import {
+		headingToCardinal,
+		requestOrientationPermission,
+		subscribeDeviceOrientation
+	} from '$lib/utils/compass';
 	import {
 		requestCurrentPosition,
 		startWatchingPosition,
@@ -21,6 +25,7 @@
 	let heading = $state<number | null>(null);
 	let orientationEnabled = $state(false);
 	let orientationError = $state('');
+	let unsubscribeOrientation: (() => void) | null = null;
 
 	let distance = $derived.by(() => {
 		if (
@@ -51,20 +56,22 @@
 	});
 
 	let arrowRotation = $derived.by(() => {
-		if (bearing === null || heading === null) return 0;
-		return normalizeAngle(bearing - heading);
+		if (bearing === null) return 0;
+		if (heading !== null) return normalizeAngle(bearing - heading);
+		return bearing;
 	});
 
-	let directionText = $derived(
-		heading === null ? '' : getRelativeDirection(arrowRotation)
-	);
+	let directionText = $derived.by(() => {
+		if (bearing === null) return '';
+		if (heading !== null) return getRelativeDirection(arrowRotation);
+		return headingToCardinal(bearing);
+	});
 
-	function handleOrientation(event: DeviceOrientationEvent) {
-		const value = getDeviceHeading(event);
-		if (value !== null) {
-			heading = value;
-		}
-	}
+	let compassStatusText = $derived.by(() => {
+		if (!orientationEnabled) return '';
+		if (heading !== null) return 'Boussole active';
+		return 'Direction approximative — alignez le haut du téléphone vers le nord';
+	});
 
 	async function enableOrientation() {
 		orientationError = '';
@@ -74,7 +81,10 @@
 			return;
 		}
 
-		window.addEventListener('deviceorientation', handleOrientation, true);
+		unsubscribeOrientation?.();
+		unsubscribeOrientation = subscribeDeviceOrientation((value) => {
+			heading = value;
+		});
 		orientationEnabled = true;
 	}
 
@@ -84,7 +94,7 @@
 
 		return () => {
 			stopWatchingPosition();
-			window.removeEventListener('deviceorientation', handleOrientation, true);
+			unsubscribeOrientation?.();
 		};
 	});
 </script>
@@ -127,6 +137,8 @@
 			>
 				Activer la boussole
 			</button>
+		{:else if compassStatusText}
+			<p class="text-center text-sm text-muted">{compassStatusText}</p>
 		{/if}
 
 		{#if orientationError}
