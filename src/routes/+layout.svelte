@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import BottomNav from '$lib/components/BottomNav.svelte';
+	import SideNav from '$lib/components/SideNav.svelte';
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import { getTreeById, initTrees, treeStore } from '$lib/stores/trees.svelte';
@@ -68,7 +69,10 @@
 	<link rel="apple-touch-icon" href="{base}/icons/icon.svg" />
 </svelte:head>
 
-<div class="mx-auto flex min-h-dvh max-w-lg flex-col px-safe">
+<div class="flex min-h-dvh">
+	<SideNav />
+
+	<div class="mx-auto flex min-h-dvh max-w-lg flex-1 flex-col px-safe lg:mx-0 lg:max-w-none">
 	<header
 		class="sticky top-0 z-40 border-b border-gray-100 bg-surface/95 backdrop-blur-sm pt-safe"
 	>
@@ -102,7 +106,7 @@
 
 			<a
 				href="{base}/settings"
-				class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-forest-900 transition active:scale-95"
+				class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-forest-900 transition active:scale-95 lg:hidden"
 				aria-label="Réglages"
 			>
 				<svg
@@ -147,7 +151,11 @@
 		</div>
 	</header>
 
-	<main class="flex-1 {showBottomNav ? 'pb-20' : ''} {isMap ? 'px-0 py-0' : 'px-4 py-6'}">
+	<main
+		class="flex-1 {showBottomNav ? 'pb-20 lg:pb-0' : ''} {isMap
+			? 'px-0 py-0'
+			: 'px-4 py-6 lg:px-6'}"
+	>
 		{#if treeStore.loaded}
 			{@render children()}
 		{:else}
@@ -174,4 +182,5 @@
 	{#if showBottomNav}
 		<BottomNav />
 	{/if}
+	</div>
 </div>

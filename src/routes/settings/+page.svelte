@@ -109,7 +109,7 @@
 	<title>Réglages — Yamadori Scouting</title>
 </svelte:head>
 
-<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-6 lg:mx-auto lg:max-w-2xl">
 	<div>
 		<h2 class="text-lg font-semibold text-forest-900">Synchronisation</h2>
 		<p class="mt-1 text-sm text-muted">
@@ -155,15 +155,28 @@
 		<span class="text-sm text-forest-900">Activer la synchronisation automatique</span>
 	</label>
 
-	<div class="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-muted">
-		<p>État : <strong class="text-forest-900">{syncState.status}</strong></p>
-		<p>En attente : <strong class="text-forest-900">{syncState.pendingCount}</strong></p>
-		<p>Dernière sync : <strong class="text-forest-900">{formatLastSync(syncState.lastSyncedAt)}</strong></p>
-		{#if syncState.lastError}
-			<p class="mt-2 text-red-700">
-				Erreur : <strong class="text-red-800">{syncState.lastError}</strong>
-			</p>
-		{/if}
+	<div class="flex flex-col gap-4 lg:grid lg:grid-cols-2 lg:gap-6">
+		<div class="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-muted">
+			<p>État : <strong class="text-forest-900">{syncState.status}</strong></p>
+			<p>En attente : <strong class="text-forest-900">{syncState.pendingCount}</strong></p>
+			<p>Dernière sync : <strong class="text-forest-900">{formatLastSync(syncState.lastSyncedAt)}</strong></p>
+			{#if syncState.lastError}
+				<p class="mt-2 text-red-700">
+					Erreur : <strong class="text-red-800">{syncState.lastError}</strong>
+				</p>
+			{/if}
+		</div>
+
+		<div class="rounded-xl border border-gray-100 bg-white px-4 py-4 text-sm text-muted">
+			<p class="font-medium text-forest-900">Guide rapide (ton PC)</p>
+			<ol class="mt-2 list-decimal space-y-1 pl-5">
+				<li>Installer Tailscale sur ton PC et ton téléphone</li>
+				<li>Lancer PocketBase : <code class="text-xs">pocketbase serve --http=127.0.0.1:8090</code></li>
+				<li>Exposer via Tailscale : <code class="text-xs">tailscale serve --bg http://127.0.0.1:8090</code></li>
+				<li>Créer la collection <code class="text-xs">trees</code> (voir docs/SYNC-SETUP.md)</li>
+				<li>Créer un compte utilisateur dans l'admin PocketBase</li>
+			</ol>
+		</div>
 	</div>
 
 	{#if feedback}
@@ -224,16 +237,5 @@
 		</button>
 	</div>
 
-	<div class="rounded-xl border border-gray-100 bg-white px-4 py-4 text-sm text-muted">
-		<p class="font-medium text-forest-900">Guide rapide (ton PC)</p>
-		<ol class="mt-2 list-decimal space-y-1 pl-5">
-			<li>Installer Tailscale sur ton PC et ton téléphone</li>
-			<li>Lancer PocketBase : <code class="text-xs">pocketbase serve --http=127.0.0.1:8090</code></li>
-			<li>Exposer via Tailscale : <code class="text-xs">tailscale serve --bg http://127.0.0.1:8090</code></li>
-			<li>Créer la collection <code class="text-xs">trees</code> (voir docs/SYNC-SETUP.md)</li>
-			<li>Créer un compte utilisateur dans l'admin PocketBase</li>
-		</ol>
-	</div>
-
-	<a href="{base}/" class="text-center text-sm font-medium text-forest-800">Retour à la liste</a>
+	<a href="{base}/" class="text-center text-sm font-medium text-forest-800 lg:hidden">Retour à la liste</a>
 </div>

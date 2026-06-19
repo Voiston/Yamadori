@@ -9,8 +9,8 @@ import {
 	loadSyncMeta,
 	saveSyncMeta
 } from './config';
-import { enqueueMutation, loadQueue, saveQueue } from './queue';
-import { formatPbError } from './errors';
+import { enqueueMutation, dropMutationsForTree, loadQueue, saveQueue } from './queue';
+import { formatPbError, isRemoteDeletedError } from './errors';
 import {
 	createClient,
 	fetchRemoteChanges,
@@ -91,6 +91,22 @@ export async function refreshPendingCount(): Promise<void> {
 	syncState.pendingCount = (await loadQueue()).length;
 }
 
+async function removeLocalTree(treeId: string): Promise<void> {
+	const meta = await loadSyncMeta();
+	if (!treeStore.trees.some((tree) => tree.id === treeId)) {
+		delete meta.trees[treeId];
+		await saveSyncMeta(meta);
+		await dropMutationsForTree(treeId);
+		return;
+	}
+
+	treeStore.trees = treeStore.trees.filter((tree) => tree.id !== treeId);
+	delete meta.trees[treeId];
+	await set(STORAGE_KEY, toStorable($state.snapshot(treeStore.trees)));
+	await saveSyncMeta(meta);
+	await dropMutationsForTree(treeId);
+}
+
 async function applyRemoteRecords(
 	records: { id: string; clientId: string; payload: Tree; deleted: boolean; updated: string }[]
 ): Promise<void> {
@@ -110,6 +126,7 @@ async function applyRemoteRecords(
 				delete meta.trees[treeId];
 				changed = true;
 			}
+			await dropMutationsForTree(treeId);
 			continue;
 		}
 
@@ -157,12 +174,23 @@ async function pushQueue(
 					remaining.splice(remaining.indexOf(mutation), 1);
 					continue;
 				}
-				const record = await upsertTreeRecord(pb, tree);
-				meta.trees[mutation.treeId] = {
-					pbId: record.id,
-					localUpdatedAt: meta.trees[mutation.treeId]?.localUpdatedAt ?? new Date().toISOString(),
-					remoteUpdatedAt: record.updated
-				};
+				try {
+					const record = await upsertTreeRecord(pb, tree);
+					meta.trees[mutation.treeId] = {
+						pbId: record.id,
+						localUpdatedAt: meta.trees[mutation.treeId]?.localUpdatedAt ?? new Date().toISOString(),
+						remoteUpdatedAt: record.updated
+					};
+				} catch (error) {
+					if (isRemoteDeletedError(error)) {
+						await removeLocalTree(mutation.treeId);
+						delete meta.trees[mutation.treeId];
+						report.succeeded += 1;
+						remaining.splice(remaining.indexOf(mutation), 1);
+						continue;
+					}
+					throw error;
+				}
 			}
 			report.succeeded += 1;
 			remaining.splice(remaining.indexOf(mutation), 1);

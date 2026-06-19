@@ -7,6 +7,9 @@
 	--color-surface: #f8faf8;
 	--color-muted: #6b7280;
 	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--layout-sidebar-width: 14rem;
+	--layout-content-max: 80rem;
+	--layout-mobile-max: 32rem;
 }
 
 @layer base {

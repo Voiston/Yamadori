@@ -294,7 +294,7 @@
 	let gpsCount = $derived(treesWithGps().length);
 </script>
 
-<div class="relative h-[calc(100dvh-3.5rem-4rem)] min-h-[320px] w-full">
+<div class="relative h-[calc(100dvh-3.5rem-4rem)] min-h-[320px] w-full lg:h-[calc(100dvh-3.5rem)]">
 	<div bind:this={mapContainer} class="h-full w-full"></div>
 
 	<div class="absolute top-3 left-3 flex flex-col gap-2">

@@ -53,7 +53,7 @@
 </script>
 
 <div
-	class="flex h-[calc(100dvh-3.5rem-4rem)] min-h-[320px] flex-col gap-4 overflow-y-auto px-4 py-6"
+	class="flex h-[calc(100dvh-3.5rem-4rem)] min-h-[320px] flex-col gap-4 overflow-y-auto px-4 py-6 lg:h-[calc(100dvh-3.5rem)]"
 >
 	<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
 		<p class="font-semibold">Carte indisponible hors-ligne</p>

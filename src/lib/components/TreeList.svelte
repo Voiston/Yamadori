@@ -36,7 +36,7 @@
 		<p class="mt-2 max-w-xs text-base text-muted">{emptyMessage}</p>
 	</div>
 {:else}
-	<ul class="flex flex-col gap-3">
+	<ul class="flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:gap-4 xl:grid-cols-3">
 		{#each trees as tree (tree.id)}
 			<li>
 				<TreeCard {tree} distanceMeters={distanceByTreeId[tree.id] ?? null} />

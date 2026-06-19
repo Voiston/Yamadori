@@ -43,7 +43,7 @@
 			{climate.startDate} → {climate.endDate}
 		</p>
 
-		<div class="mt-4 flex flex-col gap-3">
+		<div class="mt-4 flex flex-col gap-3 md:grid md:grid-cols-3 md:gap-3">
 			<article class="rounded-lg bg-sky-50 px-4 py-3">
 				<p class="text-sm font-medium text-forest-900">❄️ Température minimale absolue</p>
 				<p class="mt-1 text-2xl font-semibold text-forest-800">

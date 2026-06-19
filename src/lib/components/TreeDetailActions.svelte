@@ -66,7 +66,7 @@
 		<button
 			type="button"
 			onclick={handleNavigate}
-			class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
+			class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98] lg:hover:bg-gray-50"
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
@@ -84,7 +84,7 @@
 
 		<a
 			href="{base}/map?focus={tree.id}"
-			class="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
+			class="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98] lg:hover:bg-gray-50"
 			title={!onlineState.online ? 'Carte IGN indisponible hors-ligne — boussole recommandée' : undefined}
 		>
 			<span class="flex items-center gap-2">
@@ -110,7 +110,7 @@
 		<button
 			type="button"
 			onclick={handleCopy}
-			class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
+			class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98] lg:hover:bg-gray-50"
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
@@ -131,7 +131,7 @@
 	<button
 		type="button"
 		onclick={handleShare}
-		class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
+		class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98] lg:hover:bg-gray-50"
 	>
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
@@ -152,7 +152,7 @@
 	<button
 		type="button"
 		onclick={() => onedit?.()}
-		class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
+		class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98] lg:hover:bg-gray-50"
 	>
 		<svg
 			xmlns="http://www.w3.org/2000/svg"

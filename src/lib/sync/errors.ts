@@ -1,5 +1,16 @@
 import { ClientResponseError } from 'pocketbase';
 
+export class RemoteDeletedError extends Error {
+	constructor(readonly treeId: string) {
+		super(`Fiche supprimée sur le serveur (${treeId})`);
+		this.name = 'RemoteDeletedError';
+	}
+}
+
+export function isRemoteDeletedError(error: unknown): error is RemoteDeletedError {
+	return error instanceof RemoteDeletedError;
+}
+
 export function formatPbError(error: unknown): string {
 	if (error instanceof ClientResponseError) {
 		const prefix = error.status ? `HTTP ${error.status} — ` : '';

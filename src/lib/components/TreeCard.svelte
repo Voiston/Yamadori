@@ -17,11 +17,11 @@
 
 <a
 	href="{base}/tree/{tree.id}"
-	class="block transition active:scale-[0.98]"
+	class="block transition active:scale-[0.98] lg:hover:shadow-md"
 	aria-label="Voir le détail de {tree.species}"
 >
 	<article
-		class="flex items-center gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm"
+		class="flex items-center gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition lg:hover:bg-gray-50"
 	>
 		<div class="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100">
 			{#if coverPhoto}

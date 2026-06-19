@@ -39,6 +39,11 @@ export async function enqueueMutation(mutation: SyncMutation): Promise<void> {
 	await saveQueue([...withoutDuplicate, mutation]);
 }
 
+export async function dropMutationsForTree(treeId: string): Promise<void> {
+	const queue = await loadQueue();
+	await saveQueue(queue.filter((item) => item.treeId !== treeId));
+}
+
 export async function clearQueue(): Promise<void> {
 	await saveQueue([]);
 }

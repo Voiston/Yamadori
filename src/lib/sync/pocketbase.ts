@@ -3,7 +3,7 @@ import type { Tree } from '$lib/types/tree';
 import type { SyncConfig, TreeSyncRecord } from '$lib/types/sync';
 import { toStorable } from '$lib/utils/idb-store';
 import { clearAuthToken, loadAuthToken, normalizeServerUrl, saveAuthToken } from './config';
-import { formatPbError } from './errors';
+import { formatPbError, RemoteDeletedError } from './errors';
 
 const COLLECTION = 'trees';
 
@@ -22,6 +22,18 @@ const LIST_PAGE_SIZE = 100;
 function isNewerThan(updated: string, since: string | null): boolean {
 	if (!since) return true;
 	return new Date(updated).getTime() > new Date(since).getTime() - 1000;
+}
+
+function shouldFetchSummary(
+	summary: TreeListSummary,
+	since: string | null,
+	localClientIds: Set<string>,
+	fullPull: boolean
+): boolean {
+	if (fullPull) return true;
+	// Tombstones : toujours récupérer si la fiche existe encore en local
+	if (summary.deleted && localClientIds.has(summary.clientId)) return true;
+	return isNewerThan(summary.updated, since) || !localClientIds.has(summary.clientId);
 }
 
 function assertPayloadSize(payload: Tree, label: string): void {
@@ -85,7 +97,11 @@ export async function upsertTreeRecord(pb: PocketBase, tree: Tree): Promise<Tree
 	});
 
 	if (existing.items.length > 0) {
-		return pb.collection(COLLECTION).update<TreeSyncRecord>(existing.items[0].id, {
+		const remote = existing.items[0];
+		if (remote.deleted) {
+			throw new RemoteDeletedError(tree.id);
+		}
+		return pb.collection(COLLECTION).update<TreeSyncRecord>(remote.id, {
 			payload,
 			deleted: false
 		});
@@ -140,13 +156,9 @@ export async function fetchRemoteChanges(
 		page += 1;
 	}
 
-	const toFetch = options.fullPull
-		? summaries
-		: summaries.filter(
-				(summary) =>
-					isNewerThan(summary.updated, options.since) ||
-					!options.localClientIds.has(summary.clientId)
-			);
+	const toFetch = summaries.filter((summary) =>
+		shouldFetchSummary(summary, options.since, options.localClientIds, !!options.fullPull)
+	);
 
 	const records: TreeSyncRecord[] = [];
 	const warnings: string[] = [];

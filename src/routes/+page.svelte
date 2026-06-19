@@ -92,9 +92,9 @@
 	<title>Liste — Yamadori Scouting</title>
 </svelte:head>
 
-<div class="flex flex-col gap-4">
+<div class="flex flex-col gap-4 lg:gap-6">
 	{#if treeStore.trees.length > 0}
-		<div class="flex items-center gap-3">
+		<div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
 			<div class="min-w-0 flex-1">
 				<SearchBar bind:value={query} />
 			</div>

@@ -227,116 +227,127 @@
 	}
 </script>
 
-<form class="flex flex-col gap-6" onsubmit={handleSubmit}>
-	<div class="flex flex-col gap-2">
-		<label for="species" class="text-sm font-medium text-forest-900">Espèce</label>
-		<input
-			id="species"
-			type="text"
-			bind:value={species}
-			autocomplete="off"
-			placeholder="Ex. Pin sylvestre, Genévrier..."
-			disabled={submitting}
-			class="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
-		/>
+<form
+	class="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(280px,1fr)_minmax(0,1.5fr)] lg:items-start lg:gap-8"
+	onsubmit={handleSubmit}
+>
+	<div class="hidden flex-col gap-6 lg:sticky lg:top-20 lg:flex">
+		<PhotoPreview bind:preview={photoPreview} {frontLabel} onfile={handlePhoto} />
+		<VoiceNoteRecorder bind:value={voiceNote} disabled={submitting} />
+	</div>
 
-		{#if gpsLoading}
-			<p class="text-sm text-muted" role="status">Localisation en cours…</p>
-		{:else if capturePosition}
-			<p class="text-sm font-medium text-forest-800" role="status">
-				{liveAltitudeLabel}
+	<div class="flex flex-col gap-6">
+		<div class="flex flex-col gap-2">
+			<label for="species" class="text-sm font-medium text-forest-900">Espèce</label>
+			<input
+				id="species"
+				type="text"
+				bind:value={species}
+				autocomplete="off"
+				placeholder="Ex. Pin sylvestre, Genévrier..."
+				disabled={submitting}
+				class="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
+			/>
+
+			{#if gpsLoading}
+				<p class="text-sm text-muted" role="status">Localisation en cours…</p>
+			{:else if capturePosition}
+				<p class="text-sm font-medium text-forest-800" role="status">
+					{liveAltitudeLabel}
+				</p>
+			{/if}
+
+			{#if !gpsLoading && capturePosition && suggestions.species.length > 0}
+				<div class="flex flex-col gap-2">
+					<p class="text-xs text-forest-600">{biotopeLabel}</p>
+					<div
+						class="flex flex-wrap gap-2"
+						role="group"
+						aria-label="Suggestions d'espèces selon votre position"
+					>
+						{#each suggestions.species as suggestion (suggestion)}
+							<button
+								type="button"
+								onclick={() => selectSpecies(suggestion)}
+								disabled={submitting}
+								class="h-10 rounded-full px-4 text-sm font-medium transition active:scale-[0.98] disabled:opacity-50 {species ===
+								suggestion
+									? 'bg-forest-800 text-white'
+									: 'border border-gray-200 bg-white text-forest-900'}"
+								aria-pressed={species === suggestion}
+							>
+								{suggestion}
+							</button>
+						{/each}
+					</div>
+				</div>
+			{:else if !gpsLoading && capturePosition && suggestions.species.length === 0}
+				<p class="text-sm text-muted">Aucune suggestion pour cette zone.</p>
+			{/if}
+		</div>
+
+		{#if showClimatePanel}
+			<ClimatePanel climate={climateHistory} loading={climateLoading} error={climateError} />
+		{/if}
+
+		<div class="flex flex-col gap-2">
+			<label for="notes" class="text-sm font-medium text-forest-900">Notes</label>
+			<textarea
+				id="notes"
+				bind:value={notes}
+				rows="4"
+				placeholder="Taille, exposition, état sanitaire, accès..."
+				disabled={submitting}
+				class="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
+			></textarea>
+		</div>
+
+		<div class="flex flex-col gap-6 lg:hidden">
+			<VoiceNoteRecorder bind:value={voiceNote} disabled={submitting} />
+			<PhotoPreview bind:preview={photoPreview} {frontLabel} onfile={handlePhoto} />
+		</div>
+
+		{#if error}
+			<p class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>
+		{/if}
+
+		{#if gpsWarning}
+			<p class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
+				{gpsWarning}
 			</p>
 		{/if}
 
-		{#if !gpsLoading && capturePosition && suggestions.species.length > 0}
-			<div class="flex flex-col gap-2">
-				<p class="text-xs text-forest-600">{biotopeLabel}</p>
-				<div
-					class="flex flex-wrap gap-2"
-					role="group"
-					aria-label="Suggestions d'espèces selon votre position"
-				>
-					{#each suggestions.species as suggestion (suggestion)}
-						<button
-							type="button"
-							onclick={() => selectSpecies(suggestion)}
-							disabled={submitting}
-							class="h-10 rounded-full px-4 text-sm font-medium transition active:scale-[0.98] disabled:opacity-50 {species ===
-							suggestion
-								? 'bg-forest-800 text-white'
-								: 'border border-gray-200 bg-white text-forest-900'}"
-							aria-pressed={species === suggestion}
-						>
-							{suggestion}
-						</button>
-					{/each}
-				</div>
-			</div>
-		{:else if !gpsLoading && capturePosition && suggestions.species.length === 0}
-			<p class="text-sm text-muted">Aucune suggestion pour cette zone.</p>
+		{#if gpsSuccess}
+			<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800" role="status">
+				{gpsSuccess}
+			</p>
 		{/if}
-	</div>
 
-	{#if showClimatePanel}
-		<ClimatePanel climate={climateHistory} loading={climateLoading} error={climateError} />
-	{/if}
-
-	<div class="flex flex-col gap-2">
-		<label for="notes" class="text-sm font-medium text-forest-900">Notes</label>
-		<textarea
-			id="notes"
-			bind:value={notes}
-			rows="4"
-			placeholder="Taille, exposition, état sanitaire, accès..."
+		<button
+			type="submit"
 			disabled={submitting}
-			class="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
-		></textarea>
+			class="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+		>
+			{#if submitting}
+				<svg
+					class="h-5 w-5 animate-spin"
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+					aria-hidden="true"
+				>
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+					></circle>
+					<path
+						class="opacity-75"
+						fill="currentColor"
+						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+					></path>
+				</svg>
+				Enregistrement...
+			{:else}
+				Enregistrer l'arbre
+			{/if}
+		</button>
 	</div>
-
-	<VoiceNoteRecorder bind:value={voiceNote} disabled={submitting} />
-
-	<PhotoPreview bind:preview={photoPreview} {frontLabel} onfile={handlePhoto} />
-
-	{#if error}
-		<p class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>
-	{/if}
-
-	{#if gpsWarning}
-		<p class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
-			{gpsWarning}
-		</p>
-	{/if}
-
-	{#if gpsSuccess}
-		<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800" role="status">
-			{gpsSuccess}
-		</p>
-	{/if}
-
-	<button
-		type="submit"
-		disabled={submitting}
-		class="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
-	>
-		{#if submitting}
-			<svg
-				class="h-5 w-5 animate-spin"
-				xmlns="http://www.w3.org/2000/svg"
-				fill="none"
-				viewBox="0 0 24 24"
-				aria-hidden="true"
-			>
-				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-				></circle>
-				<path
-					class="opacity-75"
-					fill="currentColor"
-					d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-				></path>
-			</svg>
-			Enregistrement...
-		{:else}
-			Enregistrer l'arbre
-		{/if}
-	</button>
 </form>

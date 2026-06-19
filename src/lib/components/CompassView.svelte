@@ -115,7 +115,7 @@
 			{/if}
 		</div>
 
-		<div class="relative flex h-64 w-64 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm">
+		<div class="relative flex h-64 w-64 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm lg:h-80 lg:w-80">
 			<div class="absolute inset-4 rounded-full border border-dashed border-gray-200"></div>
 			<span class="absolute top-3 text-xs font-medium text-muted">N</span>
 			<div
