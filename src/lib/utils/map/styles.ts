@@ -43,6 +43,11 @@ export function createIgnMapStyle(): StyleSpecification {
 		},
 		layers: [
 			{
+				id: 'background',
+				type: 'background',
+				paint: { 'background-color': '#e8ebe4' }
+			},
+			{
 				id: 'ign-plan-layer',
 				type: 'raster',
 				source: 'ign-plan',

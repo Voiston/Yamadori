@@ -23,7 +23,7 @@ const LAYERS: Record<IgnLayerId, IgnLayerConfig> = {
 		attribution: '© IGN / Géoplateforme — Orthophotos'
 	},
 	hillshade: {
-		layer: 'ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW',
+		layer: 'GEOGRAPHICALGRIDSYSTEMS.SLOPES.PAC',
 		format: 'image/png',
 		maxZoom: 17,
 		attribution: '© IGN / Géoplateforme — Relief'
@@ -37,25 +37,17 @@ function getApiKey(): string | undefined {
 
 export function buildIgnTileUrl(layerId: IgnLayerId): string {
 	const config = LAYERS[layerId];
-	const params = new URLSearchParams({
-		SERVICE: 'WMTS',
-		REQUEST: 'GetTile',
-		VERSION: '1.0.0',
-		LAYER: config.layer,
-		STYLE: 'normal',
-		FORMAT: config.format,
-		TILEMATRIXSET: 'PM',
-		TILEMATRIX: '{z}',
-		TILEROW: '{y}',
-		TILECOL: '{x}'
-	});
+	let url =
+		`${WMTS_BASE}?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0` +
+		`&LAYER=${config.layer}&STYLE=normal&FORMAT=${config.format}` +
+		`&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}`;
 
 	const apiKey = getApiKey();
 	if (apiKey) {
-		params.set('apikey', apiKey);
+		url += `&apikey=${encodeURIComponent(apiKey)}`;
 	}
 
-	return `${WMTS_BASE}?${params.toString()}`;
+	return url;
 }
 
 export function getIgnLayerConfig(layerId: IgnLayerId): IgnLayerConfig {

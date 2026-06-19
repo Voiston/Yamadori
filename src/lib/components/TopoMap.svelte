@@ -43,6 +43,7 @@
 	const popups = new Map<string, Popup>();
 	let userMarker: Marker | undefined;
 	let mapReady = $state(false);
+	let tileError = $state('');
 
 	function escapeHtml(text: string): string {
 		return text
@@ -249,6 +250,11 @@
 		});
 
 		instance.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+		instance.on('error', (event) => {
+			if (event.error?.message) {
+				tileError = 'Impossible de charger les tuiles IGN — vérifiez votre connexion';
+			}
+		});
 		instance.on('load', () => {
 			map = instance;
 			mapReady = true;
@@ -321,7 +327,14 @@
 		</button>
 	</div>
 
-	{#if gpsCount === 0}
+	{#if tileError}
+		<div
+			class="pointer-events-none absolute inset-x-4 top-20 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-900 shadow-sm"
+			role="alert"
+		>
+			{tileError}
+		</div>
+	{:else if gpsCount === 0}
 		<div
 			class="pointer-events-none absolute inset-x-4 top-20 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-900 shadow-sm"
 			role="status"
