@@ -1,10 +1,18 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { DEFAULT_ASSESSMENT } from '$lib/types/tree';
 	import { addTree } from '$lib/stores/trees.svelte';
+	import { goHome } from '$lib/utils/app-navigation';
+	import { formatBiologicalAltitude } from '$lib/utils/altitude';
+	import {
+		formatFrontLabel,
+		getDeviceHeading,
+		requestOrientationPermission
+	} from '$lib/utils/compass';
 	import { getCoordinates } from '$lib/utils/geo';
 	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
 	import { compressImage } from '$lib/utils/photo';
+	import { getSpeciesSuggestionsForPosition } from '$lib/utils/species-suggestions';
+	import { onMount } from 'svelte';
 	import PhotoPreview from './PhotoPreview.svelte';
 
 	let species = $state('');
@@ -15,6 +23,88 @@
 	let gpsWarning = $state('');
 	let gpsSuccess = $state('');
 	let error = $state('');
+
+	let capturePosition = $state<{
+		latitude: number;
+		longitude: number;
+		altitudeMeters: number | null;
+	} | null>(null);
+	let gpsLoading = $state(true);
+	let currentHeading = $state<number | null>(null);
+	let frontHeadingDegrees = $state<number | null>(null);
+
+	const suggestions = $derived.by(() => {
+		if (!capturePosition) {
+			return { regions: [], species: [] as string[] };
+		}
+		return getSpeciesSuggestionsForPosition(
+			capturePosition.latitude,
+			capturePosition.longitude
+		);
+	});
+
+	const biotopeLabel = $derived.by(() => {
+		const { regions } = suggestions;
+		if (regions.length === 0) return '';
+		if (regions.length === 1) return `${regions[0].name} — ${regions[0].biotope}`;
+		return `${regions.length} biotopes — ${regions.map((r) => r.name).join(', ')}`;
+	});
+
+	const liveAltitudeLabel = $derived.by(() => {
+		if (!capturePosition) {
+			return null;
+		}
+		return formatBiologicalAltitude(capturePosition.altitudeMeters) ?? 'Altitude : non disponible';
+	});
+
+	const frontLabel = $derived(formatFrontLabel(frontHeadingDegrees));
+
+	function handleOrientation(event: DeviceOrientationEvent) {
+		const value = getDeviceHeading(event);
+		if (value !== null) {
+			currentHeading = value;
+		}
+	}
+
+	onMount(() => {
+		let watchId: number | null = null;
+
+		void requestOrientationPermission().then((granted) => {
+			if (granted) {
+				window.addEventListener('deviceorientation', handleOrientation, true);
+			}
+		});
+
+		if (navigator.geolocation) {
+			watchId = navigator.geolocation.watchPosition(
+				(pos) => {
+					capturePosition = {
+						latitude: pos.coords.latitude,
+						longitude: pos.coords.longitude,
+						altitudeMeters: pos.coords.altitude ?? null
+					};
+					gpsLoading = false;
+				},
+				() => {
+					gpsLoading = false;
+				},
+				{
+					enableHighAccuracy: true,
+					maximumAge: 5_000,
+					timeout: 15_000
+				}
+			);
+		} else {
+			gpsLoading = false;
+		}
+
+		return () => {
+			window.removeEventListener('deviceorientation', handleOrientation, true);
+			if (watchId !== null) {
+				navigator.geolocation.clearWatch(watchId);
+			}
+		};
+	});
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
@@ -38,7 +128,10 @@
 			} else if (isPoorAccuracy(accuracyMeters)) {
 				gpsWarning = `Précision faible (${formatAccuracy(accuracyMeters)}) — position approximative en forêt`;
 			} else {
-				gpsSuccess = `Position enregistrée (${formatAccuracy(accuracyMeters)})`;
+				const altitudePart = formatBiologicalAltitude(altitudeMeters);
+				gpsSuccess = altitudePart
+					? `Position enregistrée (${formatAccuracy(accuracyMeters)}) · ${altitudePart}`
+					: `Position enregistrée (${formatAccuracy(accuracyMeters)})`;
 			}
 
 			let photos: string[] = [];
@@ -54,11 +147,12 @@
 				longitude,
 				accuracyMeters,
 				altitudeMeters,
+				frontHeadingDegrees,
 				isFavorite: false,
 				assessment: { ...DEFAULT_ASSESSMENT }
 			});
 
-			await goto('/');
+			goHome();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement.';
 		} finally {
@@ -68,6 +162,11 @@
 
 	function handlePhoto(file: File) {
 		photoFile = file;
+		frontHeadingDegrees = currentHeading;
+	}
+
+	function selectSpecies(name: string) {
+		species = name;
 	}
 </script>
 
@@ -83,6 +182,42 @@
 			disabled={submitting}
 			class="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
 		/>
+
+		{#if gpsLoading}
+			<p class="text-sm text-muted" role="status">Localisation en cours…</p>
+		{:else if capturePosition}
+			<p class="text-sm font-medium text-forest-800" role="status">
+				{liveAltitudeLabel}
+			</p>
+		{/if}
+
+		{#if !gpsLoading && capturePosition && suggestions.species.length > 0}
+			<div class="flex flex-col gap-2">
+				<p class="text-xs text-forest-600">{biotopeLabel}</p>
+				<div
+					class="flex flex-wrap gap-2"
+					role="group"
+					aria-label="Suggestions d'espèces selon votre position"
+				>
+					{#each suggestions.species as suggestion (suggestion)}
+						<button
+							type="button"
+							onclick={() => selectSpecies(suggestion)}
+							disabled={submitting}
+							class="h-10 rounded-full px-4 text-sm font-medium transition active:scale-[0.98] disabled:opacity-50 {species ===
+							suggestion
+								? 'bg-forest-800 text-white'
+								: 'border border-gray-200 bg-white text-forest-900'}"
+							aria-pressed={species === suggestion}
+						>
+							{suggestion}
+						</button>
+					{/each}
+				</div>
+			</div>
+		{:else if !gpsLoading && capturePosition && suggestions.species.length === 0}
+			<p class="text-sm text-muted">Aucune suggestion pour cette zone.</p>
+		{/if}
 	</div>
 
 	<div class="flex flex-col gap-2">
@@ -97,7 +232,7 @@
 		></textarea>
 	</div>
 
-	<PhotoPreview bind:preview={photoPreview} onfile={handlePhoto} />
+	<PhotoPreview bind:preview={photoPreview} {frontLabel} onfile={handlePhoto} />
 
 	{#if error}
 		<p class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>

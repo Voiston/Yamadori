@@ -1,9 +1,11 @@
 <script lang="ts">
 	let {
 		preview = $bindable(''),
+		frontLabel = null,
 		onfile
 	}: {
 		preview?: string;
+		frontLabel?: string | null;
 		onfile?: (file: File) => void;
 	} = $props();
 
@@ -59,10 +61,14 @@
 					</svg>
 				</div>
 				<span class="text-base font-medium text-forest-900">Prendre une photo</span>
-				<span class="text-sm text-muted">Appuyez pour ouvrir la caméra</span>
+				<span class="text-sm text-muted">Cadrez le front de l'arbre face à vous</span>
 			</div>
 		{/if}
 	</button>
+
+	{#if frontLabel}
+		<p class="text-sm text-forest-700" role="status">{frontLabel}</p>
+	{/if}
 
 	<input
 		bind:this={inputEl}

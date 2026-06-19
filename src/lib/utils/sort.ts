@@ -12,7 +12,9 @@ export type SortKey =
 	| 'size_class'
 	| 'caliber'
 	| 'trunk_diameter'
-	| 'species';
+	| 'species'
+	| 'altitude_desc'
+	| 'altitude_asc';
 
 export interface UserPosition {
 	latitude: number;
@@ -29,7 +31,9 @@ export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
 	{ value: 'size_class', label: 'Taille' },
 	{ value: 'caliber', label: 'Calibre' },
 	{ value: 'trunk_diameter', label: 'Diamètre tronc' },
-	{ value: 'species', label: 'Espèce (A–Z)' }
+	{ value: 'species', label: 'Espèce (A–Z)' },
+	{ value: 'altitude_desc', label: 'Altitude (haute)' },
+	{ value: 'altitude_asc', label: 'Altitude (basse)' }
 ];
 
 function distanceForTree(tree: Tree, userPosition?: UserPosition): number | null {
@@ -118,6 +122,10 @@ export function sortTrees(
 				);
 			case 'species':
 				return a.species.localeCompare(b.species, 'fr');
+			case 'altitude_desc':
+				return compareNullableNumber(a.altitudeMeters, b.altitudeMeters, 'desc');
+			case 'altitude_asc':
+				return compareNullableNumber(a.altitudeMeters, b.altitudeMeters, 'asc');
 			default:
 				return 0;
 		}

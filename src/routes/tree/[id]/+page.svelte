@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import AddVisitForm from '$lib/components/AddVisitForm.svelte';
@@ -9,12 +8,25 @@
 	import TreeDetailActions from '$lib/components/TreeDetailActions.svelte';
 	import VisitTimeline from '$lib/components/VisitTimeline.svelte';
 	import { deleteTree, getTreeById, toggleFavorite, updateTree } from '$lib/stores/trees.svelte';
+	import { goHome } from '$lib/utils/app-navigation';
 	import { formatDate } from '$lib/utils/date';
-	import { formatAccuracy, formatAltitude, isPoorAccuracy } from '$lib/utils/gps';
+	import {
+		formatBiologicalAltitude,
+		getBiologicalTier
+	} from '$lib/utils/altitude';
+	import { formatFrontHeading } from '$lib/utils/compass';
+	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
 
 	let treeId = $derived(page.params.id ?? '');
 	let tree = $derived(treeId ? getTreeById(treeId) : undefined);
 	let pageUrl = $derived(`${page.url.origin}${base}/tree/${treeId}`);
+	let altitudeLabel = $derived(
+		tree ? formatBiologicalAltitude(tree.altitudeMeters) : null
+	);
+	let altitudeTier = $derived(tree ? getBiologicalTier(tree.altitudeMeters) : null);
+	let frontHeadingLabel = $derived(
+		tree ? formatFrontHeading(tree.frontHeadingDegrees) : null
+	);
 
 	let showDeleteDialog = $state(false);
 	let editing = $state(false);
@@ -73,7 +85,7 @@
 		deleting = true;
 		try {
 			await deleteTree(tree.id);
-			await goto('/');
+			goHome();
 		} finally {
 			deleting = false;
 		}
@@ -189,9 +201,34 @@
 					>
 						Précision : {formatAccuracy(tree.accuracyMeters)}
 					</p>
-					{#if formatAltitude(tree.altitudeMeters)}
-						<p class="mt-1 text-sm text-forest-600">
-							Altitude : {formatAltitude(tree.altitudeMeters)}
+					{#if altitudeLabel}
+						<p class="mt-2 text-base font-medium text-forest-900">
+							{altitudeLabel}
+						</p>
+						{#if altitudeTier}
+							<span
+								class="mt-2 inline-flex rounded-full bg-forest-800/10 px-3 py-1 text-xs font-medium text-forest-800"
+							>
+								{altitudeTier.shortLabel}
+							</span>
+						{/if}
+					{/if}
+					{#if frontHeadingLabel}
+						<p class="mt-3 flex items-center gap-2 text-sm text-forest-700">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								class="h-4 w-4 shrink-0"
+								aria-hidden="true"
+							>
+								<circle cx="12" cy="12" r="10" />
+								<path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+								<path d="M12 8l3 8-3-2-3 2 3-8z" fill="currentColor" stroke="none" />
+							</svg>
+							Front : {frontHeadingLabel}
 						</p>
 					{/if}
 				{:else}

@@ -7,6 +7,8 @@ import {
 	NEARI_OPTIONS,
 	SIZE_OPTIONS
 } from '$lib/constants/assessment';
+import { getBiologicalTier } from '$lib/utils/altitude';
+import { formatFrontHeading } from '$lib/utils/compass';
 
 function escapeCsvField(value: string): string {
 	if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
@@ -36,6 +38,9 @@ export function exportTreesCsv(trees: Tree[]): void {
 		'longitude',
 		'accuracyMeters',
 		'altitudeMeters',
+		'biologicalTier',
+		'frontHeadingDegrees',
+		'frontHeadingLabel',
 		'isFavorite',
 		'notes',
 		'visitCount',
@@ -58,6 +63,9 @@ export function exportTreesCsv(trees: Tree[]): void {
 			formatNullable(tree.longitude),
 			formatNullable(tree.accuracyMeters),
 			formatNullable(tree.altitudeMeters),
+			getBiologicalTier(tree.altitudeMeters)?.label ?? '',
+			formatNullable(tree.frontHeadingDegrees),
+			formatFrontHeading(tree.frontHeadingDegrees) ?? '',
 			tree.isFavorite ? 'true' : 'false',
 			tree.notes,
 			String(tree.visits.length),

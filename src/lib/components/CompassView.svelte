@@ -7,6 +7,7 @@
 		haversineDistanceM,
 		normalizeAngle
 	} from '$lib/utils/haversine';
+	import { getDeviceHeading, requestOrientationPermission } from '$lib/utils/compass';
 	import {
 		requestCurrentPosition,
 		startWatchingPosition,
@@ -58,18 +59,6 @@
 		heading === null ? '' : getRelativeDirection(arrowRotation)
 	);
 
-	function getDeviceHeading(event: DeviceOrientationEvent): number | null {
-		const webkitHeading = (event as DeviceOrientationEvent & { webkitCompassHeading?: number })
-			.webkitCompassHeading;
-		if (typeof webkitHeading === 'number') {
-			return webkitHeading;
-		}
-		if (event.alpha !== null) {
-			return (360 - event.alpha) % 360;
-		}
-		return null;
-	}
-
 	function handleOrientation(event: DeviceOrientationEvent) {
 		const value = getDeviceHeading(event);
 		if (value !== null) {
@@ -79,23 +68,10 @@
 
 	async function enableOrientation() {
 		orientationError = '';
-		const requestPermission = (
-			DeviceOrientationEvent as typeof DeviceOrientationEvent & {
-				requestPermission?: () => Promise<'granted' | 'denied'>;
-			}
-		).requestPermission;
-
-		if (requestPermission) {
-			try {
-				const result = await requestPermission();
-				if (result !== 'granted') {
-					orientationError = 'Permission boussole refusée';
-					return;
-				}
-			} catch {
-				orientationError = 'Permission boussole refusée';
-				return;
-			}
+		const granted = await requestOrientationPermission();
+		if (!granted) {
+			orientationError = 'Permission boussole refusée';
+			return;
 		}
 
 		window.addEventListener('deviceorientation', handleOrientation, true);

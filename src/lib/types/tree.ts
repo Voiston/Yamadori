@@ -42,6 +42,7 @@ export interface Tree {
 	longitude: number | null;
 	accuracyMeters: number | null;
 	altitudeMeters: number | null;
+	frontHeadingDegrees: number | null;
 	isFavorite: boolean;
 	capturedAt: string;
 }

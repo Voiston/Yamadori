@@ -1,6 +1,8 @@
 import type { Tree } from '$lib/types/tree';
 import { formatDate } from '$lib/utils/date';
-import { formatAccuracy, formatAltitude } from '$lib/utils/gps';
+import { formatBiologicalAltitude } from '$lib/utils/altitude';
+import { formatFrontHeading } from '$lib/utils/compass';
+import { formatAccuracy } from '$lib/utils/gps';
 
 function buildShareText(tree: Tree, url: string): string {
 	const lines = [
@@ -13,9 +15,13 @@ function buildShareText(tree: Tree, url: string): string {
 			`GPS : ${tree.latitude.toFixed(5)}, ${tree.longitude.toFixed(5)}`,
 			`Précision : ${formatAccuracy(tree.accuracyMeters)}`
 		);
-		const altitude = formatAltitude(tree.altitudeMeters);
+		const altitude = formatBiologicalAltitude(tree.altitudeMeters);
 		if (altitude) {
 			lines.push(`Altitude : ${altitude}`);
+		}
+		const front = formatFrontHeading(tree.frontHeadingDegrees);
+		if (front) {
+			lines.push(`Front : ${front}`);
 		}
 	}
 

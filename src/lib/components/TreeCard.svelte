@@ -3,6 +3,7 @@
 	import type { Tree } from '$lib/types/tree';
 	import { base } from '$app/paths';
 	import { formatDate } from '$lib/utils/date';
+	import { formatAltitudeWithTierShort } from '$lib/utils/altitude';
 	import { hasApproximateGps } from '$lib/utils/gps';
 
 	let { tree, distanceMeters = null }: { tree: Tree; distanceMeters?: number | null } = $props();
@@ -74,6 +75,9 @@
 			{#if tree.latitude !== null && tree.longitude !== null}
 				<p class="mt-1 truncate text-xs text-forest-600">
 					{tree.latitude.toFixed(5)}, {tree.longitude.toFixed(5)}
+					{#if formatAltitudeWithTierShort(tree.altitudeMeters)}
+						· {formatAltitudeWithTierShort(tree.altitudeMeters)}
+					{/if}
 					{#if distanceMeters !== null}
 						· {distanceMeters < 1000 ? `${Math.round(distanceMeters)} m` : `${(distanceMeters / 1000).toFixed(1)} km`}
 					{/if}
