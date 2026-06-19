@@ -54,7 +54,10 @@
 	let syncLabel = $derived.by(() => {
 		if (syncState.status === 'syncing') return 'Sync…';
 		if (syncState.pendingCount > 0) return `${syncState.pendingCount} en attente`;
-		if (syncState.status === 'error') return 'Sync erreur';
+		if (syncState.status === 'error') {
+			const detail = syncState.lastError?.split(':')[0] ?? 'Sync erreur';
+			return detail.length > 24 ? 'Sync erreur' : detail;
+		}
 		if (syncState.status === 'offline' && syncState.pendingCount > 0) return 'Hors sync';
 		return null;
 	});

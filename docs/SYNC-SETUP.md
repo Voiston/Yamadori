@@ -62,13 +62,36 @@ Note l'URL affichée, par ex. `https://david-pc.tail12345.ts.net`
 
 ## 6. Configurer l'app
 
-1. Lance l'app : `npm run dev`
-2. Ouvre **Réglages** (icône engrenage)
-3. Renseigne :
-   - URL : `https://david-pc.tail12345.ts.net`
-   - Email + mot de passe PocketBase
-4. Clique **Tester la connexion**
-5. Clique **Envoyer toutes les fiches locales** pour la première sync
+### Sur le téléphone (terrain)
+
+1. Ouvre l'app Yamadori (PWA ou navigateur)
+2. **Réglages** → URL : `https://artamiel.tail12345.ts.net` (Tailscale)
+3. Email + mot de passe → **Tester la connexion**
+4. **Envoyer toutes les fiches locales** (première fois)
+
+### Sur le PC (consultation)
+
+1. Lance l'app : `npm run dev` → `http://localhost:5173`
+2. **Réglages** → URL : `http://127.0.0.1:8090` (recommandé en local, plus fiable que Tailscale)
+3. Même email + mot de passe → **Tester la connexion**
+4. **Récupérer depuis le serveur** pour importer les fiches du portable
+
+> Chaque appareil a sa propre base locale (IndexedDB). PocketBase sur le PC est le point de rencontre : le portable envoie, le PC récupère.
+
+## 8. Sync multi-appareils (quotidien)
+
+| Appareil | Rôle | Action manuelle |
+|---|---|---|
+| Téléphone | Capture en forêt | Rien — sync auto toutes les ~30 s |
+| PC | Archive + consultation | **Récupérer depuis le serveur** si besoin immédiat |
+
+Flux automatique :
+
+1. Tu captures sur le portable → données locales + file d'attente
+2. Réseau + PC allumé → envoi vers PocketBase
+3. Sur le PC, l'app récupère les nouvelles fiches au prochain cycle de sync (ou via **Récupérer depuis le serveur**)
+
+Les fiches visibles dans l'admin PocketBase (`/_/` → trees) sont sur le serveur. Si elles n'apparaissent pas dans l'app PC, clique **Récupérer depuis le serveur** dans Réglages.
 
 ### Dépannage IndexedDB
 
@@ -94,17 +117,50 @@ Si **Envoyer toutes les fiches locales** affiche `Something went wrong while pro
 3. Vérifie le badge « X en attente »
 4. Réactive le réseau → sync auto sous ~30 s
 
-## Démarrage automatique (optionnel)
+## Démarrage automatique (Windows)
 
-Raccourci dans `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\` :
+Scripts dans [`scripts/windows/`](../scripts/windows/) :
+
+### 1. Configuration (une fois)
+
+```powershell
+cd E:\Yamadori\scripts\windows
+copy yamadori-sync.config.example.ps1 yamadori-sync.config.ps1
+notepad yamadori-sync.config.ps1
+```
+
+Verifiez `$PocketBaseDir` (ex. `C:\Yamadori` si `pocketbase.exe` est la).
+
+### 2. Test manuel
+
+```powershell
+.\Start-YamadoriSync.ps1
+```
+
+Demarre PocketBase (en arriere-plan) + `tailscale serve --bg`. Logs : `C:\Yamadori\logs\yamadori-sync.log`
+
+### 3. Demarrage auto a chaque login
+
+```powershell
+.\Install-YamadoriSyncStartup.ps1
+```
+
+Cree une tache planifiee **YamadoriSyncServer** (invisible au demarrage).
+
+Desinstaller : `.\Uninstall-YamadoriSyncStartup.ps1`
+
+### 4. Arreter PocketBase
+
+```powershell
+.\Stop-YamadoriSync.ps1
+```
+
+---
+
+Ancienne methode (raccourci Démarrage) — toujours valable :
 
 ```
 C:\Yamadori\pocketbase.exe serve --http=127.0.0.1:8090
-```
-
-Puis au login :
-
-```
 tailscale serve --bg http://127.0.0.1:8090
 ```
 

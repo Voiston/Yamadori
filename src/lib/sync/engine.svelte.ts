@@ -179,7 +179,9 @@ async function pushQueue(
 	return { meta, report };
 }
 
-export async function runSync(options: { fullPush?: boolean } = {}): Promise<boolean> {
+export async function runSync(
+	options: { fullPush?: boolean; fullPull?: boolean } = {}
+): Promise<boolean> {
 	if (syncInFlight) return false;
 	const config = await loadSyncConfig();
 	if (!isSyncConfigured(config)) {
@@ -219,23 +221,26 @@ export async function runSync(options: { fullPush?: boolean } = {}): Promise<boo
 		const pushResult = await pushQueue(pb, meta);
 		meta = pushResult.meta;
 		const pushReport = pushResult.report;
-		const wasFirstSync = !meta.lastSyncAt;
 
-		const skipPull =
-			wasFirstSync && pushReport.failed === 0 && pushReport.succeeded > 0;
-
-		if (!skipPull) {
-			try {
-				const remoteRecords = await fetchRemoteChanges(pb, meta.lastSyncAt);
-				await applyRemoteRecords(remoteRecords);
-			} catch (pullError) {
-				await refreshPendingCount();
-				setStatus(
-					'error',
-					`Envoi OK mais lecture serveur échouée : ${formatPbError(pullError)}`
-				);
-				return false;
+		let pullWarnings: string[] = [];
+		try {
+			const localClientIds = new Set(treeStore.trees.map((tree) => tree.id));
+			const { records, warnings } = await fetchRemoteChanges(pb, {
+				since: options.fullPull ? null : meta.lastSyncAt,
+				localClientIds,
+				fullPull: options.fullPull
+			});
+			pullWarnings = warnings;
+			await applyRemoteRecords(records);
+		} catch (pullError) {
+			await refreshPendingCount();
+			const pullMessage = formatPbError(pullError);
+			if (pushReport.failed === 0 && pushReport.succeeded > 0) {
+				setStatus('error', `Envoi OK mais lecture serveur échouée : ${pullMessage}`);
+			} else {
+				setStatus('error', `Lecture serveur échouée : ${pullMessage}`);
 			}
+			return false;
 		}
 
 		meta.lastSyncAt = new Date().toISOString();
@@ -248,7 +253,13 @@ export async function runSync(options: { fullPush?: boolean } = {}): Promise<boo
 			return false;
 		}
 
-		setStatus(syncState.pendingCount > 0 ? 'error' : 'idle');
+		if (pullWarnings.length > 0) {
+			const detail = pullWarnings.slice(0, 2).join(' ; ');
+			setStatus('idle', `${pullWarnings.length} fiche(s) non récupérée(s) : ${detail}`);
+			return true;
+		}
+
+		setStatus('idle');
 		return true;
 	} catch (error) {
 		const message = formatPbError(error);

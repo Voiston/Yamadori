@@ -80,6 +80,20 @@
 		testing = false;
 	}
 
+	async function handleFullPull() {
+		testing = true;
+		feedback = null;
+		const ok = await runSync({ fullPull: true });
+		if (ok) {
+			feedback = syncState.lastError
+				? { type: 'ok', message: `Récupération partielle. ${syncState.lastError}` }
+				: { type: 'ok', message: 'Fiches récupérées depuis le serveur.' };
+		} else {
+			feedback = { type: 'error', message: syncState.lastError ?? 'Récupération impossible.' };
+		}
+		testing = false;
+	}
+
 	async function handleFullPush() {
 		testing = true;
 		feedback = null;
@@ -145,6 +159,11 @@
 		<p>État : <strong class="text-forest-900">{syncState.status}</strong></p>
 		<p>En attente : <strong class="text-forest-900">{syncState.pendingCount}</strong></p>
 		<p>Dernière sync : <strong class="text-forest-900">{formatLastSync(syncState.lastSyncedAt)}</strong></p>
+		{#if syncState.lastError}
+			<p class="mt-2 text-red-700">
+				Erreur : <strong class="text-red-800">{syncState.lastError}</strong>
+			</p>
+		{/if}
 	</div>
 
 	{#if feedback}
@@ -184,6 +203,15 @@
 			class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
 		>
 			Synchroniser maintenant
+		</button>
+
+		<button
+			type="button"
+			onclick={handleFullPull}
+			disabled={testing || !config.enabled}
+			class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900 transition active:scale-[0.98] disabled:opacity-50"
+		>
+			Récupérer depuis le serveur
 		</button>
 
 		<button

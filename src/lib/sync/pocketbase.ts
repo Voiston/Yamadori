@@ -3,6 +3,7 @@ import type { Tree } from '$lib/types/tree';
 import type { SyncConfig, TreeSyncRecord } from '$lib/types/sync';
 import { toStorable } from '$lib/utils/idb-store';
 import { clearAuthToken, loadAuthToken, normalizeServerUrl, saveAuthToken } from './config';
+import { formatPbError } from './errors';
 
 const COLLECTION = 'trees';
 
@@ -16,8 +17,11 @@ type TreeListSummary = {
 	deleted: boolean;
 };
 
-function formatFilterDate(iso: string): string {
-	return iso.replace('T', ' ');
+const LIST_PAGE_SIZE = 100;
+
+function isNewerThan(updated: string, since: string | null): boolean {
+	if (!since) return true;
+	return new Date(updated).getTime() > new Date(since).getTime() - 1000;
 }
 
 function assertPayloadSize(payload: Tree, label: string): void {
@@ -107,34 +111,47 @@ export async function markTreeDeleted(pb: PocketBase, treeId: string): Promise<v
 	});
 }
 
+export type FetchRemoteOptions = {
+	since: string | null;
+	localClientIds: Set<string>;
+	fullPull?: boolean;
+};
+
+export type FetchRemoteResult = {
+	records: TreeSyncRecord[];
+	warnings: string[];
+};
+
 export async function fetchRemoteChanges(
 	pb: PocketBase,
-	since: string | null
-): Promise<TreeSyncRecord[]> {
+	options: FetchRemoteOptions
+): Promise<FetchRemoteResult> {
 	const summaries: TreeListSummary[] = [];
 	let page = 1;
 
+	// Pas de filtre serveur sur `updated` — PocketBase renvoie 400 avec certaines
+	// syntaxes de date. On filtre côté client après une liste légère (sans payload).
 	while (true) {
-		const options: {
-			fields: string;
-			skipTotal: boolean;
-			filter?: string;
-		} = {
-			fields: 'id,clientId,updated,deleted',
-			skipTotal: true
-		};
-		if (since) {
-			options.filter = `updated > '${formatFilterDate(since)}'`;
-		}
-
-		const batch = await pb.collection(COLLECTION).getList<TreeListSummary>(page, 100, options);
+		const batch = await pb.collection(COLLECTION).getList<TreeListSummary>(page, LIST_PAGE_SIZE, {
+			fields: 'id,clientId,updated,deleted'
+		});
 		summaries.push(...batch.items);
-		if (page >= batch.totalPages) break;
+		if (batch.items.length < LIST_PAGE_SIZE || page >= batch.totalPages) break;
 		page += 1;
 	}
 
+	const toFetch = options.fullPull
+		? summaries
+		: summaries.filter(
+				(summary) =>
+					isNewerThan(summary.updated, options.since) ||
+					!options.localClientIds.has(summary.clientId)
+			);
+
 	const records: TreeSyncRecord[] = [];
-	for (const summary of summaries) {
+	const warnings: string[] = [];
+
+	for (const summary of toFetch) {
 		if (summary.deleted) {
 			records.push({
 				...summary,
@@ -143,9 +160,18 @@ export async function fetchRemoteChanges(
 			});
 			continue;
 		}
-		const full = await pb.collection(COLLECTION).getOne<TreeSyncRecord>(summary.id);
-		records.push(full);
+		try {
+			const full = await pb.collection(COLLECTION).getOne<TreeSyncRecord>(summary.id);
+			records.push(full);
+		} catch (error) {
+			warnings.push(`${summary.clientId}: ${formatPbError(error)}`);
+		}
 	}
 
-	return records;
+	const expectedPayloads = toFetch.filter((summary) => !summary.deleted).length;
+	if (expectedPayloads > 0 && records.filter((r) => !r.deleted).length === 0) {
+		throw new Error(warnings.join(' ; ') || 'Impossible de lire les fiches du serveur.');
+	}
+
+	return { records, warnings };
 }
