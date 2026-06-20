@@ -11,6 +11,7 @@
 		requestOrientationPermission,
 		subscribeDeviceOrientation
 	} from '$lib/utils/compass';
+	import { haversineBearingDeg, haversineDistanceM, normalizeHeading360 } from '$lib/utils/haversine';
 	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
 	import { compressImage } from '$lib/utils/photo';
 	import { getSpeciesSuggestionsForPosition } from '$lib/utils/species-suggestions';
@@ -34,6 +35,8 @@
 		longitude: number;
 		altitudeMeters: number | null;
 		accuracyMeters: number | null;
+		courseDegrees: number | null;
+		speedMps: number | null;
 	} | null>(null);
 	let gpsLoading = $state(true);
 	let climateHistory = $state<ClimateHistory | null>(null);
@@ -163,23 +166,76 @@
 	onMount(() => {
 		let watchId: number | null = null;
 		let unsubscribeOrientation: (() => void) | null = null;
+		let lastWatchCoords: { latitude: number; longitude: number } | null = null;
+
+		function getHeadingFusionContext() {
+			return {
+				latitude: capturePosition?.latitude ?? null,
+				longitude: capturePosition?.longitude ?? null,
+				gpsCourseDegrees: capturePosition?.courseDegrees ?? null,
+				speedMps: capturePosition?.speedMps ?? null
+			};
+		}
 
 		void requestOrientationPermission().then((granted) => {
 			if (granted) {
-				unsubscribeOrientation = subscribeDeviceOrientation((value) => {
-					currentHeading = value;
-				});
+				unsubscribeOrientation = subscribeDeviceOrientation(
+					(value) => {
+						currentHeading = value;
+					},
+					getHeadingFusionContext
+				);
 			}
 		});
 
 		if (navigator.geolocation) {
 			watchId = navigator.geolocation.watchPosition(
 				(pos) => {
+					let courseDegrees: number | null = null;
+					const heading = pos.coords.heading;
+					if (heading !== null && !Number.isNaN(heading) && heading >= 0) {
+						courseDegrees = normalizeHeading360(heading);
+					} else if (
+						lastWatchCoords &&
+						pos.coords.speed !== null &&
+						!Number.isNaN(pos.coords.speed) &&
+						pos.coords.speed >= 0.8
+					) {
+						const movedMeters = haversineDistanceM(
+							lastWatchCoords.latitude,
+							lastWatchCoords.longitude,
+							pos.coords.latitude,
+							pos.coords.longitude
+						);
+						if (movedMeters >= 1) {
+							courseDegrees = haversineBearingDeg(
+								lastWatchCoords.latitude,
+								lastWatchCoords.longitude,
+								pos.coords.latitude,
+								pos.coords.longitude
+							);
+						}
+					}
+
+					const speedMps =
+						pos.coords.speed !== null &&
+						!Number.isNaN(pos.coords.speed) &&
+						pos.coords.speed >= 0
+							? pos.coords.speed
+							: null;
+
+					lastWatchCoords = {
+						latitude: pos.coords.latitude,
+						longitude: pos.coords.longitude
+					};
+
 					capturePosition = {
 						latitude: pos.coords.latitude,
 						longitude: pos.coords.longitude,
 						altitudeMeters: pos.coords.altitude ?? null,
-						accuracyMeters: pos.coords.accuracy ?? null
+						accuracyMeters: pos.coords.accuracy ?? null,
+						courseDegrees,
+						speedMps
 					};
 					gpsLoading = false;
 				},

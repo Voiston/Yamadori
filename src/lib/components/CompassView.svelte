@@ -6,13 +6,16 @@
 		haversineBearingDeg,
 		haversineDistanceM,
 		normalizeAngle,
-		normalizeHeading360
+		normalizeHeading360,
+		shortestAngleDelta,
+		smoothBearing
 	} from '$lib/utils/haversine';
 	import {
 		headingToCardinal,
 		requestOrientationPermission,
 		subscribeDeviceOrientation
 	} from '$lib/utils/compass';
+	import { isGpsCourseFusionActive } from '$lib/utils/haversine';
 	import {
 		requestCurrentPosition,
 		startWatchingPosition,
@@ -27,6 +30,9 @@
 	let orientationEnabled = $state(false);
 	let orientationError = $state('');
 	let unsubscribeOrientation: (() => void) | null = null;
+	let smoothedBearing = $state<number | null>(null);
+	let lastBearingPosition = $state<{ latitude: number; longitude: number } | null>(null);
+	let displayRotation = $state(0);
 
 	let distance = $derived.by(() => {
 		if (
@@ -44,17 +50,38 @@
 		);
 	});
 
-	let bearing = $derived.by(() => {
-		if (!userPositionState.position || target.latitude === null || target.longitude === null) {
-			return null;
+	$effect(() => {
+		const position = userPositionState.position;
+		if (!position || target.latitude === null || target.longitude === null) {
+			smoothedBearing = null;
+			lastBearingPosition = null;
+			return;
 		}
-		return haversineBearingDeg(
-			userPositionState.position.latitude,
-			userPositionState.position.longitude,
+
+		const nextBearing = haversineBearingDeg(
+			position.latitude,
+			position.longitude,
 			target.latitude,
 			target.longitude
 		);
+
+		const movedMeters = lastBearingPosition
+			? haversineDistanceM(
+					lastBearingPosition.latitude,
+					lastBearingPosition.longitude,
+					position.latitude,
+					position.longitude
+				)
+			: Number.POSITIVE_INFINITY;
+
+		smoothedBearing = smoothBearing(smoothedBearing, nextBearing, movedMeters);
+		lastBearingPosition = {
+			latitude: position.latitude,
+			longitude: position.longitude
+		};
 	});
+
+	let bearing = $derived(smoothedBearing);
 
 	let relativeAngle = $derived.by(() => {
 		if (bearing === null || heading === null) return null;
@@ -67,6 +94,11 @@
 		return bearing;
 	});
 
+	$effect(() => {
+		const targetRotation = arrowRotation;
+		displayRotation += shortestAngleDelta(displayRotation, targetRotation);
+	});
+
 	let directionText = $derived.by(() => {
 		if (bearing === null) return '';
 		if (relativeAngle !== null) return getRelativeDirection(relativeAngle);
@@ -75,9 +107,28 @@
 
 	let compassStatusText = $derived.by(() => {
 		if (!orientationEnabled) return '';
-		if (heading !== null) return 'Boussole active';
-		return 'Direction approximative — alignez le haut du téléphone vers le nord';
+		if (heading === null) {
+			return 'Direction approximative — alignez le haut du téléphone vers le nord';
+		}
+		const position = userPositionState.position;
+		if (
+			position &&
+			isGpsCourseFusionActive(position.courseDegrees, position.speedMps)
+		) {
+			return 'Boussole + cap GPS (en marchant)';
+		}
+		return 'Boussole active (nord vrai)';
 	});
+
+	function getHeadingFusionContext() {
+		const position = userPositionState.position;
+		return {
+			latitude: position?.latitude ?? null,
+			longitude: position?.longitude ?? null,
+			gpsCourseDegrees: position?.courseDegrees ?? null,
+			speedMps: position?.speedMps ?? null
+		};
+	}
 
 	async function enableOrientation() {
 		orientationError = '';
@@ -88,9 +139,12 @@
 		}
 
 		unsubscribeOrientation?.();
-		unsubscribeOrientation = subscribeDeviceOrientation((value) => {
-			heading = value;
-		});
+		unsubscribeOrientation = subscribeDeviceOrientation(
+			(value) => {
+				heading = value;
+			},
+			getHeadingFusionContext
+		);
 		orientationEnabled = true;
 	}
 
@@ -125,8 +179,7 @@
 			<div class="absolute inset-4 rounded-full border border-dashed border-gray-200"></div>
 			<span class="absolute top-3 text-xs font-medium text-muted">N</span>
 			<div
-				class="transition-transform duration-200"
-				style:transform="rotate({arrowRotation}deg)"
+				style:transform="rotate({displayRotation}deg)"
 				aria-hidden="true"
 			>
 				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" class="h-24 w-24">

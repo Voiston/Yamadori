@@ -51,6 +51,70 @@ export function normalizeHeading360(angle: number): number {
 	return ((angle % 360) + 360) % 360;
 }
 
+export function smoothAngleCircular(previous: number, next: number, factor: number): number {
+	const delta = normalizeAngle(next - previous);
+	return normalizeHeading360(previous + delta * factor);
+}
+
+export function shortestAngleDelta(current: number, target: number): number {
+	const currentMod = normalizeHeading360(current);
+	return normalizeAngle(target - currentMod);
+}
+
+export function smoothBearing(
+	previous: number | null,
+	next: number,
+	movedMeters: number
+): number {
+	if (previous === null) {
+		return next;
+	}
+	const factor = movedMeters < 2 ? 0.1 : 0.4;
+	return smoothAngleCircular(previous, next, factor);
+}
+
+const DEG_TO_RAD = Math.PI / 180;
+
+export function magneticToTrueHeading(magneticHeading: number, declinationDeg: number): number {
+	return normalizeHeading360(magneticHeading + declinationDeg);
+}
+
+export function blendHeadingsCircular(
+	headingA: number,
+	headingB: number,
+	bWeight: number
+): number {
+	const aWeight = 1 - bWeight;
+	const aRad = headingA * DEG_TO_RAD;
+	const bRad = headingB * DEG_TO_RAD;
+	const x = aWeight * Math.sin(aRad) + bWeight * Math.sin(bRad);
+	const y = aWeight * Math.cos(aRad) + bWeight * Math.cos(bRad);
+	return normalizeHeading360(Math.atan2(x, y) / DEG_TO_RAD);
+}
+
+const MIN_GPS_SPEED_MPS = 0.8;
+const MAX_GPS_FUSION_WEIGHT = 0.75;
+
+export function fuseWithGpsCourse(
+	trueCompassHeading: number,
+	gpsCourseDegrees: number | null,
+	speedMps: number | null
+): number {
+	if (gpsCourseDegrees === null || speedMps === null || speedMps < MIN_GPS_SPEED_MPS) {
+		return trueCompassHeading;
+	}
+
+	const gpsWeight = Math.min(MAX_GPS_FUSION_WEIGHT, (speedMps - MIN_GPS_SPEED_MPS) / 2.5);
+	return blendHeadingsCircular(trueCompassHeading, gpsCourseDegrees, gpsWeight);
+}
+
+export function isGpsCourseFusionActive(
+	gpsCourseDegrees: number | null,
+	speedMps: number | null
+): boolean {
+	return gpsCourseDegrees !== null && speedMps !== null && speedMps >= MIN_GPS_SPEED_MPS;
+}
+
 export function formatDistance(meters: number): string {
 	if (meters < 1000) {
 		return `${Math.round(meters)} m`;
