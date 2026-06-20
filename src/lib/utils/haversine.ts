@@ -47,6 +47,10 @@ export function normalizeAngle(angle: number): number {
 	return normalized;
 }
 
+export function normalizeHeading360(angle: number): number {
+	return ((angle % 360) + 360) % 360;
+}
+
 export function formatDistance(meters: number): string {
 	if (meters < 1000) {
 		return `${Math.round(meters)} m`;

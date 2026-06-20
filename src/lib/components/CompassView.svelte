@@ -5,7 +5,8 @@
 		getRelativeDirection,
 		haversineBearingDeg,
 		haversineDistanceM,
-		normalizeAngle
+		normalizeAngle,
+		normalizeHeading360
 	} from '$lib/utils/haversine';
 	import {
 		headingToCardinal,
@@ -55,15 +56,20 @@
 		);
 	});
 
+	let relativeAngle = $derived.by(() => {
+		if (bearing === null || heading === null) return null;
+		return normalizeAngle(bearing - heading);
+	});
+
 	let arrowRotation = $derived.by(() => {
 		if (bearing === null) return 0;
-		if (heading !== null) return normalizeAngle(bearing - heading);
+		if (heading !== null) return normalizeHeading360(bearing - heading);
 		return bearing;
 	});
 
 	let directionText = $derived.by(() => {
 		if (bearing === null) return '';
-		if (heading !== null) return getRelativeDirection(arrowRotation);
+		if (relativeAngle !== null) return getRelativeDirection(relativeAngle);
 		return headingToCardinal(bearing);
 	});
 
