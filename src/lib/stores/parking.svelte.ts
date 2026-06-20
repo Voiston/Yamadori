@@ -7,13 +7,22 @@ const STORAGE_KEY = 'yamadori-parking';
 
 export const parkingStore = $state({
 	position: null as ParkingPosition | null,
-	loaded: false
+	loaded: false,
+	loadError: null as string | null
 });
 
 export async function initParking(): Promise<void> {
-	const stored = await get<ParkingPosition>(STORAGE_KEY);
-	parkingStore.position = stored ?? null;
-	parkingStore.loaded = true;
+	try {
+		const stored = await get<ParkingPosition>(STORAGE_KEY);
+		parkingStore.position = stored ?? null;
+		parkingStore.loadError = null;
+	} catch (error) {
+		console.error('initParking failed:', error);
+		parkingStore.position = null;
+		parkingStore.loadError = 'Point de départ local illisible.';
+	} finally {
+		parkingStore.loaded = true;
+	}
 }
 
 async function persist(): Promise<void> {

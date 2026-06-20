@@ -7,14 +7,15 @@ import {
 	type TreeVisit
 } from '$lib/types/tree';
 import type { ClimateHistory } from '$lib/types/climate';
-import { notifyTreeChanged, notifyTreeDeleted } from '$lib/sync/engine.svelte';
+import { notifyTreeChanged, notifyTreeDeleted } from '$lib/sync/notify';
 import { toStorable } from '$lib/utils/idb-store';
 
 const STORAGE_KEY = 'yamadori-trees';
 
 export const treeStore = $state({
 	trees: [] as Tree[],
-	loaded: false
+	loaded: false,
+	loadError: null as string | null
 });
 
 type LegacyTree = Partial<Tree> & {
@@ -83,9 +84,18 @@ function collectPhotosFromVisits(visits: TreeVisit[]): string[] {
 }
 
 export async function initTrees(): Promise<void> {
-	const stored = (await get<LegacyTree[]>(STORAGE_KEY)) ?? [];
-	treeStore.trees = stored.map((tree) => normalizeTree(tree));
-	treeStore.loaded = true;
+	try {
+		const stored = (await get<LegacyTree[]>(STORAGE_KEY)) ?? [];
+		treeStore.trees = stored.map((tree) => normalizeTree(tree));
+		treeStore.loadError = null;
+	} catch (error) {
+		console.error('initTrees failed:', error);
+		treeStore.trees = [];
+		treeStore.loadError =
+			'Données locales illisibles — voir le dépannage IndexedDB dans la doc de sync.';
+	} finally {
+		treeStore.loaded = true;
+	}
 }
 
 async function persist(): Promise<void> {

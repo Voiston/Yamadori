@@ -1,6 +1,7 @@
+import { goto } from '$app/navigation';
 import { base } from '$app/paths';
 
-/** Retour accueil — URL correcte sur GitHub Pages (/Yamadori/). */
-export function goHome(): void {
-	window.location.href = `${base}/`;
+/** Retour accueil — navigation client (compatible hors-ligne). */
+export async function goHome(): Promise<void> {
+	await goto(`${base}/`);
 }

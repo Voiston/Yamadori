@@ -4,6 +4,7 @@ export interface SyncConfig {
 	serverUrl: string;
 	email: string;
 	enabled: boolean;
+	rememberPassword: boolean;
 }
 
 export interface TreeSyncRecord {

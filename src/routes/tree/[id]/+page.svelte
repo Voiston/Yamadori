@@ -145,7 +145,7 @@
 		deleting = true;
 		try {
 			await deleteTree(tree.id);
-			goHome();
+			await goHome();
 		} finally {
 			deleting = false;
 		}

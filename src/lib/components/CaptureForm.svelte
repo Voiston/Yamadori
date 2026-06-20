@@ -11,7 +11,6 @@
 		requestOrientationPermission,
 		subscribeDeviceOrientation
 	} from '$lib/utils/compass';
-	import { getCoordinates } from '$lib/utils/geo';
 	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
 	import { compressImage } from '$lib/utils/photo';
 	import { getSpeciesSuggestionsForPosition } from '$lib/utils/species-suggestions';
@@ -220,7 +219,10 @@
 		submitting = true;
 
 		try {
-			const { latitude, longitude, accuracyMeters, altitudeMeters } = await getCoordinates();
+			const latitude = capturePosition?.latitude ?? null;
+			const longitude = capturePosition?.longitude ?? null;
+			const accuracyMeters = capturePosition?.accuracyMeters ?? null;
+			const altitudeMeters = capturePosition?.altitudeMeters ?? null;
 
 			if (latitude === null || longitude === null) {
 				gpsWarning = 'Position GPS indisponible — l\'arbre sera enregistré sans coordonnées.';
@@ -254,7 +256,7 @@
 				assessment: { ...DEFAULT_ASSESSMENT }
 			});
 
-			goHome();
+			await goHome();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement.';
 		} finally {

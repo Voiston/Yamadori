@@ -50,6 +50,14 @@ Dans PocketBase admin → Collections → `users` → New record :
 - Email : ton email (ex. `david@example.com`)
 - Password : un mot de passe que tu utiliseras dans l'app
 
+### Durée du token (éviter « Session expirée »)
+
+Dans PocketBase admin → Collections → **users** → engrenage (Settings) :
+
+- **Token duration** : `31536000` (365 jours) ou `15552000` (180 jours)
+
+Cela prolonge la validité du JWT entre deux rafraîchissements.
+
 ## 5. Tailscale Serve (HTTPS)
 
 Dans un terminal (PocketBase doit tourner) :
@@ -67,14 +75,25 @@ Note l'URL affichée, par ex. `https://david-pc.tail12345.ts.net`
 1. Ouvre l'app Yamadori (PWA ou navigateur)
 2. **Réglages** → URL : `https://artamiel.tail12345.ts.net` (Tailscale)
 3. Email + mot de passe → **Tester la connexion**
-4. **Envoyer toutes les fiches locales** (première fois)
+4. Cochez **Se souvenir du mot de passe sur cet appareil** (stockage chiffré local) pour reconnexion automatique
+5. **Envoyer toutes les fiches locales** (première fois)
 
 ### Sur le PC (consultation)
 
 1. Lance l'app : `npm run dev` → `http://localhost:5173`
 2. **Réglages** → URL : `http://127.0.0.1:8090` (recommandé en local, plus fiable que Tailscale)
-3. Même email + mot de passe → **Tester la connexion**
+3. Même email + mot de passe → **Tester la connexion** (+ **Se souvenir** si usage perso)
 4. **Récupérer depuis le serveur** pour importer les fiches du portable
+
+### Session et reconnexion
+
+| Symptôme | Cause probable | Action |
+|---|---|---|
+| **Hors-ligne** | PC éteint ou pas de réseau | Normal — sync reprend quand le serveur revient |
+| **Session expirée** | JWT expiré, mot de passe non mémorisé | Retaper le mot de passe dans Réglages |
+| Token effacé après coupure réseau | Ancien bug corrigé | Mettre à jour l'app ; activer **Se souvenir** |
+
+L'app ne supprime plus le token quand PocketBase est temporairement injoignable. Avec **Se souvenir**, la reconnexion est automatique après expiration du JWT.
 
 > Chaque appareil a sa propre base locale (IndexedDB). PocketBase sur le PC est le point de rencontre : le portable envoie, le PC récupère.
 
@@ -112,10 +131,27 @@ Si **Envoyer toutes les fiches locales** affiche `Something went wrong while pro
 
 ## 7. Tester le flux offline
 
-1. Capture un arbre (ou modifie une fiche)
-2. Coupe le réseau (mode avion)
-3. Vérifie le badge « X en attente »
-4. Réactive le réseau → sync auto sous ~30 s
+### Après chaque déploiement (important)
+
+Chaque mise à jour sur GitHub Pages change les fichiers JS de l'app. **Ouvrez l'app une fois en ligne** après un déploiement et acceptez la mise à jour si un bandeau apparaît. Sinon le cache PWA peut être incomplet et l'app restera blanche hors-ligne.
+
+1. Ouvrez l'app en ligne → visitez Liste, Capture et Réglages (préchauffe le cache)
+2. Si bandeau « Mise à jour disponible » → cliquez **Mettre à jour**
+3. Rechargez une fois la page
+
+### Test terrain
+
+1. Sync activée, capturez un arbre (ou modifiez une fiche)
+2. Coupez le réseau (mode avion)
+3. **Fermez complètement** l'app PWA, rouvrez-la → la liste doit s'afficher (pas d'écran blanc)
+4. Ajoutez un arbre → il apparaît en liste + badge « X en attente »
+5. Réactivez le réseau → sync auto sous ~30 s
+
+### Si l'app ne charge pas hors-ligne
+
+1. Reconnectez-vous en ligne et acceptez la mise à jour PWA
+2. Visitez les pages principales (Liste, Capture, Réglages) puis réessayez
+3. Si bandeau « Données locales illisibles » → voir **Dépannage IndexedDB** ci-dessus
 
 ## Démarrage automatique (Windows)
 

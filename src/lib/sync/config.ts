@@ -9,7 +9,8 @@ const AUTH_KEY = 'yamadori-sync-auth';
 export const DEFAULT_SYNC_CONFIG: SyncConfig = {
 	serverUrl: '',
 	email: '',
-	enabled: false
+	enabled: false,
+	rememberPassword: false
 };
 
 export const DEFAULT_SYNC_META: SyncMeta = {

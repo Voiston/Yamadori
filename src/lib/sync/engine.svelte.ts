@@ -12,14 +12,16 @@ import {
 import { enqueueMutation, dropMutationsForTree, loadQueue, saveQueue } from './queue';
 import { formatPbError, isRemoteDeletedError } from './errors';
 import {
+	authErrorMessage,
 	createClient,
+	ensureAuth,
 	fetchRemoteChanges,
 	login,
 	markTreeDeleted,
 	probeServer,
-	restoreAuth,
 	upsertTreeRecord
 } from './pocketbase';
+import { clearStoredPassword, saveStoredPassword } from './credentials';
 
 const STORAGE_KEY = 'yamadori-trees';
 const PROBE_INTERVAL_MS = 30_000;
@@ -54,37 +56,6 @@ function setStatus(status: SyncStatus, error: string | null = null): void {
 
 function getTreeFromStore(treeId: string): Tree | undefined {
 	return treeStore.trees.find((tree) => tree.id === treeId);
-}
-
-async function touchLocalMeta(treeId: string): Promise<void> {
-	const meta = await loadSyncMeta();
-	const existing = meta.trees[treeId];
-	meta.trees[treeId] = {
-		pbId: existing?.pbId ?? null,
-		localUpdatedAt: new Date().toISOString(),
-		remoteUpdatedAt: existing?.remoteUpdatedAt ?? null
-	};
-	await saveSyncMeta(meta);
-}
-
-export async function notifyTreeChanged(treeId: string): Promise<void> {
-	const config = await loadSyncConfig();
-	if (!isSyncConfigured(config)) return;
-	await touchLocalMeta(treeId);
-	await enqueueMutation({ type: 'upsert', treeId, enqueuedAt: new Date().toISOString() });
-	await refreshPendingCount();
-	void runSync();
-}
-
-export async function notifyTreeDeleted(treeId: string): Promise<void> {
-	const config = await loadSyncConfig();
-	if (!isSyncConfigured(config)) return;
-	const meta = await loadSyncMeta();
-	delete meta.trees[treeId];
-	await saveSyncMeta(meta);
-	await enqueueMutation({ type: 'delete', treeId, enqueuedAt: new Date().toISOString() });
-	await refreshPendingCount();
-	void runSync();
 }
 
 export async function refreshPendingCount(): Promise<void> {
@@ -217,20 +188,30 @@ export async function runSync(
 		return false;
 	}
 
+	if (!navigator.onLine) {
+		setStatus('offline');
+		return false;
+	}
+
 	syncInFlight = true;
 	setStatus('syncing');
 
 	try {
 		const pb = createClient(config);
-		const authed = await restoreAuth(pb);
-		if (!authed) {
-			setStatus('error', 'Session expirée — reconnectez-vous dans Réglages.');
-			return false;
-		}
 
 		const reachable = await probeServer(pb);
 		if (!reachable) {
 			setStatus('offline');
+			return false;
+		}
+
+		const auth = await ensureAuth(pb, config);
+		if (!auth.ok) {
+			if (auth.reason === 'network') {
+				setStatus('offline');
+			} else {
+				setStatus('error', authErrorMessage(auth));
+			}
 			return false;
 		}
 
@@ -313,6 +294,11 @@ export async function testConnection(
 			return { ok: false, error: 'Serveur injoignable. Vérifiez Tailscale et PocketBase.' };
 		}
 		await login(pb, config.email, password);
+		if (config.rememberPassword) {
+			await saveStoredPassword(password);
+		} else {
+			await clearStoredPassword();
+		}
 		return { ok: true };
 	} catch (error) {
 		return { ok: false, error: formatPbError(error) };

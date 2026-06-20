@@ -1,8 +1,11 @@
 import PocketBase from 'pocketbase';
+import { ClientResponseError } from 'pocketbase';
 import type { Tree } from '$lib/types/tree';
 import type { SyncConfig, TreeSyncRecord } from '$lib/types/sync';
 import { toStorable } from '$lib/utils/idb-store';
 import { clearAuthToken, loadAuthToken, normalizeServerUrl, saveAuthToken } from './config';
+import { loadStoredPassword } from './credentials';
+import { withNetworkTimeout } from '$lib/utils/network';
 import { formatPbError, RemoteDeletedError } from './errors';
 
 const COLLECTION = 'trees';
@@ -50,23 +53,73 @@ export function createClient(config: SyncConfig): PocketBase {
 	return new PocketBase(normalizeServerUrl(config.serverUrl));
 }
 
-export async function restoreAuth(pb: PocketBase): Promise<boolean> {
+export type AuthResult =
+	| { ok: true }
+	| { ok: false; reason: 'no_token' | 'expired' | 'network' };
+
+function isAuthExpiredError(error: unknown): boolean {
+	if (error instanceof ClientResponseError) {
+		return error.status === 401 || error.status === 403;
+	}
+	return false;
+}
+
+export async function restoreAuth(pb: PocketBase): Promise<AuthResult> {
 	const token = await loadAuthToken();
-	if (!token) return false;
+	if (!token) return { ok: false, reason: 'no_token' };
+
 	pb.authStore.save(token, null);
 	if (!pb.authStore.isValid) {
-		await clearAuthToken();
-		return false;
-	}
-	try {
-		await pb.collection('users').authRefresh();
-		await saveAuthToken(pb.authStore.token);
-		return true;
-	} catch {
 		pb.authStore.clear();
 		await clearAuthToken();
-		return false;
+		return { ok: false, reason: 'expired' };
 	}
+
+	try {
+		await withNetworkTimeout(pb.collection('users').authRefresh());
+		await saveAuthToken(pb.authStore.token);
+		return { ok: true };
+	} catch (error) {
+		if (error instanceof Error && error.message === 'network_timeout') {
+			return { ok: false, reason: 'network' };
+		}
+		if (isAuthExpiredError(error)) {
+			pb.authStore.clear();
+			await clearAuthToken();
+			return { ok: false, reason: 'expired' };
+		}
+		// Erreur réseau ou serveur : conserver le token pour une prochaine tentative
+		return { ok: false, reason: 'network' };
+	}
+}
+
+export async function ensureAuth(pb: PocketBase, config: SyncConfig): Promise<AuthResult> {
+	const initial = await restoreAuth(pb);
+	if (initial.ok) return initial;
+	if (initial.reason === 'network') return initial;
+
+	const password = await loadStoredPassword();
+	if (!password || !config.email.trim()) return initial;
+
+	try {
+		await login(pb, config.email, password);
+		return { ok: true };
+	} catch (error) {
+		if (isAuthExpiredError(error)) {
+			return { ok: false, reason: 'expired' };
+		}
+		return { ok: false, reason: 'network' };
+	}
+}
+
+export function authErrorMessage(result: Extract<AuthResult, { ok: false }>): string {
+	if (result.reason === 'no_token') {
+		return 'Connectez-vous dans Réglages.';
+	}
+	if (result.reason === 'expired') {
+		return 'Session expirée — retapez le mot de passe dans Réglages.';
+	}
+	return 'Serveur injoignable pour le moment.';
 }
 
 export async function login(pb: PocketBase, email: string, password: string): Promise<void> {
@@ -81,7 +134,7 @@ export async function logout(pb: PocketBase): Promise<void> {
 
 export async function probeServer(pb: PocketBase): Promise<boolean> {
 	try {
-		await pb.health.check();
+		await withNetworkTimeout(pb.health.check());
 		return true;
 	} catch {
 		return false;

@@ -8,16 +8,37 @@
 	import { initParking, parkingStore } from '$lib/stores/parking.svelte';
 	import { initSyncEngine, stopSyncEngine, syncState } from '$lib/sync/engine.svelte';
 	import { initOnlineState, onlineState } from '$lib/utils/online.svelte';
+	import InstallPrompt from '$lib/components/InstallPrompt.svelte';
+	import { initInstallPrompt } from '$lib/utils/pwa-install.svelte';
 	import { onMount } from 'svelte';
+	import { useRegisterSW } from 'virtual:pwa-register/svelte';
 
 	let { children } = $props();
 
+	const { needRefresh, updateServiceWorker } = useRegisterSW({
+		onRegistered() {},
+		onRegisterError(error) {
+			console.error('PWA registration failed:', error);
+		}
+	});
+
+	let initError = $derived(treeStore.loadError ?? parkingStore.loadError);
+
 	onMount(() => {
-		void Promise.all([initTrees(), initParking()]).then(() => initSyncEngine());
+		void Promise.all([initTrees(), initParking()]).then(() => {
+			const startSync = () => void initSyncEngine();
+			if (typeof requestIdleCallback === 'function') {
+				requestIdleCallback(startSync);
+			} else {
+				setTimeout(startSync, 0);
+			}
+		});
 		const cleanupOnline = initOnlineState();
+		const cleanupInstall = initInstallPrompt();
 		return () => {
 			stopSyncEngine();
 			cleanupOnline();
+			cleanupInstall();
 		};
 	});
 
@@ -76,7 +97,7 @@
 
 <svelte:head>
 	<title>Yamadori Scouting</title>
-	<link rel="apple-touch-icon" href="{base}/icons/icon.svg" />
+	<link rel="apple-touch-icon" href="{base}/icons/icon-192.png" />
 </svelte:head>
 
 <div class="flex min-h-dvh">
@@ -160,6 +181,35 @@
 			{/if}
 		</div>
 	</header>
+
+	{#if $needRefresh}
+		<div
+			class="border-b border-forest-200 bg-forest-50 px-4 py-2 text-sm text-forest-900"
+			role="status"
+		>
+			<div class="flex items-center justify-between gap-3">
+				<p>Mise à jour disponible — rechargez en ligne avant d'aller hors-ligne.</p>
+				<button
+					type="button"
+					class="shrink-0 rounded-lg bg-forest-800 px-3 py-1.5 text-xs font-semibold text-white"
+					onclick={() => updateServiceWorker(true)}
+				>
+					Mettre à jour
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	<InstallPrompt />
+
+	{#if initError}
+		<div
+			class="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900"
+			role="alert"
+		>
+			{initError}
+		</div>
+	{/if}
 
 	<main
 		class="flex-1 {showBottomNav ? 'pb-20 lg:pb-0' : ''} {isMap
