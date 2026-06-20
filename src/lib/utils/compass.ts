@@ -24,6 +24,8 @@ const HEADING_JITTER_THRESHOLD = 15;
 const OUTLIER_THRESHOLD = 45;
 const MAX_CONSECUTIVE_REJECTS = 3;
 const SOURCE_AGREEMENT_THRESHOLD = 30;
+const ABSOLUTE_STALE_MS = 500;
+export const ORIENTATION_THROTTLE_MS = 50;
 
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -46,9 +48,14 @@ export type HeadingFilterState = {
 	consecutiveRejects: number;
 };
 
-type DeviceHeadingReading = {
+export type DeviceHeadingReading = {
 	heading: number;
 	reference: 'true' | 'magnetic';
+};
+
+type ReadingSource = {
+	reading: DeviceHeadingReading;
+	updatedAt: number;
 };
 
 export function createHeadingFilterState(): HeadingFilterState {
@@ -115,16 +122,32 @@ export function processHeadingSample(state: HeadingFilterState, raw: number): nu
 	return state.smoothed;
 }
 
-function fuseHeadingReadings(absolute: number | null, relative: number | null): number | null {
-	if (absolute !== null && relative !== null) {
-		const delta = Math.abs(normalizeAngle(absolute - relative));
-		if (delta >= SOURCE_AGREEMENT_THRESHOLD) {
-			return absolute;
-		}
-		return absolute;
+export function pickActiveReading(
+	absolute: ReadingSource | null,
+	relative: ReadingSource | null,
+	now = Date.now()
+): DeviceHeadingReading | null {
+	if (!absolute && !relative) {
+		return null;
+	}
+	if (!absolute) {
+		return relative!.reading;
+	}
+	if (!relative) {
+		return absolute.reading;
 	}
 
-	return absolute ?? relative;
+	const absoluteFresh = now - absolute.updatedAt <= ABSOLUTE_STALE_MS;
+	if (!absoluteFresh) {
+		return relative.reading;
+	}
+
+	const delta = Math.abs(normalizeAngle(absolute.reading.heading - relative.reading.heading));
+	if (delta >= SOURCE_AGREEMENT_THRESHOLD) {
+		return absolute.updatedAt >= relative.updatedAt ? absolute.reading : relative.reading;
+	}
+
+	return absolute.reading;
 }
 
 export function getDeviceHeadingReading(event: DeviceOrientationEvent): DeviceHeadingReading | null {
@@ -172,43 +195,68 @@ export function getDeviceHeading(event: DeviceOrientationEvent): number | null {
 	return reading?.heading ?? null;
 }
 
-function handleOrientationEvent(
-	event: DeviceOrientationEvent,
+function processOrientationReading(
+	reading: DeviceHeadingReading,
 	handler: (heading: number) => void,
 	filterState: HeadingFilterState,
-	lastReadings: { absolute: number | null; relative: number | null },
-	preferAbsolute: boolean,
 	getContext: () => HeadingFusionContext
 ): void {
-	const reading = getDeviceHeadingReading(event);
-	if (reading === null) {
-		return;
-	}
-
-	const value = reading.heading;
-
-	if (preferAbsolute) {
-		lastReadings.absolute = value;
-	} else if (!event.absolute) {
-		lastReadings.relative = value;
-	} else {
-		return;
-	}
-
-	const fused = fuseHeadingReadings(lastReadings.absolute, lastReadings.relative);
-	if (fused === null) {
-		return;
-	}
-
-	const refinedReading: DeviceHeadingReading = {
-		heading: fused,
-		reference: reading.reference === 'true' ? 'true' : 'magnetic'
-	};
-	const trueHeading = refineTrueHeading(refinedReading, getContext());
+	const trueHeading = refineTrueHeading(reading, getContext());
 	const smoothed = processHeadingSample(filterState, trueHeading);
 	if (smoothed !== null) {
 		handler(smoothed);
+	} else if (filterState.smoothed !== null) {
+		handler(filterState.smoothed);
 	}
+}
+
+export function createThrottledOrientationProcessor(
+	handler: (heading: number) => void,
+	filterState: HeadingFilterState,
+	getContext: () => HeadingFusionContext
+) {
+	let lastProcessedAt = 0;
+	let lastEmitted: number | null = null;
+	let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+	let pendingReading: DeviceHeadingReading | null = null;
+
+	const emit = (value: number) => {
+		if (lastEmitted === value) {
+			return;
+		}
+		lastEmitted = value;
+		handler(value);
+	};
+
+	const flush = () => {
+		throttleTimer = null;
+		if (!pendingReading) {
+			return;
+		}
+		const reading = pendingReading;
+		pendingReading = null;
+		lastProcessedAt = Date.now();
+		processOrientationReading(reading, emit, filterState, getContext);
+	};
+
+	return (reading: DeviceHeadingReading) => {
+		pendingReading = reading;
+		const now = Date.now();
+		const elapsed = now - lastProcessedAt;
+
+		if (elapsed >= ORIENTATION_THROTTLE_MS) {
+			if (throttleTimer !== null) {
+				clearTimeout(throttleTimer);
+				throttleTimer = null;
+			}
+			flush();
+			return;
+		}
+
+		if (throttleTimer === null) {
+			throttleTimer = setTimeout(flush, ORIENTATION_THROTTLE_MS - elapsed);
+		}
+	};
 }
 
 export function subscribeDeviceOrientation(
@@ -216,13 +264,38 @@ export function subscribeDeviceOrientation(
 	getContext: () => HeadingFusionContext = () => EMPTY_HEADING_FUSION_CONTEXT
 ): () => void {
 	const filterState = createHeadingFilterState();
-	const lastReadings = { absolute: null as number | null, relative: null as number | null };
+	const absoluteSource = { current: null as ReadingSource | null };
+	const relativeSource = { current: null as ReadingSource | null };
 	const supportsAbsolute = 'ondeviceorientationabsolute' in window;
+	const processReading = createThrottledOrientationProcessor(handler, filterState, getContext);
 
-	const onAbsolute = (event: DeviceOrientationEvent) =>
-		handleOrientationEvent(event, handler, filterState, lastReadings, true, getContext);
-	const onRelative = (event: DeviceOrientationEvent) =>
-		handleOrientationEvent(event, handler, filterState, lastReadings, false, getContext);
+	const enqueueReading = (reading: DeviceHeadingReading) => {
+		const active = pickActiveReading(absoluteSource.current, relativeSource.current);
+		if (active) {
+			processReading(active);
+		}
+	};
+
+	const onAbsolute = (event: DeviceOrientationEvent) => {
+		const reading = getDeviceHeadingReading(event);
+		if (reading === null) {
+			return;
+		}
+		absoluteSource.current = { reading, updatedAt: Date.now() };
+		enqueueReading(reading);
+	};
+
+	const onRelative = (event: DeviceOrientationEvent) => {
+		if (event.absolute) {
+			return;
+		}
+		const reading = getDeviceHeadingReading(event);
+		if (reading === null) {
+			return;
+		}
+		relativeSource.current = { reading, updatedAt: Date.now() };
+		enqueueReading(reading);
+	};
 
 	if (supportsAbsolute) {
 		window.addEventListener('deviceorientationabsolute', onAbsolute, true);

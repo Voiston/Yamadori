@@ -22,7 +22,7 @@
 		stopWatchingPosition,
 		userPositionState
 	} from '$lib/utils/userPosition.svelte';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 
 	let { target }: { target: CompassTarget } = $props();
 
@@ -96,7 +96,11 @@
 
 	$effect(() => {
 		const targetRotation = arrowRotation;
-		displayRotation += shortestAngleDelta(displayRotation, targetRotation);
+		const current = untrack(() => displayRotation);
+		const delta = shortestAngleDelta(current, targetRotation);
+		if (delta !== 0) {
+			displayRotation = current + delta;
+		}
 	});
 
 	let directionText = $derived.by(() => {

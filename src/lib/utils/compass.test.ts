@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	compassHeadingFromTilt,
 	createHeadingFilterState,
+	createThrottledOrientationProcessor,
+	EMPTY_HEADING_FUSION_CONTEXT,
+	ORIENTATION_THROTTLE_MS,
+	pickActiveReading,
 	processHeadingSample,
 	refineTrueHeading
 } from './compass';
@@ -12,7 +16,10 @@ import {
 	shortestAngleDelta,
 	smoothBearing
 } from './haversine';
-import { getMagneticDeclinationDeg } from './magneticDeclination';
+import {
+	getMagneticDeclinationDeg,
+	resetMagneticDeclinationCache
+} from './magneticDeclination';
 
 describe('compassHeadingFromTilt', () => {
 	it('stays stable near the east/west singularity (alpha 90, beta 90)', () => {
@@ -116,5 +123,100 @@ describe('magnetic declination and GPS fusion', () => {
 	it('interpolates headings on the short arc', () => {
 		const blended = blendHeadingsCircular(350, 10, 0.5);
 		expect(Math.min(blended, 360 - blended)).toBeLessThan(20);
+	});
+});
+
+describe('magnetic declination cache', () => {
+	afterEach(() => {
+		resetMagneticDeclinationCache();
+	});
+
+	it('returns the same value for repeated lookups at the same position', () => {
+		const first = getMagneticDeclinationDeg(48.8566, 2.3522);
+		const second = getMagneticDeclinationDeg(48.8566, 2.3522);
+		expect(second).toBe(first);
+	});
+
+	it('reuses cache for nearby coordinates rounded to 3 decimals', () => {
+		const first = getMagneticDeclinationDeg(48.85661, 2.35221);
+		const second = getMagneticDeclinationDeg(48.85664, 2.35224);
+		expect(second).toBe(first);
+	});
+});
+
+describe('pickActiveReading', () => {
+	const now = 1_000_000;
+
+	it('uses relative when absolute is stale', () => {
+		const active = pickActiveReading(
+			{
+				reading: { heading: 10, reference: 'magnetic' },
+				updatedAt: now - 600
+			},
+			{
+				reading: { heading: 200, reference: 'magnetic' },
+				updatedAt: now
+			},
+			now
+		);
+		expect(active?.heading).toBe(200);
+	});
+
+	it('prefers the most recent source when readings disagree', () => {
+		const active = pickActiveReading(
+			{
+				reading: { heading: 10, reference: 'magnetic' },
+				updatedAt: now - 100
+			},
+			{
+				reading: { heading: 200, reference: 'magnetic' },
+				updatedAt: now
+			},
+			now
+		);
+		expect(active?.heading).toBe(200);
+	});
+
+	it('keeps fresh absolute when sources agree', () => {
+		const active = pickActiveReading(
+			{
+				reading: { heading: 45, reference: 'magnetic' },
+				updatedAt: now
+			},
+			{
+				reading: { heading: 50, reference: 'magnetic' },
+				updatedAt: now - 50
+			},
+			now
+		);
+		expect(active?.heading).toBe(45);
+	});
+});
+
+describe('orientation throttle', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('limits handler calls under rapid sensor events', () => {
+		vi.useFakeTimers();
+		const calls: number[] = [];
+		const processor = createThrottledOrientationProcessor(
+			(value) => calls.push(value),
+			createHeadingFilterState(),
+			() => EMPTY_HEADING_FUSION_CONTEXT
+		);
+
+		for (let i = 0; i < 50; i++) {
+			processor({ heading: 10 + i * 0.2, reference: 'true' });
+		}
+
+		expect(calls.length).toBe(1);
+
+		vi.advanceTimersByTime(ORIENTATION_THROTTLE_MS);
+		expect(calls.length).toBe(2);
+
+		vi.advanceTimersByTime(ORIENTATION_THROTTLE_MS * 10);
+		expect(calls.length).toBeLessThanOrEqual(12);
 	});
 });
