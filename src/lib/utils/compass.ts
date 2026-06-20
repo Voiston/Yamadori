@@ -5,7 +5,6 @@ import {
 	normalizeHeading360,
 	smoothAngleCircular
 } from '$lib/utils/haversine';
-import { getMagneticDeclinationDeg } from '$lib/utils/magneticDeclination';
 
 const CARDINALS = [
 	'Nord',
@@ -32,6 +31,7 @@ const DEG_TO_RAD = Math.PI / 180;
 export type HeadingFusionContext = {
 	latitude: number | null;
 	longitude: number | null;
+	declinationDeg: number | null;
 	gpsCourseDegrees: number | null;
 	speedMps: number | null;
 };
@@ -39,6 +39,7 @@ export type HeadingFusionContext = {
 export const EMPTY_HEADING_FUSION_CONTEXT: HeadingFusionContext = {
 	latitude: null,
 	longitude: null,
+	declinationDeg: null,
 	gpsCourseDegrees: null,
 	speedMps: null
 };
@@ -178,13 +179,8 @@ export function refineTrueHeading(
 ): number {
 	let trueHeading = reading.heading;
 
-	if (
-		reading.reference === 'magnetic' &&
-		context.latitude !== null &&
-		context.longitude !== null
-	) {
-		const declination = getMagneticDeclinationDeg(context.latitude, context.longitude);
-		trueHeading = magneticToTrueHeading(reading.heading, declination);
+	if (reading.reference === 'magnetic' && context.declinationDeg !== null) {
+		trueHeading = magneticToTrueHeading(reading.heading, context.declinationDeg);
 	}
 
 	return fuseWithGpsCourse(trueHeading, context.gpsCourseDegrees, context.speedMps);
@@ -264,50 +260,22 @@ export function subscribeDeviceOrientation(
 	getContext: () => HeadingFusionContext = () => EMPTY_HEADING_FUSION_CONTEXT
 ): () => void {
 	const filterState = createHeadingFilterState();
-	const absoluteSource = { current: null as ReadingSource | null };
-	const relativeSource = { current: null as ReadingSource | null };
 	const supportsAbsolute = 'ondeviceorientationabsolute' in window;
+	const eventName: 'deviceorientationabsolute' | 'deviceorientation' = supportsAbsolute
+		? 'deviceorientationabsolute'
+		: 'deviceorientation';
 	const processReading = createThrottledOrientationProcessor(handler, filterState, getContext);
 
-	const enqueueReading = (reading: DeviceHeadingReading) => {
-		const active = pickActiveReading(absoluteSource.current, relativeSource.current);
-		if (active) {
-			processReading(active);
-		}
-	};
-
-	const onAbsolute = (event: DeviceOrientationEvent) => {
+	const listener = (event: DeviceOrientationEvent) => {
 		const reading = getDeviceHeadingReading(event);
 		if (reading === null) {
 			return;
 		}
-		absoluteSource.current = { reading, updatedAt: Date.now() };
-		enqueueReading(reading);
+		processReading(reading);
 	};
 
-	const onRelative = (event: DeviceOrientationEvent) => {
-		if (event.absolute) {
-			return;
-		}
-		const reading = getDeviceHeadingReading(event);
-		if (reading === null) {
-			return;
-		}
-		relativeSource.current = { reading, updatedAt: Date.now() };
-		enqueueReading(reading);
-	};
-
-	if (supportsAbsolute) {
-		window.addEventListener('deviceorientationabsolute', onAbsolute, true);
-		window.addEventListener('deviceorientation', onRelative, true);
-		return () => {
-			window.removeEventListener('deviceorientationabsolute', onAbsolute, true);
-			window.removeEventListener('deviceorientation', onRelative, true);
-		};
-	}
-
-	window.addEventListener('deviceorientation', onAbsolute, true);
-	return () => window.removeEventListener('deviceorientation', onAbsolute, true);
+	window.addEventListener(eventName, listener, true);
+	return () => window.removeEventListener(eventName, listener, true);
 }
 
 export async function requestOrientationPermission(): Promise<boolean> {

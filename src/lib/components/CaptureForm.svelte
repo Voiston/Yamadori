@@ -12,6 +12,7 @@
 		subscribeDeviceOrientation
 	} from '$lib/utils/compass';
 	import { haversineBearingDeg, haversineDistanceM, normalizeHeading360 } from '$lib/utils/haversine';
+	import { loadMagneticDeclinationDeg } from '$lib/utils/magneticDeclination';
 	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
 	import { compressImage } from '$lib/utils/photo';
 	import { getSpeciesSuggestionsForPosition } from '$lib/utils/species-suggestions';
@@ -46,6 +47,26 @@
 	let locationLoading = $state(false);
 	let currentHeading = $state<number | null>(null);
 	let frontHeadingDegrees = $state<number | null>(null);
+	let declinationDeg = $state<number | null>(null);
+
+	$effect(() => {
+		const position = capturePosition;
+		if (!position) {
+			declinationDeg = null;
+			return;
+		}
+
+		let cancelled = false;
+		void loadMagneticDeclinationDeg(position.latitude, position.longitude).then((decl) => {
+			if (!cancelled) {
+				declinationDeg = decl;
+			}
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	const suggestions = $derived.by(() => {
 		if (!capturePosition) {
@@ -172,6 +193,7 @@
 			return {
 				latitude: capturePosition?.latitude ?? null,
 				longitude: capturePosition?.longitude ?? null,
+				declinationDeg,
 				gpsCourseDegrees: capturePosition?.courseDegrees ?? null,
 				speedMps: capturePosition?.speedMps ?? null
 			};

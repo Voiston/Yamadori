@@ -16,6 +16,7 @@
 		subscribeDeviceOrientation
 	} from '$lib/utils/compass';
 	import { isGpsCourseFusionActive } from '$lib/utils/haversine';
+	import { loadMagneticDeclinationDeg } from '$lib/utils/magneticDeclination';
 	import {
 		requestCurrentPosition,
 		startWatchingPosition,
@@ -33,6 +34,7 @@
 	let smoothedBearing = $state<number | null>(null);
 	let lastBearingPosition = $state<{ latitude: number; longitude: number } | null>(null);
 	let displayRotation = $state(0);
+	let declinationDeg = $state<number | null>(null);
 
 	let distance = $derived.by(() => {
 		if (
@@ -52,9 +54,30 @@
 
 	$effect(() => {
 		const position = userPositionState.position;
+		if (!position) {
+			declinationDeg = null;
+			return;
+		}
+
+		let cancelled = false;
+		void loadMagneticDeclinationDeg(position.latitude, position.longitude).then((decl) => {
+			if (!cancelled) {
+				declinationDeg = decl;
+			}
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	$effect(() => {
+		const position = userPositionState.position;
 		if (!position || target.latitude === null || target.longitude === null) {
-			smoothedBearing = null;
-			lastBearingPosition = null;
+			untrack(() => {
+				smoothedBearing = null;
+				lastBearingPosition = null;
+			});
 			return;
 		}
 
@@ -65,16 +88,19 @@
 			target.longitude
 		);
 
-		const movedMeters = lastBearingPosition
+		const previousBearing = untrack(() => smoothedBearing);
+		const previousPosition = untrack(() => lastBearingPosition);
+
+		const movedMeters = previousPosition
 			? haversineDistanceM(
-					lastBearingPosition.latitude,
-					lastBearingPosition.longitude,
+					previousPosition.latitude,
+					previousPosition.longitude,
 					position.latitude,
 					position.longitude
 				)
 			: Number.POSITIVE_INFINITY;
 
-		smoothedBearing = smoothBearing(smoothedBearing, nextBearing, movedMeters);
+		smoothedBearing = smoothBearing(previousBearing, nextBearing, movedMeters);
 		lastBearingPosition = {
 			latitude: position.latitude,
 			longitude: position.longitude
@@ -129,6 +155,7 @@
 		return {
 			latitude: position?.latitude ?? null,
 			longitude: position?.longitude ?? null,
+			declinationDeg,
 			gpsCourseDegrees: position?.courseDegrees ?? null,
 			speedMps: position?.speedMps ?? null
 		};

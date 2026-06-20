@@ -1,19 +1,26 @@
-import geomagnetism from 'geomagnetism';
+import type { GeomagnetismModel } from 'geomagnetism';
 
-const wmmModel = geomagnetism.model();
-
+let wmmModel: GeomagnetismModel | null = null;
 let declinationCache: { lat: number; lng: number; decl: number } | null = null;
 
 function roundCoord(value: number): number {
 	return Math.round(value * 1000) / 1000;
 }
 
-export function getMagneticDeclinationDeg(latitude: number, longitude: number): number {
+export async function loadMagneticDeclinationDeg(
+	latitude: number,
+	longitude: number
+): Promise<number> {
 	const lat = roundCoord(latitude);
 	const lng = roundCoord(longitude);
 
 	if (declinationCache?.lat === lat && declinationCache?.lng === lng) {
 		return declinationCache.decl;
+	}
+
+	if (!wmmModel) {
+		const { model } = await import('geomagnetism');
+		wmmModel = model();
 	}
 
 	const decl = wmmModel.point([lat, lng]).decl;
@@ -24,4 +31,5 @@ export function getMagneticDeclinationDeg(latitude: number, longitude: number): 
 /** Test helper: reset cached declination between tests. */
 export function resetMagneticDeclinationCache(): void {
 	declinationCache = null;
+	wmmModel = null;
 }

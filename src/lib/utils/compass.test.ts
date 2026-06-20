@@ -17,7 +17,7 @@ import {
 	smoothBearing
 } from './haversine';
 import {
-	getMagneticDeclinationDeg,
+	loadMagneticDeclinationDeg,
 	resetMagneticDeclinationCache
 } from './magneticDeclination';
 
@@ -93,19 +93,38 @@ describe('smoothBearing', () => {
 });
 
 describe('magnetic declination and GPS fusion', () => {
-	it('applies declination for magnetic readings in France', () => {
-		const declination = getMagneticDeclinationDeg(48.85, 2.35);
-		expect(declination).toBeGreaterThan(-5);
-		expect(declination).toBeLessThan(5);
+	it('applies declination from context for magnetic readings', () => {
+		const refined = refineTrueHeading(
+			{ heading: 0, reference: 'magnetic' },
+			{
+				latitude: 48.85,
+				longitude: 2.35,
+				declinationDeg: 2,
+				gpsCourseDegrees: null,
+				speedMps: null
+			}
+		);
+		expect(refined).toBe(2);
+	});
 
-		const trueHeading = magneticToTrueHeading(0, declination);
-		expect(Math.abs(trueHeading - declination)).toBeLessThan(0.01);
+	it('works without declination in empty context', () => {
+		const refined = refineTrueHeading(
+			{ heading: 45, reference: 'magnetic' },
+			EMPTY_HEADING_FUSION_CONTEXT
+		);
+		expect(refined).toBe(45);
 	});
 
 	it('keeps iOS true-north readings without declination', () => {
 		const refined = refineTrueHeading(
 			{ heading: 90, reference: 'true' },
-			{ latitude: 48.85, longitude: 2.35, gpsCourseDegrees: null, speedMps: null }
+			{
+				latitude: 48.85,
+				longitude: 2.35,
+				declinationDeg: 2,
+				gpsCourseDegrees: null,
+				speedMps: null
+			}
 		);
 		expect(refined).toBe(90);
 	});
@@ -131,16 +150,25 @@ describe('magnetic declination cache', () => {
 		resetMagneticDeclinationCache();
 	});
 
-	it('returns the same value for repeated lookups at the same position', () => {
-		const first = getMagneticDeclinationDeg(48.8566, 2.3522);
-		const second = getMagneticDeclinationDeg(48.8566, 2.3522);
+	it('returns the same value for repeated lookups at the same position', async () => {
+		const first = await loadMagneticDeclinationDeg(48.8566, 2.3522);
+		const second = await loadMagneticDeclinationDeg(48.8566, 2.3522);
 		expect(second).toBe(first);
 	});
 
-	it('reuses cache for nearby coordinates rounded to 3 decimals', () => {
-		const first = getMagneticDeclinationDeg(48.85661, 2.35221);
-		const second = getMagneticDeclinationDeg(48.85664, 2.35224);
+	it('reuses cache for nearby coordinates rounded to 3 decimals', async () => {
+		const first = await loadMagneticDeclinationDeg(48.85661, 2.35221);
+		const second = await loadMagneticDeclinationDeg(48.85664, 2.35224);
 		expect(second).toBe(first);
+	});
+
+	it('returns a plausible declination for France', async () => {
+		const declination = await loadMagneticDeclinationDeg(48.85, 2.35);
+		expect(declination).toBeGreaterThan(-5);
+		expect(declination).toBeLessThan(5);
+
+		const trueHeading = magneticToTrueHeading(0, declination);
+		expect(Math.abs(trueHeading - declination)).toBeLessThan(0.01);
 	});
 });
 
