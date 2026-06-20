@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import CompassView from '$lib/components/CompassView.svelte';
 	import { getTreeById } from '$lib/stores/trees.svelte';
+	import { getTreeDisplayLabel } from '$lib/types/tree';
 
 	let treeId = $derived(page.params.id ?? '');
 	let tree = $derived(treeId ? getTreeById(treeId) : undefined);
@@ -15,7 +16,7 @@
 {#if tree}
 	<CompassView
 		target={{
-			label: tree.species,
+			label: getTreeDisplayLabel(tree),
 			latitude: tree.latitude,
 			longitude: tree.longitude
 		}}

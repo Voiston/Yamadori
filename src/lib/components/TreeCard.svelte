@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getCoverPhoto } from '$lib/types/tree';
+	import { getCoverPhoto, getTreeDisplayLabel } from '$lib/types/tree';
 	import type { Tree } from '$lib/types/tree';
 	import { base } from '$app/paths';
 	import { formatDate } from '$lib/utils/date';
@@ -9,6 +9,7 @@
 	let { tree, distanceMeters = null }: { tree: Tree; distanceMeters?: number | null } = $props();
 
 	let coverPhoto = $derived(getCoverPhoto(tree));
+	let displayLabel = $derived(getTreeDisplayLabel(tree));
 
 	let showApproxBadge = $derived(
 		hasApproximateGps(tree.latitude, tree.longitude, tree.accuracyMeters)
@@ -18,7 +19,7 @@
 <a
 	href="{base}/tree/{tree.id}"
 	class="block transition active:scale-[0.98] lg:hover:shadow-md"
-	aria-label="Voir le détail de {tree.species}"
+	aria-label="Voir le détail de {displayLabel}"
 >
 	<article
 		class="flex items-center gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition lg:hover:bg-gray-50"
@@ -27,7 +28,7 @@
 			{#if coverPhoto}
 				<img
 					src={coverPhoto}
-					alt="Photo de {tree.species}"
+					alt="Photo de {displayLabel}"
 					class="h-full w-full object-cover"
 				/>
 			{:else}
@@ -62,7 +63,7 @@
 						/>
 					</svg>
 				{/if}
-				<h2 class="truncate text-lg font-semibold text-forest-900">{tree.species}</h2>
+				<h2 class="truncate text-lg font-semibold text-forest-900">{displayLabel}</h2>
 				{#if showApproxBadge}
 					<span
 						class="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"

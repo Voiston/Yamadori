@@ -10,6 +10,7 @@
 	import VisitTimeline from '$lib/components/VisitTimeline.svelte';
 	import VoiceNotePlayer from '$lib/components/VoiceNotePlayer.svelte';
 	import { deleteTree, getTreeById, toggleFavorite, updateClimate, updateLocationLabel, updateTree } from '$lib/stores/trees.svelte';
+	import { getTreeDisplayLabel } from '$lib/types/tree';
 	import { goHome } from '$lib/utils/app-navigation';
 	import { formatDate } from '$lib/utils/date';
 	import {
@@ -119,15 +120,10 @@
 
 	async function saveEditing() {
 		if (!tree) return;
-		const species = editSpecies.trim();
-		if (!species) {
-			showFeedback('Le nom de l\'espèce est requis');
-			return;
-		}
 
 		saving = true;
 		try {
-			await updateTree(tree.id, { species, notes: editNotes.trim() });
+			await updateTree(tree.id, { species: editSpecies.trim(), notes: editNotes.trim() });
 			editing = false;
 			showFeedback('Modifications enregistrées');
 		} finally {
@@ -153,7 +149,7 @@
 </script>
 
 <svelte:head>
-	<title>{tree ? tree.species : 'Détail'} — Yamadori Scouting</title>
+	<title>{tree ? getTreeDisplayLabel(tree) : 'Détail'} — Yamadori Scouting</title>
 </svelte:head>
 
 {#if tree}
@@ -195,7 +191,7 @@
 							class="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-xl font-semibold text-forest-900 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
 						/>
 					{:else}
-						<h2 class="text-2xl font-semibold text-forest-900">{tree.species}</h2>
+						<h2 class="text-2xl font-semibold text-forest-900">{getTreeDisplayLabel(tree)}</h2>
 					{/if}
 					<p class="mt-1 text-sm text-muted">{formatDate(tree.capturedAt)}</p>
 				</div>

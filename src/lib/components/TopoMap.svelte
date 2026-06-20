@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Tree } from '$lib/types/tree';
+	import { getTreeDisplayLabel, type Tree } from '$lib/types/tree';
 	import { base } from '$app/paths';
 	import { POOR_ACCURACY_THRESHOLD_M } from '$lib/utils/geo';
 	import { formatAccuracy } from '$lib/utils/gps';
@@ -80,7 +80,7 @@
 			tree.accuracyMeters !== null
 				? `<br><span style="color:#6b7280;font-size:12px;">${escapeHtml(formatAccuracy(tree.accuracyMeters))}</span>`
 				: '';
-		return `<strong>${escapeHtml(tree.species)}</strong>${locationLine}${accuracyLine}<br><a href="${link}" style="color:#2d4a2d;font-weight:600;">Voir</a>`;
+		return `<strong>${escapeHtml(getTreeDisplayLabel(tree))}</strong>${locationLine}${accuracyLine}<br><a href="${link}" style="color:#2d4a2d;font-weight:600;">Voir</a>`;
 	}
 
 	function createTreeMarkerElement(): HTMLDivElement {

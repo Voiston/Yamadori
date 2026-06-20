@@ -65,6 +65,13 @@ export function getCoverPhoto(tree: Pick<Tree, 'photos'>): string {
 	return tree.photos[0] ?? '';
 }
 
+export function getTreeDisplayLabel(
+	tree: Pick<Tree, 'species'>,
+	fallback = 'Espèce non renseignée'
+): string {
+	return tree.species.trim() || fallback;
+}
+
 export function getLastVisitAt(tree: Tree): string | null {
 	if (tree.visits.length === 0) return null;
 	return [...tree.visits].sort((a, b) => b.visitedAt.localeCompare(a.visitedAt))[0].visitedAt;

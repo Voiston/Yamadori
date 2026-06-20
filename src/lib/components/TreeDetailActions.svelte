@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Tree } from '$lib/types/tree';
+	import { getTreeDisplayLabel, type Tree } from '$lib/types/tree';
 	import { base } from '$app/paths';
 	import { copyCoordinates } from '$lib/utils/clipboard';
 	import { openNavigation } from '$lib/utils/navigation';
@@ -20,7 +20,7 @@
 
 	async function handleNavigate() {
 		if (tree.latitude === null || tree.longitude === null) return;
-		openNavigation(tree.latitude, tree.longitude, tree.species);
+		openNavigation(tree.latitude, tree.longitude, getTreeDisplayLabel(tree));
 	}
 
 	async function handleShare() {

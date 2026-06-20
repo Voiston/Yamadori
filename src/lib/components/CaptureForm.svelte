@@ -211,10 +211,6 @@
 		gpsSuccess = '';
 
 		const trimmedSpecies = species.trim();
-		if (!trimmedSpecies) {
-			error = 'Le nom de l\'espèce est requis.';
-			return;
-		}
 
 		submitting = true;
 
@@ -285,7 +281,7 @@
 
 	<div class="flex flex-col gap-6">
 		<div class="flex flex-col gap-2">
-			<label for="species" class="text-sm font-medium text-forest-900">Espèce</label>
+			<label for="species" class="text-sm font-medium text-forest-900">Espèce (optionnel)</label>
 			<input
 				id="species"
 				type="text"

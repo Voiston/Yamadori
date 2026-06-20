@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Tree } from '$lib/types/tree';
+	import { getTreeDisplayLabel, type Tree } from '$lib/types/tree';
 	import PhotoLightbox from './PhotoLightbox.svelte';
 
 	let { tree }: { tree: Tree } = $props();
@@ -9,6 +9,7 @@
 
 	let photos = $derived(tree.photos);
 	let selectedPhoto = $derived(photos[selectedIndex] ?? '');
+	let displayLabel = $derived(getTreeDisplayLabel(tree));
 </script>
 
 {#if photos.length > 0}
@@ -20,7 +21,7 @@
 		>
 			<img
 				src={selectedPhoto}
-				alt="Photo de {tree.species}"
+				alt="Photo de {displayLabel}"
 				class="aspect-[4/3] w-full object-cover"
 			/>
 		</button>
@@ -43,7 +44,7 @@
 		{/if}
 	</div>
 
-	<PhotoLightbox bind:open={showLightbox} src={selectedPhoto} alt="Photo de {tree.species}" />
+	<PhotoLightbox bind:open={showLightbox} src={selectedPhoto} alt="Photo de {displayLabel}" />
 {:else}
 	<div class="flex aspect-[4/3] w-full items-center justify-center rounded-xl bg-gray-100 text-forest-600">
 		<svg

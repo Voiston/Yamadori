@@ -5,6 +5,7 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import { getTreeById, initTrees, treeStore } from '$lib/stores/trees.svelte';
+	import { getTreeDisplayLabel } from '$lib/types/tree';
 	import { initParking, parkingStore } from '$lib/stores/parking.svelte';
 	import { initSyncEngine, stopSyncEngine, syncState } from '$lib/sync/engine.svelte';
 	import { initOnlineState, onlineState } from '$lib/utils/online.svelte';
@@ -75,7 +76,7 @@
 						: isSettings
 							? 'Réglages'
 							: isDetail
-								? (detailTree?.species ?? 'Détail')
+								? (detailTree ? getTreeDisplayLabel(detailTree) : 'Détail')
 								: 'Yamadori'
 	);
 

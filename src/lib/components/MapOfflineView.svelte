@@ -3,6 +3,7 @@
 	import ParkingPanel from '$lib/components/ParkingPanel.svelte';
 	import { parkingStore } from '$lib/stores/parking.svelte';
 	import { getTreeById, treesWithGps } from '$lib/stores/trees.svelte';
+	import { getTreeDisplayLabel } from '$lib/types/tree';
 	import { formatDistance, haversineDistanceM } from '$lib/utils/haversine';
 	import {
 		requestCurrentPosition,
@@ -105,7 +106,7 @@
 				<circle cx="12" cy="12" r="10" />
 				<path d="M12 8l3 8-3-2-3 2 3-8z" fill="currentColor" stroke="none" />
 			</svg>
-			Ouvrir la boussole — {focusTree.species}
+			Ouvrir la boussole — {getTreeDisplayLabel(focusTree)}
 		</a>
 	{/if}
 
@@ -121,7 +122,7 @@
 							href="{base}/tree/{tree.id}/compass"
 							class="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 transition active:scale-[0.98]"
 						>
-							<span class="font-medium text-forest-900">{tree.species}</span>
+							<span class="font-medium text-forest-900">{getTreeDisplayLabel(tree)}</span>
 							<span class="text-sm text-muted">
 								{#if distance !== null}
 									{formatDistance(distance)}

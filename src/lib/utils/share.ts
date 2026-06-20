@@ -1,12 +1,14 @@
 import type { Tree } from '$lib/types/tree';
+import { getTreeDisplayLabel } from '$lib/types/tree';
 import { formatDate } from '$lib/utils/date';
 import { formatBiologicalAltitude } from '$lib/utils/altitude';
 import { formatFrontHeading } from '$lib/utils/compass';
 import { formatAccuracy } from '$lib/utils/gps';
 
 function buildShareText(tree: Tree, url: string): string {
+	const label = getTreeDisplayLabel(tree);
 	const lines = [
-		`Yamadori — ${tree.species}`,
+		`Yamadori — ${label}`,
 		`Date : ${formatDate(tree.capturedAt)}`
 	];
 
@@ -43,7 +45,7 @@ export async function shareTree(
 	url: string
 ): Promise<'shared' | 'copied' | 'failed'> {
 	const text = buildShareText(tree, url);
-	const title = `Yamadori — ${tree.species}`;
+	const title = `Yamadori — ${getTreeDisplayLabel(tree)}`;
 
 	if (navigator.share) {
 		try {
