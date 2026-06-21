@@ -1,3 +1,4 @@
+import { GPS_HIGH_ACCURACY_OPTIONS } from '$lib/utils/geo';
 import { haversineBearingDeg, haversineDistanceM, normalizeHeading360 } from '$lib/utils/haversine';
 
 export interface UserPosition {
@@ -99,11 +100,7 @@ export function startWatchingPosition(): void {
 		(err) => {
 			userPositionState.error = err.message || 'Position indisponible';
 		},
-		{
-			enableHighAccuracy: true,
-			maximumAge: 5_000,
-			timeout: 15_000
-		}
+		GPS_HIGH_ACCURACY_OPTIONS
 	);
 }
 
@@ -134,11 +131,7 @@ export async function requestCurrentPosition(): Promise<UserPosition | null> {
 				userPositionState.error = err.message || 'Position indisponible';
 				resolve(null);
 			},
-			{
-				enableHighAccuracy: true,
-				timeout: 10_000,
-				maximumAge: 0
-			}
+			GPS_HIGH_ACCURACY_OPTIONS
 		);
 	});
 }

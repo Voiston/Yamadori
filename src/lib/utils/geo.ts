@@ -1,5 +1,11 @@
 export const POOR_ACCURACY_THRESHOLD_M = 25;
 
+export const GPS_HIGH_ACCURACY_OPTIONS: PositionOptions = {
+	enableHighAccuracy: true,
+	timeout: 15_000,
+	maximumAge: 0
+};
+
 export type GpsCapture = {
 	latitude: number | null;
 	longitude: number | null;
@@ -14,11 +20,7 @@ export function getCurrentPosition(): Promise<GeolocationPosition> {
 			return;
 		}
 
-		navigator.geolocation.getCurrentPosition(resolve, reject, {
-			enableHighAccuracy: true,
-			timeout: 10_000,
-			maximumAge: 0
-		});
+		navigator.geolocation.getCurrentPosition(resolve, reject, GPS_HIGH_ACCURACY_OPTIONS);
 	});
 }
 

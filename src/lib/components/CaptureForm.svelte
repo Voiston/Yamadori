@@ -13,7 +13,9 @@
 	} from '$lib/utils/compass';
 	import { haversineBearingDeg, haversineDistanceM, normalizeHeading360 } from '$lib/utils/haversine';
 	import { loadMagneticDeclinationDeg } from '$lib/utils/magneticDeclination';
-	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
+	import GpsAccuracyBadge from './GpsAccuracyBadge.svelte';
+	import { GPS_HIGH_ACCURACY_OPTIONS } from '$lib/utils/geo';
+	import { formatAccuracy, isBetterAccuracy, isPoorAccuracy } from '$lib/utils/gps';
 	import { compressImage } from '$lib/utils/photo';
 	import { getSpeciesSuggestionsForPosition } from '$lib/utils/species-suggestions';
 	import { onMount } from 'svelte';
@@ -39,6 +41,14 @@
 		courseDegrees: number | null;
 		speedMps: number | null;
 	} | null>(null);
+	let bestCapturePosition = $state<{
+		latitude: number;
+		longitude: number;
+		altitudeMeters: number | null;
+		accuracyMeters: number | null;
+		courseDegrees: number | null;
+		speedMps: number | null;
+	} | null>(null);
 	let gpsLoading = $state(true);
 	let climateHistory = $state<ClimateHistory | null>(null);
 	let climateLoading = $state(false);
@@ -49,8 +59,19 @@
 	let frontHeadingDegrees = $state<number | null>(null);
 	let declinationDeg = $state<number | null>(null);
 
+	const savedPosition = $derived(bestCapturePosition ?? capturePosition);
+
+	const showBestPositionHint = $derived.by(() => {
+		if (!bestCapturePosition || !capturePosition) {
+			return false;
+		}
+		const best = bestCapturePosition.accuracyMeters;
+		const live = capturePosition.accuracyMeters;
+		return best !== null && live !== null && best < live;
+	});
+
 	$effect(() => {
-		const position = capturePosition;
+		const position = savedPosition;
 		if (!position) {
 			declinationDeg = null;
 			return;
@@ -69,12 +90,12 @@
 	});
 
 	const suggestions = $derived.by(() => {
-		if (!capturePosition) {
+		if (!savedPosition) {
 			return { regions: [], species: [] as string[] };
 		}
 		return getSpeciesSuggestionsForPosition(
-			capturePosition.latitude,
-			capturePosition.longitude
+			savedPosition.latitude,
+			savedPosition.longitude
 		);
 	});
 
@@ -95,11 +116,11 @@
 	const frontLabel = $derived(formatFrontLabel(frontHeadingDegrees));
 
 	const showClimatePanel = $derived(
-		capturePosition !== null && !isPoorAccuracy(capturePosition.accuracyMeters)
+		savedPosition !== null && !isPoorAccuracy(savedPosition.accuracyMeters)
 	);
 
 	$effect(() => {
-		const position = capturePosition;
+		const position = savedPosition;
 		if (!position || isPoorAccuracy(position.accuracyMeters)) {
 			climateHistory = null;
 			climateError = '';
@@ -115,15 +136,15 @@
 				try {
 					const result = await fetchClimateHistory(latitude, longitude);
 					if (
-						capturePosition?.latitude === latitude &&
-						capturePosition?.longitude === longitude
+						savedPosition?.latitude === latitude &&
+						savedPosition?.longitude === longitude
 					) {
 						climateHistory = result;
 					}
 				} catch (err) {
 					if (
-						capturePosition?.latitude === latitude &&
-						capturePosition?.longitude === longitude
+						savedPosition?.latitude === latitude &&
+						savedPosition?.longitude === longitude
 					) {
 						climateHistory = null;
 						climateError =
@@ -131,8 +152,8 @@
 					}
 				} finally {
 					if (
-						capturePosition?.latitude === latitude &&
-						capturePosition?.longitude === longitude
+						savedPosition?.latitude === latitude &&
+						savedPosition?.longitude === longitude
 					) {
 						climateLoading = false;
 					}
@@ -144,7 +165,7 @@
 	});
 
 	$effect(() => {
-		const position = capturePosition;
+		const position = savedPosition;
 		if (!position || isPoorAccuracy(position.accuracyMeters)) {
 			locationLabel = null;
 			locationLoading = false;
@@ -158,22 +179,22 @@
 				try {
 					const result = await reverseGeocode(latitude, longitude);
 					if (
-						capturePosition?.latitude === latitude &&
-						capturePosition?.longitude === longitude
+						savedPosition?.latitude === latitude &&
+						savedPosition?.longitude === longitude
 					) {
 						locationLabel = result;
 					}
 				} catch {
 					if (
-						capturePosition?.latitude === latitude &&
-						capturePosition?.longitude === longitude
+						savedPosition?.latitude === latitude &&
+						savedPosition?.longitude === longitude
 					) {
 						locationLabel = null;
 					}
 				} finally {
 					if (
-						capturePosition?.latitude === latitude &&
-						capturePosition?.longitude === longitude
+						savedPosition?.latitude === latitude &&
+						savedPosition?.longitude === longitude
 					) {
 						locationLoading = false;
 					}
@@ -251,7 +272,7 @@
 						longitude: pos.coords.longitude
 					};
 
-					capturePosition = {
+					const reading = {
 						latitude: pos.coords.latitude,
 						longitude: pos.coords.longitude,
 						altitudeMeters: pos.coords.altitude ?? null,
@@ -259,16 +280,19 @@
 						courseDegrees,
 						speedMps
 					};
+
+					capturePosition = reading;
+
+					if (isBetterAccuracy(reading.accuracyMeters, bestCapturePosition?.accuracyMeters ?? null)) {
+						bestCapturePosition = reading;
+					}
+
 					gpsLoading = false;
 				},
 				() => {
 					gpsLoading = false;
 				},
-				{
-					enableHighAccuracy: true,
-					maximumAge: 5_000,
-					timeout: 15_000
-				}
+				GPS_HIGH_ACCURACY_OPTIONS
 			);
 		} else {
 			gpsLoading = false;
@@ -293,10 +317,10 @@
 		submitting = true;
 
 		try {
-			const latitude = capturePosition?.latitude ?? null;
-			const longitude = capturePosition?.longitude ?? null;
-			const accuracyMeters = capturePosition?.accuracyMeters ?? null;
-			const altitudeMeters = capturePosition?.altitudeMeters ?? null;
+			const latitude = savedPosition?.latitude ?? null;
+			const longitude = savedPosition?.longitude ?? null;
+			const accuracyMeters = savedPosition?.accuracyMeters ?? null;
+			const altitudeMeters = savedPosition?.altitudeMeters ?? null;
 
 			if (latitude === null || longitude === null) {
 				gpsWarning = 'Position GPS indisponible — l\'arbre sera enregistré sans coordonnées.';
@@ -371,8 +395,14 @@
 			/>
 
 			{#if gpsLoading}
-				<p class="text-sm text-muted" role="status">Localisation en cours…</p>
+				<GpsAccuracyBadge accuracyMeters={null} loading={true} />
 			{:else if capturePosition}
+				<GpsAccuracyBadge accuracyMeters={capturePosition.accuracyMeters} />
+				{#if showBestPositionHint && bestCapturePosition}
+					<p class="text-xs text-forest-600" role="status">
+						Meilleure position mémorisée ({formatAccuracy(bestCapturePosition.accuracyMeters)})
+					</p>
+				{/if}
 				<p class="text-sm font-medium text-forest-800" role="status">
 					{liveAltitudeLabel}
 				</p>
