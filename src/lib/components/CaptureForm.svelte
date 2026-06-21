@@ -500,9 +500,11 @@
 				class="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
 			></textarea>
 		</div>
-
-		{#if showClimatePanel}
-			<ClimatePanel climate={climateHistory} loading={climateLoading} error={climateError} />
-		{/if}
 	</div>
+
+	{#if showClimatePanel}
+		<div class="order-3 lg:col-span-2">
+			<ClimatePanel climate={climateHistory} loading={climateLoading} error={climateError} />
+		</div>
+	{/if}
 </form>
