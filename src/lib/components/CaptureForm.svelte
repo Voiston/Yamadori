@@ -460,7 +460,7 @@
 				{/if}
 			{/if}
 
-			{#if !gpsLoading && capturePosition && suggestions.species.length > 0}
+			{#if !gpsLoading && capturePosition && suggestions.species.length > 0 && !species.trim()}
 				<div class="flex flex-col gap-2">
 					<p class="text-xs text-forest-600">{biotopeLabel}</p>
 					<div
@@ -484,7 +484,7 @@
 						{/each}
 					</div>
 				</div>
-			{:else if !gpsLoading && capturePosition && suggestions.species.length === 0}
+			{:else if !gpsLoading && capturePosition && suggestions.species.length === 0 && !species.trim()}
 				<p class="text-sm text-muted">Aucune suggestion pour cette zone.</p>
 			{/if}
 		</div>
@@ -494,10 +494,10 @@
 			<textarea
 				id="notes"
 				bind:value={notes}
-				rows="4"
+				rows="3"
 				placeholder="Taille, exposition, état sanitaire, accès..."
 				disabled={submitting}
-				class="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
+				class="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
 			></textarea>
 		</div>
 	</div>
