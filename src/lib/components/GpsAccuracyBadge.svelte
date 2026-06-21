@@ -13,11 +13,15 @@
 </script>
 
 {#if loading}
-	<p class="text-sm text-muted" role="status">Localisation en cours…</p>
+	<p class="text-base text-muted" role="status">Localisation en cours…</p>
 {:else if accuracyMeters !== null}
-	<div class="mt-1 flex items-center gap-2" role="status">
+	<div
+		class="mt-2 flex items-center gap-3"
+		role="status"
+		aria-label="Précision GPS {formatAccuracy(accuracyMeters)}"
+	>
 		<span
-			class="inline-block h-3 w-3 shrink-0 rounded-full"
+			class="inline-block h-4 w-4 shrink-0 rounded-full"
 			class:bg-green-500={quality === 'excellent'}
 			class:bg-amber-500={quality === 'fair'}
 			class:bg-red-500={quality === 'poor'}
@@ -25,14 +29,6 @@
 			aria-hidden="true"
 		></span>
 
-		<p class="text-sm text-forest-800">
-			{#if quality === 'excellent'}
-				Signal excellent ({formatAccuracy(accuracyMeters)})
-			{:else if quality === 'fair'}
-				Signal moyen ({formatAccuracy(accuracyMeters)}) — attends un peu…
-			{:else}
-				Signal mauvais ({formatAccuracy(accuracyMeters)}) — mets-toi à la clairière !
-			{/if}
-		</p>
+		<p class="text-lg font-semibold tabular-nums text-forest-800">{formatAccuracy(accuracyMeters)}</p>
 	</div>
 {/if}

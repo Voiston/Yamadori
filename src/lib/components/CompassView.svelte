@@ -2,20 +2,16 @@
 	import type { CompassTarget } from '$lib/types/compass';
 	import {
 		formatDistance,
-		getRelativeDirection,
 		haversineBearingDeg,
 		haversineDistanceM,
-		normalizeAngle,
 		normalizeHeading360,
 		shortestAngleDelta,
 		smoothBearing
 	} from '$lib/utils/haversine';
 	import {
-		headingToCardinal,
 		requestOrientationPermission,
 		subscribeDeviceOrientation
 	} from '$lib/utils/compass';
-	import { isGpsCourseFusionActive } from '$lib/utils/haversine';
 	import { loadMagneticDeclinationDeg } from '$lib/utils/magneticDeclination';
 	import {
 		requestCurrentPosition,
@@ -109,11 +105,6 @@
 
 	let bearing = $derived(smoothedBearing);
 
-	let relativeAngle = $derived.by(() => {
-		if (bearing === null || heading === null) return null;
-		return normalizeAngle(bearing - heading);
-	});
-
 	let arrowRotation = $derived.by(() => {
 		if (bearing === null) return 0;
 		if (heading !== null) return normalizeHeading360(bearing - heading);
@@ -127,27 +118,6 @@
 		if (delta !== 0) {
 			displayRotation = current + delta;
 		}
-	});
-
-	let directionText = $derived.by(() => {
-		if (bearing === null) return '';
-		if (relativeAngle !== null) return getRelativeDirection(relativeAngle);
-		return headingToCardinal(bearing);
-	});
-
-	let compassStatusText = $derived.by(() => {
-		if (!orientationEnabled) return '';
-		if (heading === null) {
-			return 'Direction approximative — alignez le haut du téléphone vers le nord';
-		}
-		const position = userPositionState.position;
-		if (
-			position &&
-			isGpsCourseFusionActive(position.courseDegrees, position.speedMps)
-		) {
-			return 'Boussole + cap GPS (en marchant)';
-		}
-		return 'Boussole active (nord vrai)';
 	});
 
 	function getHeadingFusionContext() {
@@ -201,9 +171,6 @@
 			{:else}
 				<p class="mt-2 text-sm text-muted">Calcul de la position…</p>
 			{/if}
-			{#if directionText}
-				<p class="mt-1 text-base text-muted">{directionText}</p>
-			{/if}
 		</div>
 
 		<div class="relative flex h-64 w-64 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm lg:h-80 lg:w-80">
@@ -227,8 +194,6 @@
 			>
 				Activer la boussole
 			</button>
-		{:else if compassStatusText}
-			<p class="text-center text-sm text-muted">{compassStatusText}</p>
 		{/if}
 
 		{#if orientationError}

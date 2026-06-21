@@ -399,8 +399,9 @@
 			{:else if capturePosition}
 				<GpsAccuracyBadge accuracyMeters={capturePosition.accuracyMeters} />
 				{#if showBestPositionHint && bestCapturePosition}
-					<p class="text-xs text-forest-600" role="status">
-						Meilleure position mémorisée ({formatAccuracy(bestCapturePosition.accuracyMeters)})
+					<p class="text-sm text-forest-600" role="status">
+						Meilleure position mémorisée —
+						<span class="font-semibold tabular-nums">{formatAccuracy(bestCapturePosition.accuracyMeters)}</span>
 					</p>
 				{/if}
 				<p class="text-sm font-medium text-forest-800" role="status">
@@ -444,10 +445,6 @@
 			{/if}
 		</div>
 
-		{#if showClimatePanel}
-			<ClimatePanel climate={climateHistory} loading={climateLoading} error={climateError} />
-		{/if}
-
 		<div class="flex flex-col gap-2">
 			<label for="notes" class="text-sm font-medium text-forest-900">Notes</label>
 			<textarea
@@ -479,6 +476,10 @@
 			<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800" role="status">
 				{gpsSuccess}
 			</p>
+		{/if}
+
+		{#if showClimatePanel}
+			<ClimatePanel climate={climateHistory} loading={climateLoading} error={climateError} />
 		{/if}
 
 		<button
