@@ -12,7 +12,7 @@
 >
 	<div class="border-b border-gray-100 px-5 py-5">
 		<p class="text-lg font-semibold text-forest-900">Yamadori</p>
-		<p class="text-xs text-muted">Scouting</p>
+		<p class="text-xs text-muted">Par ici le Jupinerus !</p>
 	</div>
 
 	<div class="flex flex-1 flex-col gap-1 p-3">

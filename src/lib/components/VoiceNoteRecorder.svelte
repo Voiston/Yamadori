@@ -14,10 +14,12 @@
 
 	let {
 		disabled = false,
+		compact = false,
 		value = $bindable(null),
 		onchange
 	}: {
 		disabled?: boolean;
+		compact?: boolean;
 		value?: VoiceNote | null;
 		onchange?: (note: VoiceNote | null) => void;
 	} = $props();
@@ -153,9 +155,11 @@
 	});
 </script>
 
-<div class="flex flex-col gap-3">
+<div class="flex flex-col gap-2">
 	<p class="text-sm font-medium text-forest-900">Note vocale (optionnel)</p>
-	<p class="text-xs text-muted">Appuyez sur Enregistrer, parlez, puis Stop (max 30 s)</p>
+	{#if !compact}
+		<p class="text-xs text-muted">Appuyez sur Enregistrer, parlez, puis Stop (max 30 s)</p>
+	{/if}
 
 	{#if recorderState === 'unsupported'}
 		<p class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
@@ -169,31 +173,41 @@
 			type="button"
 			onclick={handleStart}
 			{disabled}
-			class="flex h-14 w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-base font-semibold text-forest-900 transition active:scale-[0.98] disabled:opacity-50"
+			class="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-forest-900 transition active:scale-[0.98] disabled:opacity-50"
 		>
 			Réessayer
 		</button>
 	{:else if recorderState === 'recording'}
 		<div
-			class="flex flex-col items-center gap-4 rounded-xl border border-red-200 bg-red-50 p-6"
+			class="flex flex-col items-center gap-3 rounded-xl border border-red-200 bg-red-50 {compact
+				? 'p-4'
+				: 'gap-4 p-6'}"
 			role="status"
 			aria-live="polite"
 		>
 			<div class="flex items-center gap-2">
-				<span class="h-3 w-3 animate-pulse rounded-full bg-red-600" aria-hidden="true"></span>
-				<span class="text-sm font-medium text-red-800">Enregistrement en cours</span>
+				<span class="h-2.5 w-2.5 animate-pulse rounded-full bg-red-600" aria-hidden="true"></span>
+				<span class="text-xs font-medium text-red-800">Enregistrement en cours</span>
 			</div>
-			<p class="font-mono text-3xl font-semibold tabular-nums text-red-900">{elapsedLabel}</p>
+			<p
+				class="font-mono font-semibold tabular-nums text-red-900 {compact
+					? 'text-2xl'
+					: 'text-3xl'}"
+			>
+				{elapsedLabel}
+			</p>
 			<button
 				type="button"
 				onclick={handleStop}
-				class="flex h-16 w-full max-w-xs items-center justify-center gap-2 rounded-xl bg-red-700 text-lg font-semibold text-white transition active:scale-[0.98]"
+				class="flex w-full max-w-xs items-center justify-center gap-2 rounded-xl bg-red-700 font-semibold text-white transition active:scale-[0.98] {compact
+					? 'h-12 text-base'
+					: 'h-16 text-lg'}"
 			>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					viewBox="0 0 24 24"
 					fill="currentColor"
-					class="h-6 w-6"
+					class="{compact ? 'h-5 w-5' : 'h-6 w-6'}"
 					aria-hidden="true"
 				>
 					<rect x="6" y="6" width="12" height="12" rx="1" />
@@ -202,9 +216,9 @@
 			</button>
 		</div>
 	{:else if recorderState === 'recorded' && value}
-		<div class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4">
+		<div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-3">
 			<div class="flex items-center justify-between gap-3">
-				<p class="text-sm font-medium text-forest-900">
+				<p class="text-xs font-medium text-forest-900">
 					Note enregistrée · {formatVoiceDuration(value.durationMs)}
 				</p>
 				<button
@@ -220,7 +234,9 @@
 				type="button"
 				onclick={togglePreview}
 				{disabled}
-				class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-forest-50 text-base font-medium text-forest-900 transition active:scale-[0.98] disabled:opacity-50"
+				class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-forest-50 font-medium text-forest-900 transition active:scale-[0.98] disabled:opacity-50 {compact
+					? 'h-10 text-sm'
+					: 'h-12 text-base'}"
 			>
 				{#if previewPlaying}
 					<svg
@@ -253,7 +269,9 @@
 			type="button"
 			onclick={handleStart}
 			{disabled}
-			class="flex h-20 w-full items-center justify-center gap-3 rounded-xl bg-forest-800 text-lg font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+			class="flex w-full items-center justify-center gap-2 rounded-xl bg-forest-800 font-semibold text-white transition active:scale-[0.98] disabled:opacity-50 {compact
+				? 'h-12 text-base'
+				: 'h-20 gap-3 text-lg'}"
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
@@ -261,7 +279,7 @@
 				fill="none"
 				stroke="currentColor"
 				stroke-width="2"
-				class="h-8 w-8"
+				class="{compact ? 'h-5 w-5' : 'h-8 w-8'}"
 				aria-hidden="true"
 			>
 				<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />

@@ -376,12 +376,56 @@
 	class="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(280px,1fr)_minmax(0,1.5fr)] lg:items-start lg:gap-8"
 	onsubmit={handleSubmit}
 >
-	<div class="hidden flex-col gap-6 lg:sticky lg:top-20 lg:flex">
+	<div class="order-2 flex flex-col gap-4 lg:order-1 lg:sticky lg:top-20">
 		<PhotoPreview bind:preview={photoPreview} {frontLabel} onfile={handlePhoto} />
-		<VoiceNoteRecorder bind:value={voiceNote} disabled={submitting} />
+
+		{#if error}
+			<p class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>
+		{/if}
+
+		{#if gpsWarning}
+			<p class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
+				{gpsWarning}
+			</p>
+		{/if}
+
+		{#if gpsSuccess}
+			<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800" role="status">
+				{gpsSuccess}
+			</p>
+		{/if}
+
+		<button
+			type="submit"
+			disabled={submitting}
+			class="flex h-16 w-full items-center justify-center gap-2 rounded-xl bg-forest-800 text-lg font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+		>
+			{#if submitting}
+				<svg
+					class="h-6 w-6 animate-spin"
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+					aria-hidden="true"
+				>
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+					></circle>
+					<path
+						class="opacity-75"
+						fill="currentColor"
+						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+					></path>
+				</svg>
+				Enregistrement...
+			{:else}
+				Enregistrer l'arbre
+			{/if}
+		</button>
+
+		<VoiceNoteRecorder bind:value={voiceNote} disabled={submitting} compact />
 	</div>
 
-	<div class="flex flex-col gap-6">
+	<div class="order-1 flex flex-col gap-6 lg:order-2">
 		<div class="flex flex-col gap-2">
 			<label for="species" class="text-sm font-medium text-forest-900">Espèce (optionnel)</label>
 			<input
@@ -457,56 +501,8 @@
 			></textarea>
 		</div>
 
-		<div class="flex flex-col gap-6 lg:hidden">
-			<VoiceNoteRecorder bind:value={voiceNote} disabled={submitting} />
-			<PhotoPreview bind:preview={photoPreview} {frontLabel} onfile={handlePhoto} />
-		</div>
-
-		{#if error}
-			<p class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>
-		{/if}
-
-		{#if gpsWarning}
-			<p class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
-				{gpsWarning}
-			</p>
-		{/if}
-
-		{#if gpsSuccess}
-			<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800" role="status">
-				{gpsSuccess}
-			</p>
-		{/if}
-
 		{#if showClimatePanel}
 			<ClimatePanel climate={climateHistory} loading={climateLoading} error={climateError} />
 		{/if}
-
-		<button
-			type="submit"
-			disabled={submitting}
-			class="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
-		>
-			{#if submitting}
-				<svg
-					class="h-5 w-5 animate-spin"
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					aria-hidden="true"
-				>
-					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-					></circle>
-					<path
-						class="opacity-75"
-						fill="currentColor"
-						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-					></path>
-				</svg>
-				Enregistrement...
-			{:else}
-				Enregistrer l'arbre
-			{/if}
-		</button>
 	</div>
 </form>

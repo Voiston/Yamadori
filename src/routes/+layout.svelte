@@ -81,7 +81,9 @@
 	);
 
 	let headerSubtitle = $derived(
-		!isCapture && !isMap && !isDetail && !isCompass && !isParkingCompass ? 'Scouting' : ''
+		!isCapture && !isMap && !isDetail && !isCompass && !isParkingCompass
+			? 'Par ici le Jupinerus !'
+			: ''
 	);
 
 	let syncLabel = $derived.by(() => {
