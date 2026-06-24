@@ -1,5 +1,3 @@
-/// <reference types="vite-plugin-pwa/client" />
-
 declare global {
 	namespace App {
 		// interface Error {}

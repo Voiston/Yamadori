@@ -1,4 +1,14 @@
+import * as m from '$lib/paraglide/messages.js';
+import { getLocale } from '$lib/paraglide/runtime.js';
 import { POOR_ACCURACY_THRESHOLD_M } from '$lib/utils/geo';
+
+const INTL_LOCALE: Record<string, string> = {
+	fr: 'fr-FR',
+	en: 'en-GB',
+	de: 'de-DE',
+	it: 'it-IT',
+	es: 'es-ES'
+};
 
 export type GpsSignalQuality = 'excellent' | 'fair' | 'poor' | 'unknown';
 
@@ -20,16 +30,17 @@ export function getGpsSignalQuality(meters: number | null): GpsSignalQuality {
 
 export function formatAccuracy(meters: number | null): string {
 	if (meters === null) {
-		return 'Précision inconnue';
+		return m.gps_accuracy_unknown();
 	}
-	return `±${Math.round(meters)} m`;
+	return m.gps_accuracy_format({ meters: String(Math.round(meters)) });
 }
 
 export function formatAltitude(meters: number | null): string | null {
 	if (meters === null) {
 		return null;
 	}
-	return `${Math.round(meters).toLocaleString('fr-FR')} m`;
+	const locale = INTL_LOCALE[getLocale()] ?? 'fr-FR';
+	return `${Math.round(meters).toLocaleString(locale)} m`;
 }
 
 export function isPoorAccuracy(meters: number | null): boolean {
@@ -44,7 +55,7 @@ export function isBetterAccuracy(candidate: number | null, currentBest: number |
 	if (currentBest === null) {
 		return true;
 	}
-	return candidate <= currentBest;
+	return candidate < currentBest;
 }
 
 export function hasApproximateGps(

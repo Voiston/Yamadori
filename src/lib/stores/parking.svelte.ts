@@ -1,4 +1,5 @@
 import { get, set } from 'idb-keyval';
+import * as m from '$lib/paraglide/messages.js';
 import type { ParkingPosition } from '$lib/types/parking';
 import type { GpsCapture } from '$lib/utils/geo';
 import { toStorable } from '$lib/utils/idb-store';
@@ -19,7 +20,7 @@ export async function initParking(): Promise<void> {
 	} catch (error) {
 		console.error('initParking failed:', error);
 		parkingStore.position = null;
-		parkingStore.loadError = 'Point de départ local illisible.';
+		parkingStore.loadError = m.parking_load_error();
 	} finally {
 		parkingStore.loaded = true;
 	}
@@ -52,5 +53,10 @@ export async function saveParking(capture: GpsCapture): Promise<ParkingPosition 
 
 export async function clearParking(): Promise<void> {
 	parkingStore.position = null;
+	await persist();
+}
+
+export async function restoreParking(position: ParkingPosition | null): Promise<void> {
+	parkingStore.position = position;
 	await persist();
 }

@@ -2,11 +2,12 @@ const WMTS_BASE = 'https://data.geopf.fr/wmts';
 
 export type IgnLayerId = 'plan' | 'ortho' | 'hillshade';
 
-type IgnLayerConfig = {
+export type IgnLayerConfig = {
 	layer: string;
 	format: 'image/png' | 'image/jpeg';
 	maxZoom: number;
 	attribution: string;
+	style: string;
 };
 
 const LAYERS: Record<IgnLayerId, IgnLayerConfig> = {
@@ -14,20 +15,31 @@ const LAYERS: Record<IgnLayerId, IgnLayerConfig> = {
 		layer: 'GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2',
 		format: 'image/png',
 		maxZoom: 16,
-		attribution: '© IGN / Géoplateforme — Plan IGN'
+		attribution: '© IGN / Géoplateforme — Plan IGN',
+		style: 'normal'
 	},
 	ortho: {
 		layer: 'ORTHOIMAGERY.ORTHOPHOTOS',
 		format: 'image/jpeg',
 		maxZoom: 19,
-		attribution: '© IGN / Géoplateforme — Orthophotos'
+		attribution: '© IGN / Géoplateforme — Orthophotos',
+		style: 'normal'
 	},
 	hillshade: {
 		layer: 'GEOGRAPHICALGRIDSYSTEMS.SLOPES.PAC',
 		format: 'image/png',
 		maxZoom: 17,
-		attribution: '© IGN / Géoplateforme — Relief'
+		attribution: '© IGN / Géoplateforme — Relief',
+		style: 'normal'
 	}
+};
+
+export const CADASTRE_LAYER: IgnLayerConfig = {
+	layer: 'CADASTRALPARCELS.PARCELLAIRE_EXPRESS',
+	format: 'image/png',
+	maxZoom: 16,
+	attribution: '© IGN — Cadastre',
+	style: 'PCI vecteur'
 };
 
 function getApiKey(): string | undefined {
@@ -35,11 +47,10 @@ function getApiKey(): string | undefined {
 	return typeof key === 'string' && key.trim() ? key.trim() : undefined;
 }
 
-export function buildIgnTileUrl(layerId: IgnLayerId): string {
-	const config = LAYERS[layerId];
+export function buildIgnLayerTileUrl(config: IgnLayerConfig): string {
 	let url =
 		`${WMTS_BASE}?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0` +
-		`&LAYER=${config.layer}&STYLE=normal&FORMAT=${config.format}` +
+		`&LAYER=${config.layer}&STYLE=${encodeURIComponent(config.style)}&FORMAT=${config.format}` +
 		`&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}`;
 
 	const apiKey = getApiKey();
@@ -48,6 +59,10 @@ export function buildIgnTileUrl(layerId: IgnLayerId): string {
 	}
 
 	return url;
+}
+
+export function buildIgnTileUrl(layerId: IgnLayerId): string {
+	return buildIgnLayerTileUrl(LAYERS[layerId]);
 }
 
 export function getIgnLayerConfig(layerId: IgnLayerId): IgnLayerConfig {

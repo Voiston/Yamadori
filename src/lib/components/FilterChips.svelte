@@ -1,17 +1,23 @@
 <script lang="ts">
+	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import * as m from '$lib/paraglide/messages.js';
+
 	let {
 		value = $bindable<'all' | 'favorites'>('all')
 	}: {
 		value?: 'all' | 'favorites';
 	} = $props();
 
-	const options = [
-		{ id: 'all' as const, label: 'Tous' },
-		{ id: 'favorites' as const, label: 'Favoris' }
-	];
+	const options = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return [
+			{ id: 'all' as const, label: m.filter_all() },
+			{ id: 'favorites' as const, label: m.filter_favorites() }
+		];
+	});
 </script>
 
-<div class="flex gap-2" role="group" aria-label="Filtrer la liste">
+<div class="flex gap-2" role="group" aria-label={m.filter_group_label()}>
 	{#each options as option (option.id)}
 		<button
 			type="button"

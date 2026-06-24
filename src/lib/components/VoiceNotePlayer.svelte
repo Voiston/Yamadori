@@ -2,6 +2,8 @@
 	import type { VoiceNote } from '$lib/types/tree';
 	import { formatDate } from '$lib/utils/date';
 	import { formatVoiceDuration } from '$lib/utils/voice';
+	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import * as m from '$lib/paraglide/messages.js';
 	import { onDestroy } from 'svelte';
 
 	let { voiceNote }: { voiceNote: VoiceNote } = $props();
@@ -11,6 +13,14 @@
 	let audioEl: HTMLAudioElement | undefined = $state();
 
 	const durationLabel = $derived(formatVoiceDuration(voiceNote.durationMs));
+	const recordedLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return m.voice_recorded_on({ date: formatDate(voiceNote.recordedAt) });
+	});
+	const playAria = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return playing ? m.voice_pause() : m.voice_play();
+	});
 
 	function togglePlayback() {
 		if (!audioEl) return;
@@ -43,8 +53,8 @@
 </script>
 
 <section class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-	<h3 class="text-sm font-medium text-forest-900">Note vocale</h3>
-	<p class="mt-1 text-xs text-muted">Enregistrée le {formatDate(voiceNote.recordedAt)}</p>
+	<h3 class="text-sm font-medium text-forest-900">{m.voice_note()}</h3>
+	<p class="mt-1 text-xs text-muted">{recordedLabel}</p>
 
 	<audio
 		bind:this={audioEl}
@@ -59,7 +69,7 @@
 			type="button"
 			onclick={togglePlayback}
 			class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-forest-800 text-white transition active:scale-95"
-			aria-label={playing ? 'Pause' : 'Lire la note vocale'}
+			aria-label={playAria}
 		>
 			{#if playing}
 				<svg

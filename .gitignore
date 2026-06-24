@@ -8,6 +8,14 @@ node_modules
 /.svelte-kit
 /build
 
+# Capacitor / Android local build artifacts
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+*.jks
+*.keystore
+
 # OS
 .DS_Store
 Thumbs.db
@@ -22,10 +30,5 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# PocketBase (local server data — never commit)
-pb_data/
-pocketbase.exe
-**/logs/
-
-# Windows sync scripts — config locale par machine
-scripts/windows/yamadori-sync.config.ps1
+# Paraglide (generated at build)
+src/lib/paraglide

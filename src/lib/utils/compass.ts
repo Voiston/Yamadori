@@ -1,21 +1,10 @@
+import * as m from '$lib/paraglide/messages.js';
 import {
-	fuseWithGpsCourse,
 	magneticToTrueHeading,
 	normalizeAngle,
 	normalizeHeading360,
 	smoothAngleCircular
 } from '$lib/utils/haversine';
-
-const CARDINALS = [
-	'Nord',
-	'Nord-Est',
-	'Est',
-	'Sud-Est',
-	'Sud',
-	'Sud-Ouest',
-	'Ouest',
-	'Nord-Ouest'
-] as const;
 
 const HEADING_SMOOTHING_BASE = 0.2;
 const HEADING_SMOOTHING_DAMPENED = 0.08;
@@ -24,7 +13,7 @@ const OUTLIER_THRESHOLD = 45;
 const MAX_CONSECUTIVE_REJECTS = 3;
 const SOURCE_AGREEMENT_THRESHOLD = 30;
 const ABSOLUTE_STALE_MS = 500;
-export const ORIENTATION_THROTTLE_MS = 50;
+export const ORIENTATION_THROTTLE_MS = 66;
 
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -183,7 +172,7 @@ export function refineTrueHeading(
 		trueHeading = magneticToTrueHeading(reading.heading, context.declinationDeg);
 	}
 
-	return fuseWithGpsCourse(trueHeading, context.gpsCourseDegrees, context.speedMps);
+	return trueHeading;
 }
 
 export function getDeviceHeading(event: DeviceOrientationEvent): number | null {
@@ -206,37 +195,24 @@ function processOrientationReading(
 	}
 }
 
-export function createThrottledOrientationProcessor(
-	handler: (heading: number) => void,
-	filterState: HeadingFilterState,
-	getContext: () => HeadingFusionContext
-) {
+export function createThrottledCallback<T>(handler: (value: T) => void): (value: T) => void {
 	let lastProcessedAt = 0;
-	let lastEmitted: number | null = null;
 	let throttleTimer: ReturnType<typeof setTimeout> | null = null;
-	let pendingReading: DeviceHeadingReading | null = null;
-
-	const emit = (value: number) => {
-		if (lastEmitted === value) {
-			return;
-		}
-		lastEmitted = value;
-		handler(value);
-	};
+	let pending: T | null = null;
 
 	const flush = () => {
 		throttleTimer = null;
-		if (!pendingReading) {
+		if (pending === null) {
 			return;
 		}
-		const reading = pendingReading;
-		pendingReading = null;
+		const value = pending;
+		pending = null;
 		lastProcessedAt = Date.now();
-		processOrientationReading(reading, emit, filterState, getContext);
+		handler(value);
 	};
 
-	return (reading: DeviceHeadingReading) => {
-		pendingReading = reading;
+	return (value: T) => {
+		pending = value;
 		const now = Date.now();
 		const elapsed = now - lastProcessedAt;
 
@@ -253,6 +229,26 @@ export function createThrottledOrientationProcessor(
 			throttleTimer = setTimeout(flush, ORIENTATION_THROTTLE_MS - elapsed);
 		}
 	};
+}
+
+export function createThrottledOrientationProcessor(
+	handler: (heading: number) => void,
+	filterState: HeadingFilterState,
+	getContext: () => HeadingFusionContext
+) {
+	let lastEmitted: number | null = null;
+
+	const emit = (value: number) => {
+		if (lastEmitted === value) {
+			return;
+		}
+		lastEmitted = value;
+		handler(value);
+	};
+
+	return createThrottledCallback((reading: DeviceHeadingReading) => {
+		processOrientationReading(reading, emit, filterState, getContext);
+	});
 }
 
 export function subscribeDeviceOrientation(
@@ -296,10 +292,23 @@ export async function requestOrientationPermission(): Promise<boolean> {
 	}
 }
 
+function getCardinals(): string[] {
+	return [
+		m.compass_cardinal_n(),
+		m.compass_cardinal_ne(),
+		m.compass_cardinal_e(),
+		m.compass_cardinal_se(),
+		m.compass_cardinal_s(),
+		m.compass_cardinal_sw(),
+		m.compass_cardinal_w(),
+		m.compass_cardinal_nw()
+	];
+}
+
 export function headingToCardinal(degrees: number): string {
 	const normalized = normalizeHeading360(degrees);
 	const index = Math.round(normalized / 45) % 8;
-	return CARDINALS[index];
+	return getCardinals()[index];
 }
 
 export function formatFrontHeading(degrees: number | null): string | null {
@@ -317,5 +326,5 @@ export function formatFrontLabel(degrees: number | null): string | null {
 	if (!formatted) {
 		return null;
 	}
-	return `Front : ${formatted}`;
+	return m.compass_front({ heading: formatted });
 }

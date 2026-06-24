@@ -1,8 +1,10 @@
+import * as m from '$lib/paraglide/messages.js';
 import type { Tree } from '$lib/types/tree';
-
+import { getCachedGeocodeLabel, saveCachedGeocodeLabel } from '$lib/utils/geocodingCache';
+import { getAcceptLanguage } from '$lib/utils/i18n/locale';
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
 const FETCH_TIMEOUT_MS = 10_000;
-const USER_AGENT = 'Yamadori/0.0.1 (bonsai field app)';
+const USER_AGENT = 'Yamadori/0.0.5 (bonsai field app)';
 const MIN_REQUEST_INTERVAL_MS = 1_000;
 
 type NominatimAddress = {
@@ -96,17 +98,26 @@ export function formatLocationLabel(tree: Pick<Tree, 'locationLabel'>): string |
 }
 
 export async function reverseGeocode(latitude: number, longitude: number): Promise<string> {
+	const cached = await getCachedGeocodeLabel(latitude, longitude);
+	if (cached) {
+		return cached;
+	}
+
 	if (!navigator.onLine) {
-		throw new Error('Connexion requise pour identifier le lieu.');
+		throw new Error(m.geocode_online_required());
 	}
 
 	return throttleRequest(async () => {
-		const params = new URLSearchParams({
-			lat: String(latitude),
+		const cachedAgain = await getCachedGeocodeLabel(latitude, longitude);
+		if (cachedAgain) {
+			return cachedAgain;
+		}
+
+		const params = new URLSearchParams({			lat: String(latitude),
 			lon: String(longitude),
 			format: 'json',
 			addressdetails: '1',
-			'accept-language': 'fr'
+			'accept-language': getAcceptLanguage()
 		});
 
 		const controller = new AbortController();
@@ -116,13 +127,13 @@ export async function reverseGeocode(latitude: number, longitude: number): Promi
 			const response = await fetch(`${NOMINATIM_URL}?${params}`, {
 				signal: controller.signal,
 				headers: {
-					'Accept-Language': 'fr',
+					'Accept-Language': getAcceptLanguage(),
 					'User-Agent': USER_AGENT
 				}
 			});
 
 			if (!response.ok) {
-				throw new Error('Impossible de récupérer le nom du lieu.');
+				throw new Error(m.geocode_fetch_error());
 			}
 
 			const data = (await response.json()) as NominatimResponse;
@@ -131,18 +142,19 @@ export async function reverseGeocode(latitude: number, longitude: number): Promi
 				: null;
 
 			if (!label) {
-				throw new Error('Aucun lieu identifié pour ces coordonnées.');
+				throw new Error(m.geocode_not_found());
 			}
 
+			await saveCachedGeocodeLabel(latitude, longitude, label);
 			return label;
 		} catch (error) {
 			if (error instanceof DOMException && error.name === 'AbortError') {
-				throw new Error('La requête de géocodage a expiré. Réessayez plus tard.');
+				throw new Error(m.geocode_timeout());
 			}
 			if (error instanceof Error) {
 				throw error;
 			}
-			throw new Error('Erreur lors du géocodage inverse.');
+			throw new Error(m.geocode_error());
 		} finally {
 			clearTimeout(timeoutId);
 		}

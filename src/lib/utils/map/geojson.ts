@@ -90,3 +90,49 @@ export function createAccuracyCircleFeature(
 		geometry: createCirclePolygon(lng, lat, radiusM)
 	};
 }
+
+/** Point at bearing and distance from origin (great-circle). Bearing 0 = north. */
+export function destinationPoint(
+	latitude: number,
+	longitude: number,
+	bearingDeg: number,
+	distanceM: number
+): { latitude: number; longitude: number } {
+	const bearing = toRadians(bearingDeg);
+	const lat1 = toRadians(latitude);
+	const lng1 = toRadians(longitude);
+	const angularDistance = distanceM / EARTH_RADIUS_M;
+
+	const lat2 = Math.asin(
+		Math.sin(lat1) * Math.cos(angularDistance) +
+			Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing)
+	);
+	const lng2 =
+		lng1 +
+		Math.atan2(
+			Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
+			Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
+		);
+
+	return { latitude: toDegrees(lat2), longitude: toDegrees(lng2) };
+}
+
+export function createSightLine(
+	userLng: number,
+	userLat: number,
+	bearingDeg: number,
+	distanceM = 500
+): GeoFeature<{ type: 'LineString'; coordinates: LngLat[] }> {
+	const end = destinationPoint(userLat, userLng, bearingDeg, distanceM);
+	return {
+		type: 'Feature',
+		properties: {},
+		geometry: {
+			type: 'LineString',
+			coordinates: [
+				[userLng, userLat],
+				[end.longitude, end.latitude]
+			]
+		}
+	};
+}

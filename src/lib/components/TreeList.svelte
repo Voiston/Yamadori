@@ -1,18 +1,30 @@
 <script lang="ts">
 	import type { Tree } from '$lib/types/tree';
+	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import * as m from '$lib/paraglide/messages.js';
 	import TreeCard from './TreeCard.svelte';
 
 	let {
 		trees,
 		distanceByTreeId = {},
-		emptyTitle = 'Aucun arbre enregistré',
-		emptyMessage = 'Commencez votre repérage en ajoutant votre premier yamadori.'
+		emptyTitle,
+		emptyMessage
 	}: {
 		trees: Tree[];
 		distanceByTreeId?: Record<string, number>;
 		emptyTitle?: string;
 		emptyMessage?: string;
 	} = $props();
+
+	let resolvedEmptyTitle = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return emptyTitle ?? m.list_no_trees();
+	});
+
+	let resolvedEmptyMessage = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return emptyMessage ?? m.list_empty_hint();
+	});
 </script>
 
 {#if trees.length === 0}
@@ -32,8 +44,8 @@
 				/>
 			</svg>
 		</div>
-		<h2 class="text-xl font-semibold text-forest-900">{emptyTitle}</h2>
-		<p class="mt-2 max-w-xs text-base text-muted">{emptyMessage}</p>
+		<h2 class="text-xl font-semibold text-forest-900">{resolvedEmptyTitle}</h2>
+		<p class="mt-2 max-w-xs text-base text-muted">{resolvedEmptyMessage}</p>
 	</div>
 {:else}
 	<ul class="flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:gap-4 xl:grid-cols-3">

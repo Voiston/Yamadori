@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { clearParking, parkingStore, saveParking } from '$lib/stores/parking.svelte';
+	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import { headingToCardinal } from '$lib/utils/compass';
 	import { getCoordinates } from '$lib/utils/geo';
 	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
@@ -10,6 +11,7 @@
 		haversineDistanceM
 	} from '$lib/utils/haversine';
 	import { userPositionState } from '$lib/utils/userPosition.svelte';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let {
 		variant = 'overlay'
@@ -22,6 +24,11 @@
 	let warning = $state('');
 
 	let parking = $derived(parkingStore.position);
+
+	const compassLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return m.onboarding_compass_title().replace(/\s*\([^)]*\)$/, '');
+	});
 
 	let distance = $derived.by(() => {
 		if (!parking || !userPositionState.position) return null;
@@ -44,11 +51,15 @@
 	});
 
 	let statusText = $derived.by(() => {
+		void appearanceSettingsState.locale;
 		if (!parking) return '';
 		if (distance === null || bearing === null) {
-			return 'Calcul de la position…';
+			return m.parking_calculating();
 		}
-		return `La voiture est à ${formatDistance(distance)} au ${headingToCardinal(bearing)}`;
+		return m.parking_distance({
+			distance: formatDistance(distance),
+			direction: headingToCardinal(bearing)
+		});
 	});
 
 	async function handleSave() {
@@ -59,16 +70,16 @@
 		try {
 			const capture = await getCoordinates();
 			if (capture.latitude === null || capture.longitude === null) {
-				warning = 'Position GPS indisponible — réessayez en plein air.';
+				warning = m.parking_gps_unavailable();
 				return;
 			}
 
 			if (isPoorAccuracy(capture.accuracyMeters)) {
-				warning = `Précision faible (${formatAccuracy(capture.accuracyMeters)}) — position approximative`;
+				warning = m.gps_poor_warning({ accuracy: formatAccuracy(capture.accuracyMeters) });
 			}
 
 			await saveParking(capture);
-			feedback = 'Position de la voiture enregistrée';
+			feedback = m.parking_saved();
 		} finally {
 			saving = false;
 		}
@@ -110,7 +121,7 @@
 				<circle cx="7.5" cy="17" r="1.5" fill="currentColor" stroke="none" />
 				<circle cx="16.5" cy="17" r="1.5" fill="currentColor" stroke="none" />
 			</svg>
-			{saving ? 'Enregistrement…' : 'Enregistrer la position de la voiture'}
+			{saving ? m.action_saving() : m.parking_save()}
 		</button>
 	{:else}
 		<p class="text-center text-sm font-medium text-forest-900">{statusText}</p>
@@ -132,7 +143,7 @@
 					<circle cx="12" cy="12" r="10" />
 					<path d="M12 8l3 8-3-2-3 2 3-8z" fill="currentColor" stroke="none" />
 				</svg>
-				Ouvrir la boussole
+				{compassLabel}
 			</a>
 			<button
 				type="button"
@@ -140,7 +151,7 @@
 				disabled={saving}
 				class="flex h-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-xs font-medium text-forest-900 transition active:scale-[0.98] disabled:opacity-60"
 			>
-				{saving ? '…' : 'Réenregistrer'}
+				{saving ? '…' : m.parking_resave()}
 			</button>
 			<button
 				type="button"

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { getTreeDisplayLabel, type Tree } from '$lib/types/tree';
+	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import * as m from '$lib/paraglide/messages.js';
 	import PhotoLightbox from './PhotoLightbox.svelte';
 
 	let { tree }: { tree: Tree } = $props();
@@ -10,6 +12,11 @@
 	let photos = $derived(tree.photos);
 	let selectedPhoto = $derived(photos[selectedIndex] ?? '');
 	let displayLabel = $derived(getTreeDisplayLabel(tree));
+
+	let photoAlt = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return `${m.photo_label()} — ${displayLabel}`;
+	});
 </script>
 
 {#if photos.length > 0}
@@ -21,7 +28,7 @@
 		>
 			<img
 				src={selectedPhoto}
-				alt="Photo de {displayLabel}"
+				alt={photoAlt}
 				class="aspect-[4/3] w-full object-cover"
 			/>
 		</button>
@@ -44,7 +51,7 @@
 		{/if}
 	</div>
 
-	<PhotoLightbox bind:open={showLightbox} src={selectedPhoto} alt="Photo de {displayLabel}" />
+	<PhotoLightbox bind:open={showLightbox} src={selectedPhoto} alt={photoAlt} />
 {:else}
 	<div class="flex aspect-[4/3] w-full items-center justify-center rounded-xl bg-gray-100 text-forest-600">
 		<svg

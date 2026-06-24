@@ -1,50 +1,164 @@
 <script lang="ts">
 	import '../app.css';
 	import BottomNav from '$lib/components/BottomNav.svelte';
-	import SideNav from '$lib/components/SideNav.svelte';
+	import OnboardingPermissions from '$lib/components/OnboardingPermissions.svelte';
 	import { base } from '$app/paths';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getTreeById, initTrees, treeStore } from '$lib/stores/trees.svelte';
-	import { getTreeDisplayLabel } from '$lib/types/tree';
 	import { initParking, parkingStore } from '$lib/stores/parking.svelte';
-	import { initSyncEngine, stopSyncEngine, syncState } from '$lib/sync/engine.svelte';
 	import { initOnlineState, onlineState } from '$lib/utils/online.svelte';
-	import InstallPrompt from '$lib/components/InstallPrompt.svelte';
-	import { initInstallPrompt } from '$lib/utils/pwa-install.svelte';
+	import { cleanupLegacySyncData } from '$lib/utils/cleanupLegacySync';
+	import OutdoorModeToggle from '$lib/components/OutdoorModeToggle.svelte';
+	import SimpleModeToggle from '$lib/components/SimpleModeToggle.svelte';
+	import {
+		appearanceSettingsState,
+		initAppearanceSettings
+	} from '$lib/stores/appearanceSettings.svelte';
+	import { speciesDisplayName } from '$lib/constants/species-i18n';
+	import * as m from '$lib/paraglide/messages.js';
+	import { initLocationSettings } from '$lib/stores/locationSettings.svelte';
+	import { initBackupPasswordSettings } from '$lib/stores/backupPasswordSettings.svelte';
+	import { getBackNavigationTarget } from '$lib/utils/app-navigation';
+	import { isOnboardingComplete } from '$lib/utils/onboarding';
+	import { applyStatusBarForAppearance, initNativeUi, initViewportInsets } from '$lib/utils/nativeInit';
+	import { applyOutdoorScreenBrightness } from '$lib/utils/screenBrightness';
+	import { registerTileCacheInterceptor } from '$lib/utils/map/tileCache';
+	import { isAndroidApp, isNativeApp } from '$lib/utils/platform';
+	import { initIncomingBackupListener } from '$lib/utils/archive';
+	import {
+		dismissBackupReminderForSession,
+		getActiveBackupWarning,
+		initBackupReminder
+	} from '$lib/utils/backupReminder.svelte';
+	import { scheduleCadastreBackfill } from '$lib/utils/cadastreBackfill';
+	import { App } from '@capacitor/app';
 	import { onMount } from 'svelte';
-	import { useRegisterSW } from 'virtual:pwa-register/svelte';
 
 	let { children } = $props();
 
-	const { needRefresh, updateServiceWorker } = useRegisterSW({
-		onRegistered() {},
-		onRegisterError(error) {
-			console.error('PWA registration failed:', error);
-		}
-	});
+	const nativeApp = isNativeApp();
 
 	let initError = $derived(treeStore.loadError ?? parkingStore.loadError);
-
-	onMount(() => {
-		void Promise.all([initTrees(), initParking()]).then(() => {
-			const startSync = () => void initSyncEngine();
-			if (typeof requestIdleCallback === 'function') {
-				requestIdleCallback(startSync);
-			} else {
-				setTimeout(startSync, 0);
-			}
-		});
-		const cleanupOnline = initOnlineState();
-		const cleanupInstall = initInstallPrompt();
-		return () => {
-			stopSyncEngine();
-			cleanupOnline();
-			cleanupInstall();
-		};
-	});
+	let showOnboarding = $state(false);
 
 	let routeId = $derived(page.route.id);
 	let treeId = $derived(page.params.id ?? null);
+	let backNavigation = $derived(getBackNavigationTarget(routeId, treeId));
+	let backHref = $derived(backNavigation.href);
+	let showBack = $derived(backNavigation.showBack);
+
+	async function handleBackNavigation(event: MouseEvent) {
+		if (!nativeApp) {
+			return;
+		}
+		event.preventDefault();
+		await goto(backHref);
+	}
+
+	function handleOnboardingComplete() {
+		showOnboarding = false;
+	}
+
+	$effect(() => {
+		if (!appearanceSettingsState.loaded) {
+			return;
+		}
+
+		if (appearanceSettingsState.outdoorMode) {
+			document.documentElement.dataset.outdoor = 'true';
+		} else {
+			delete document.documentElement.dataset.outdoor;
+		}
+
+		if (appearanceSettingsState.darkMode) {
+			document.documentElement.dataset.dark = 'true';
+		} else {
+			delete document.documentElement.dataset.dark;
+		}
+
+		if (appearanceSettingsState.simpleMode) {
+			document.documentElement.dataset.simpleMode = 'true';
+		} else {
+			delete document.documentElement.dataset.simpleMode;
+		}
+
+		const themeMeta = document.querySelector('meta[name="theme-color"]');
+		const themeColor = appearanceSettingsState.outdoorMode
+			? '#ffffff'
+			: appearanceSettingsState.darkMode
+				? '#000000'
+				: '#1a2e1a';
+		themeMeta?.setAttribute('content', themeColor);
+
+		if (nativeApp) {
+			void applyStatusBarForAppearance(
+				appearanceSettingsState.outdoorMode,
+				appearanceSettingsState.darkMode
+			);
+			void applyOutdoorScreenBrightness(appearanceSettingsState.outdoorMode);
+		}
+
+		document.documentElement.lang = appearanceSettingsState.locale;
+	});
+
+	$effect(() => {
+		if (!treeStore.loaded || !onlineState.online) return;
+		void treeStore.trees;
+		scheduleCadastreBackfill();
+	});
+
+	onMount(() => {
+		let backListener: { remove: () => Promise<void> } | undefined;
+		let incomingBackupCleanup: (() => void) | undefined;
+		let cleanupViewportInsets: (() => void) | undefined;
+
+		if (nativeApp) {
+			void initNativeUi();
+			cleanupViewportInsets = initViewportInsets();
+			void isOnboardingComplete().then((complete) => {
+				showOnboarding = !complete;
+			});
+
+			if (isAndroidApp()) {
+				void initIncomingBackupListener(() => {
+					if (page.route.id !== '/settings') {
+						void goto(`${base}/settings`);
+					}
+				}).then((cleanup) => {
+					incomingBackupCleanup = cleanup;
+				});
+			}
+
+			void App.addListener('backButton', () => {
+				const target = getBackNavigationTarget(page.route.id, page.params.id ?? null);
+				if (target.showBack) {
+					void goto(target.href);
+					return;
+				}
+				void App.minimizeApp();
+			}).then((listener) => {
+				backListener = listener;
+			});
+		}
+
+		registerTileCacheInterceptor();
+
+		void initAppearanceSettings();
+		void initLocationSettings();
+		void initBackupPasswordSettings();
+		void cleanupLegacySyncData();
+		void initBackupReminder();
+		void Promise.all([initTrees(), initParking()]);
+		const cleanupOnline = initOnlineState();
+		return () => {
+			cleanupOnline();
+			cleanupViewportInsets?.();
+			incomingBackupCleanup?.();
+			void backListener?.remove();
+		};
+	});
+
 	let detailTree = $derived(treeId ? getTreeById(treeId) : undefined);
 
 	let isCapture = $derived(routeId === '/capture');
@@ -54,68 +168,47 @@
 	let isDetail = $derived(routeId === '/tree/[id]');
 	let showBottomNav = $derived(routeId === '/' || routeId === '/map');
 	let isSettings = $derived(routeId === '/settings');
-	let showBack = $derived(isCapture || isDetail || isCompass || isParkingCompass || isSettings);
 
-	let backHref = $derived(
-		isParkingCompass
-			? `${base}/map`
-			: isCompass && treeId
-				? `${base}/tree/${treeId}`
-				: `${base}/`
-	);
-
-	let headerTitle = $derived(
-		isCapture
-			? 'Nouveau repérage'
-			: isMap
-				? 'Carte'
-				: isParkingCompass
-					? 'Point de départ'
-					: isCompass
-						? 'Boussole'
-						: isSettings
-							? 'Réglages'
-							: isDetail
-								? (detailTree ? getTreeDisplayLabel(detailTree) : 'Détail')
-								: 'Yamadori'
-	);
-
-	let headerSubtitle = $derived(
-		!isCapture && !isMap && !isDetail && !isCompass && !isParkingCompass
-			? 'Par ici le Jupinerus !'
-			: ''
-	);
-
-	let syncLabel = $derived.by(() => {
-		if (syncState.status === 'syncing') return 'Sync…';
-		if (syncState.pendingCount > 0) return `${syncState.pendingCount} en attente`;
-		if (syncState.status === 'error') {
-			const detail = syncState.lastError?.split(':')[0] ?? 'Sync erreur';
-			return detail.length > 24 ? 'Sync erreur' : detail;
+	let headerTitle = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (isCapture) return m.title_capture();
+		if (isMap) return m.nav_map();
+		if (isParkingCompass) return m.title_parking();
+		if (isCompass) return m.onboarding_compass_title().replace(/\s*\([^)]*\)$/, '');
+		if (isSettings) return m.nav_settings();
+		if (isDetail) {
+			if (!detailTree) return m.title_detail();
+			const raw = detailTree.species.trim();
+			return raw ? speciesDisplayName(raw) : m.tree_species_unset();
 		}
-		if (syncState.status === 'offline' && syncState.pendingCount > 0) return 'Hors sync';
-		return null;
+		return 'Yamadori';
 	});
+
+	let backupWarning = $derived(
+		treeStore.loaded && parkingStore.loaded && !isSettings
+			? getActiveBackupWarning(treeStore.trees, parkingStore.position)
+			: null
+	);
 </script>
 
 <svelte:head>
 	<title>Yamadori Scouting</title>
-	<link rel="apple-touch-icon" href="{base}/icons/icon-192.png" />
+	<link rel="icon" href="{base}/icons/icon-192.png" type="image/png" />
 </svelte:head>
 
-<div class="flex min-h-dvh">
-	<SideNav />
-
-	<div class="mx-auto flex min-h-dvh max-w-lg flex-1 flex-col px-safe lg:mx-0 lg:max-w-none">
+<div class="flex h-dvh min-h-0 w-full flex-col overflow-hidden px-safe">
 	<header
-		class="sticky top-0 z-40 border-b border-gray-100 bg-surface/95 backdrop-blur-sm pt-safe"
+		class="{isMap
+			? 'absolute inset-x-0 top-0 z-40 bg-white/90 pt-safe shadow-sm backdrop-blur-sm'
+			: 'sticky top-0 z-40 border-b border-gray-100 bg-surface/95 backdrop-blur-sm pt-safe'}"
 	>
-		<div class="flex h-14 items-center gap-3 px-4">
+		<div class="flex {isMap ? 'h-10 gap-2 px-3' : 'h-14 gap-3 px-4'} items-center">
 			{#if showBack}
 				<a
 					href={backHref}
+					onclick={handleBackNavigation}
 					class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-forest-900 transition active:scale-95"
-					aria-label="Retour à la liste"
+					aria-label={m.layout_back()}
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -132,16 +225,20 @@
 			{/if}
 
 			<div class="min-w-0 flex-1">
-				<h1 class="truncate text-lg font-semibold text-forest-900">{headerTitle}</h1>
-				{#if headerSubtitle}
-					<p class="text-xs text-muted">{headerSubtitle}</p>
-				{/if}
+				<h1 class="truncate {isMap ? 'text-base' : 'text-lg'} font-semibold text-forest-900">
+					{headerTitle}
+				</h1>
+			</div>
+
+			<div class="flex shrink-0 items-center gap-1.5">
+				<SimpleModeToggle />
+				<OutdoorModeToggle />
 			</div>
 
 			<a
 				href="{base}/settings"
-				class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-forest-900 transition active:scale-95 lg:hidden"
-				aria-label="Réglages"
+				class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-forest-900 transition active:scale-95"
+				aria-label={m.nav_settings()}
 			>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
@@ -165,45 +262,35 @@
 				</svg>
 			</a>
 
-			{#if syncLabel}
-				<span
-					class="shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-800"
-					role="status"
-				>
-					{syncLabel}
-				</span>
-			{/if}
-
 			{#if !onlineState.online}
 				<span
 					class="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800"
 					role="status"
 				>
-					Hors-ligne
+					{m.map_offline_button()}
 				</span>
 			{/if}
 		</div>
-	</header>
-
-	{#if $needRefresh}
-		<div
-			class="border-b border-forest-200 bg-forest-50 px-4 py-2 text-sm text-forest-900"
-			role="status"
-		>
-			<div class="flex items-center justify-between gap-3">
-				<p>Mise à jour disponible — rechargez en ligne avant d'aller hors-ligne.</p>
+		{#if backupWarning}
+			<div class="flex items-center gap-2 border-t border-amber-200 bg-amber-50 px-4 py-1.5">
+				<a
+					href="{base}/settings"
+					class="min-w-0 flex-1 truncate whitespace-nowrap text-xs font-medium text-amber-900"
+					aria-label={m.layout_export_backup()}
+				>
+					{backupWarning.message}
+				</a>
 				<button
 					type="button"
-					class="shrink-0 rounded-lg bg-forest-800 px-3 py-1.5 text-xs font-semibold text-white"
-					onclick={() => updateServiceWorker(true)}
+					class="shrink-0 px-1 text-sm font-medium text-amber-800"
+					aria-label={m.action_close()}
+					onclick={dismissBackupReminderForSession}
 				>
-					Mettre à jour
+					×
 				</button>
 			</div>
-		</div>
-	{/if}
-
-	<InstallPrompt />
+		{/if}
+	</header>
 
 	{#if initError}
 		<div
@@ -215,9 +302,15 @@
 	{/if}
 
 	<main
-		class="flex-1 {showBottomNav ? 'pb-20 lg:pb-0' : ''} {isMap
-			? 'px-0 py-0'
-			: 'px-4 py-6 lg:px-6'}"
+		class="flex min-h-0 flex-1 flex-col {appearanceSettingsState.simpleMode
+			? 'simple-mode-layout'
+			: ''} {showBottomNav
+			? 'pb-above-nav'
+			: ''} {isMap
+			? 'overflow-hidden px-0 py-0'
+			: isCapture
+				? 'min-h-0 overflow-hidden px-4 pt-6 md:px-6'
+				: 'scroll-pb-safe overflow-y-auto px-4 pt-6 md:px-6'} {isMap || showBottomNav || isCapture ? '' : 'pb-scroll-safe'}"
 	>
 		{#if treeStore.loaded && parkingStore.loaded}
 			{@render children()}
@@ -228,7 +321,7 @@
 					xmlns="http://www.w3.org/2000/svg"
 					fill="none"
 					viewBox="0 0 24 24"
-					aria-label="Chargement"
+					aria-label={m.climate_loading()}
 				>
 					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
 					></circle>
@@ -245,5 +338,8 @@
 	{#if showBottomNav}
 		<BottomNav />
 	{/if}
-	</div>
 </div>
+
+{#if nativeApp && showOnboarding}
+	<OnboardingPermissions oncomplete={handleOnboardingComplete} />
+{/if}

@@ -1,5 +1,5 @@
 import type { StyleSpecification } from 'maplibre-gl';
-import { buildIgnTileUrl, getIgnLayerConfig } from './ign';
+import { buildIgnLayerTileUrl, buildIgnTileUrl, CADASTRE_LAYER, getIgnLayerConfig } from './ign';
 
 export type MapBasemap = 'topo' | 'satellite';
 
@@ -32,6 +32,13 @@ export function createIgnMapStyle(): StyleSpecification {
 				attribution: hillshade.attribution,
 				maxzoom: hillshade.maxZoom
 			},
+			'ign-cadastre': {
+				type: 'raster',
+				tiles: [buildIgnLayerTileUrl(CADASTRE_LAYER)],
+				tileSize: 256,
+				attribution: CADASTRE_LAYER.attribution,
+				maxzoom: CADASTRE_LAYER.maxZoom
+			},
 			approach: {
 				type: 'geojson',
 				data: { type: 'FeatureCollection', features: [] }
@@ -41,6 +48,10 @@ export function createIgnMapStyle(): StyleSpecification {
 				data: { type: 'FeatureCollection', features: [] }
 			},
 			'accuracy-circles': {
+				type: 'geojson',
+				data: { type: 'FeatureCollection', features: [] }
+			},
+			'sight-line': {
 				type: 'geojson',
 				data: { type: 'FeatureCollection', features: [] }
 			}
@@ -68,7 +79,13 @@ export function createIgnMapStyle(): StyleSpecification {
 				type: 'raster',
 				source: 'ign-hillshade',
 				layout: { visibility: 'none' },
-				paint: { 'raster-opacity': 0.45 }
+				paint: { 'raster-opacity': 0.2 }
+			},
+			{
+				id: 'ign-cadastre-layer',
+				type: 'raster',
+				source: 'ign-cadastre',
+				layout: { visibility: 'none' }
 			},
 			{
 				id: 'accuracy-circles',
@@ -115,6 +132,19 @@ export function createIgnMapStyle(): StyleSpecification {
 					'line-width': 3,
 					'line-dasharray': [2, 2]
 				}
+			},
+			{
+				id: 'sight-line-layer',
+				type: 'line',
+				source: 'sight-line',
+				layout: {
+					'line-cap': 'round',
+					'line-join': 'round'
+				},
+				paint: {
+					'line-color': '#dc2626',
+					'line-width': 2
+				}
 			}
 		]
 	};
@@ -128,4 +158,11 @@ export function setBasemapVisibility(
 	map.setLayoutProperty('ign-plan-layer', 'visibility', isTopo ? 'visible' : 'none');
 	map.setLayoutProperty('ign-ortho-layer', 'visibility', isTopo ? 'none' : 'visible');
 	map.setLayoutProperty('ign-hillshade-layer', 'visibility', isTopo ? 'none' : 'visible');
+}
+
+export function setCadastreLayerVisibility(
+	map: import('maplibre-gl').Map,
+	visible: boolean
+): void {
+	map.setLayoutProperty('ign-cadastre-layer', 'visibility', visible ? 'visible' : 'none');
 }

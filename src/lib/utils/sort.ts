@@ -1,4 +1,6 @@
 import { CALIBER_ORDER, SIZE_CLASS_ORDER } from '$lib/constants/assessment';
+import { compareLocalized } from '$lib/utils/i18n/locale';
+import * as m from '$lib/paraglide/messages.js';
 import type { Tree } from '$lib/types/tree';
 import { haversineDistanceM } from '$lib/utils/haversine';
 
@@ -21,20 +23,32 @@ export interface UserPosition {
 	longitude: number;
 }
 
-export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-	{ value: 'date_desc', label: 'Date (récent)' },
-	{ value: 'date_asc', label: 'Date (ancien)' },
-	{ value: 'distance_asc', label: 'Distance (proche)' },
-	{ value: 'distance_desc', label: 'Distance (loin)' },
-	{ value: 'potential_desc', label: 'Potentiel (élevé)' },
-	{ value: 'potential_asc', label: 'Potentiel (faible)' },
-	{ value: 'size_class', label: 'Taille' },
-	{ value: 'caliber', label: 'Calibre' },
-	{ value: 'trunk_diameter', label: 'Diamètre tronc' },
-	{ value: 'species', label: 'Espèce (A–Z)' },
-	{ value: 'altitude_desc', label: 'Altitude (haute)' },
-	{ value: 'altitude_asc', label: 'Altitude (basse)' }
-];
+export function getSortOptions(): { value: SortKey; label: string }[] {
+	return [
+		{ value: 'date_desc', label: m.sort_date_desc() },
+		{ value: 'date_asc', label: m.sort_date_asc() },
+		{ value: 'distance_asc', label: m.sort_distance_asc() },
+		{ value: 'distance_desc', label: m.sort_distance_desc() },
+		{ value: 'potential_desc', label: m.sort_potential_desc() },
+		{ value: 'potential_asc', label: m.sort_potential_asc() },
+		{ value: 'size_class', label: m.sort_size_class() },
+		{ value: 'caliber', label: m.sort_caliber() },
+		{ value: 'trunk_diameter', label: m.sort_trunk_diameter() },
+		{ value: 'species', label: m.sort_species() },
+		{ value: 'altitude_desc', label: m.sort_altitude_desc() },
+		{ value: 'altitude_asc', label: m.sort_altitude_asc() }
+	];
+}
+
+export function getSimpleSortOptions(): { value: SortKey; label: string }[] {
+	return [
+		{ value: 'date_desc', label: m.sort_date_desc() },
+		{ value: 'date_asc', label: m.sort_date_asc() },
+		{ value: 'distance_asc', label: m.sort_distance_asc() },
+		{ value: 'distance_desc', label: m.sort_distance_desc() },
+		{ value: 'species', label: m.sort_species() }
+	];
+}
 
 function distanceForTree(tree: Tree, userPosition?: UserPosition): number | null {
 	if (
@@ -121,7 +135,7 @@ export function sortTrees(
 					'desc'
 				);
 			case 'species':
-				return a.species.localeCompare(b.species, 'fr');
+				return compareLocalized(a.species, b.species);
 			case 'altitude_desc':
 				return compareNullableNumber(a.altitudeMeters, b.altitudeMeters, 'desc');
 			case 'altitude_asc':

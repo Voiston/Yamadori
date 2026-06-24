@@ -24,7 +24,18 @@ export const BONSAI_SPECIES_PRIORITY = [
 	'Tamaris',
 	'Saule',
 	'Aulne glutineux',
-	'Rhododendron ferrugineux'
+	'Rhododendron ferrugineux',
+	'Châtaignier',
+	'Cyprès',
+	'Olivier',
+	'Frêne',
+	'Orme',
+	'Tilleul',
+	'Cornouiller',
+	'Troène',
+	'Prunellier',
+	'Pommier sauvage',
+	'Pin cembro'
 ] as const;
 
 const priorityIndex = new Map<string, number>(

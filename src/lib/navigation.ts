@@ -1,4 +1,5 @@
 import { base } from '$app/paths';
+import * as m from '$lib/paraglide/messages.js';
 
 export type NavIcon = 'list' | 'map' | 'add';
 
@@ -9,29 +10,33 @@ export type NavTab = {
 	icon: NavIcon;
 };
 
-export const mainNavTabs: NavTab[] = [
-	{
-		href: `${base}/`,
-		label: 'Liste',
-		routeId: '/',
-		icon: 'list'
-	},
-	{
-		href: `${base}/map`,
-		label: 'Carte',
-		routeId: '/map',
-		icon: 'map'
-	},
-	{
-		href: `${base}/capture`,
-		label: 'Ajouter',
-		routeId: '/capture',
-		icon: 'add'
-	}
-];
+export function getMainNavTabs(): NavTab[] {
+	return [
+		{
+			href: `${base}/`,
+			label: m.nav_list(),
+			routeId: '/',
+			icon: 'list'
+		},
+		{
+			href: `${base}/map`,
+			label: m.nav_map(),
+			routeId: '/map',
+			icon: 'map'
+		},
+		{
+			href: `${base}/capture`,
+			label: m.nav_add(),
+			routeId: '/capture',
+			icon: 'add'
+		}
+	];
+}
 
-export const settingsNav = {
-	href: `${base}/settings`,
-	label: 'Réglages',
-	routeId: '/settings'
-} as const;
+export function getSettingsNav() {
+	return {
+		href: `${base}/settings`,
+		label: m.nav_settings(),
+		routeId: '/settings'
+	} as const;
+}

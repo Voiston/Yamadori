@@ -1,8 +1,15 @@
+import * as m from '$lib/paraglide/messages.js';
 import type { ClimateHistory, YearlyClimateStats } from '$lib/types/climate';
+import {
+	getCachedClimateHistory,
+	saveCachedClimateHistory
+} from '$lib/utils/climateCache';
 
 const ARCHIVE_API_URL = 'https://archive-api.open-meteo.com/v1/archive';
 const FETCH_TIMEOUT_MS = 15_000;
 const CLIMATE_YEARS = 3;
+/** ERA5 reanalysis is published with ~5 days delay (Open-Meteo Archive API). */
+const ARCHIVE_DELAY_DAYS = 5;
 
 type OpenMeteoDailyResponse = {
 	daily?: {
@@ -12,9 +19,16 @@ type OpenMeteoDailyResponse = {
 	};
 };
 
+type OpenMeteoErrorResponse = {
+	error?: boolean;
+	reason?: string;
+};
+
 export function getClimateDateRange(referenceDate = new Date()): { startDate: string; endDate: string } {
 	const end = new Date(referenceDate);
-	const start = new Date(referenceDate);
+	end.setDate(end.getDate() - ARCHIVE_DELAY_DAYS);
+
+	const start = new Date(end);
 	start.setFullYear(start.getFullYear() - CLIMATE_YEARS);
 
 	return {
@@ -92,12 +106,28 @@ export function aggregateClimateData(
 	};
 }
 
+export async function parseOpenMeteoErrorResponse(response: Response): Promise<string> {
+	try {
+		const body = (await response.json()) as OpenMeteoErrorResponse;
+		if (body.reason) {
+			return m.open_meteo_error({ status: String(response.status), reason: body.reason });
+		}
+	} catch {
+		// ignore JSON parse errors
+	}
+	return m.open_meteo_error({
+		status: String(response.status),
+		reason: m.climate_error_historical()
+	});
+}
+
 export async function fetchClimateHistory(
 	latitude: number,
 	longitude: number
 ): Promise<ClimateHistory> {
-	if (!navigator.onLine) {
-		throw new Error('Connexion requise pour récupérer l\'historique climatique.');
+	const cached = await getCachedClimateHistory(latitude, longitude);
+	if (cached) {
+		return cached;
 	}
 
 	const range = getClimateDateRange();
@@ -119,7 +149,7 @@ export async function fetchClimateHistory(
 		});
 
 		if (!response.ok) {
-			throw new Error('Impossible de récupérer les données météo historiques.');
+			throw new Error(await parseOpenMeteoErrorResponse(response));
 		}
 
 		const data = (await response.json()) as OpenMeteoDailyResponse;
@@ -128,18 +158,27 @@ export async function fetchClimateHistory(
 		const precipitation = data.daily?.precipitation_sum ?? [];
 
 		if (dates.length === 0) {
-			throw new Error('Aucune donnée climatique disponible pour ce point.');
+			throw new Error(m.climate_error_no_data());
 		}
 
-		return aggregateClimateData(dates, minTemps, precipitation, latitude, longitude, range);
+		const history = aggregateClimateData(
+			dates,
+			minTemps,
+			precipitation,
+			latitude,
+			longitude,
+			range
+		);
+		await saveCachedClimateHistory(latitude, longitude, history);
+		return history;
 	} catch (error) {
 		if (error instanceof DOMException && error.name === 'AbortError') {
-			throw new Error('La requête météo a expiré. Réessayez plus tard.');
+			throw new Error(m.agri_error_timeout());
 		}
 		if (error instanceof Error) {
 			throw error;
 		}
-		throw new Error('Erreur lors de la récupération des données climatiques.');
+		throw new Error(m.climate_error_fetch());
 	} finally {
 		clearTimeout(timeoutId);
 	}

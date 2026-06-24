@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Yamadori Scouting</string>
+    <string name="title_activity_main">Yamadori Scouting</string>
+    <string name="package_name">fr.yamadori.scouting</string>
+    <string name="custom_url_scheme">fr.yamadori.scouting</string>
+    <string name="capacitor_background_geolocation_notification_channel_name">Suivi GPS Yamadori</string>
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_tracking</string>
+</resources>

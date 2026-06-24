@@ -1,11 +1,19 @@
 <script lang="ts">
+	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import * as m from '$lib/paraglide/messages.js';
+
 	let {
 		value = $bindable(''),
-		placeholder = 'Filtrer par espèce…'
+		placeholder
 	}: {
 		value?: string;
 		placeholder?: string;
 	} = $props();
+
+	let resolvedPlaceholder = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return placeholder ?? m.search_placeholder();
+	});
 </script>
 
 <div class="relative">
@@ -24,7 +32,7 @@
 	<input
 		type="search"
 		bind:value
-		{placeholder}
+		placeholder={resolvedPlaceholder}
 		autocomplete="off"
 		class="h-12 w-full rounded-xl border border-gray-200 bg-white py-3 pl-12 pr-4 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20"
 	/>

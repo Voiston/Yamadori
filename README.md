@@ -1,42 +1,34 @@
-# sv
+# Yamadori Scouting
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Application Android de repérage d'arbres en forêt, construite avec SvelteKit et empaquetée via [Capacitor](https://capacitorjs.com/).
 
-## Creating a project
-
-If you're seeing this, you've probably already done this step. Congrats!
+## Développement
 
 ```sh
-# create a new project
-npx sv create my-app
-```
-
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-npx sv@0.16.1 create --template minimal --types ts --no-install .
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
+npm install
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+`npm run dev` lance l'app dans le navigateur pour le développement UI. Les fonctionnalités natives (GPS, caméra, etc.) ne sont disponibles que dans l'APK.
 
-To create a production version of your app:
+## Build Android
+
+| Command | Description |
+|---------|-------------|
+| `npm run build` | Build web statique (`build/`) |
+| `npm run build:android` | Build + sync Capacitor vers `android/` |
+| `npm run cap:open` | Ouvre le projet dans Android Studio |
+
+Voir [docs/APK-BUILD.md](docs/APK-BUILD.md) pour compiler et installer l'APK (sideload, signature release, CI).
 
 ```sh
-npm run build
+npm run build:android
+npm run cap:open
 ```
 
-You can preview the production build with `npm run preview`.
+## Tests
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+```sh
+npm run check
+npm run test
+```

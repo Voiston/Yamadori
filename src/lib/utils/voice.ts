@@ -1,4 +1,8 @@
+import * as m from '$lib/paraglide/messages.js';
 import type { VoiceNote } from '$lib/types/tree';
+import { debugLog } from '$lib/utils/debug-log';
+import { isNativeApp } from '$lib/utils/platform';
+import { RecordingStatus, VoiceRecorder } from 'capacitor-voice-recorder';
 
 export const MAX_DURATION_MS = 30_000;
 export const MIN_DURATION_MS = 1_500;
@@ -8,9 +12,25 @@ const MIME_CANDIDATES = ['audio/mp4', 'audio/aac', 'audio/webm;codecs=opus', 'au
 export function isVoiceRecordingSupported(): boolean {
 	return (
 		typeof navigator !== 'undefined' &&
-		!!navigator.mediaDevices?.getUserMedia &&
-		typeof MediaRecorder !== 'undefined'
+		(!!navigator.mediaDevices?.getUserMedia || isNativeApp()) &&
+		(typeof MediaRecorder !== 'undefined' || isNativeApp())
 	);
+}
+
+export async function ensureMicrophonePermission(): Promise<void> {
+	if (!isNativeApp()) {
+		return;
+	}
+
+	const hasPermission = await VoiceRecorder.hasAudioRecordingPermission();
+	if (hasPermission.value) {
+		return;
+	}
+
+	const { value } = await VoiceRecorder.requestAudioRecordingPermission();
+	if (value !== true) {
+		throw new DOMException('Permission denied', 'NotAllowedError');
+	}
 }
 
 export function getPreferredAudioMimeType(): string {
@@ -26,23 +46,26 @@ export function getVoiceRecordingErrorMessage(err: unknown): string {
 	if (err instanceof DOMException) {
 		switch (err.name) {
 			case 'NotAllowedError':
-				return 'Accès au micro refusé. Dans Brave : menu du site → Réglages du site → Microphone → Autoriser.';
+				return isNativeApp() ? m.voice_mic_denied_android() : m.voice_mic_denied_web();
 			case 'NotFoundError':
-				return 'Aucun micro détecté sur cet appareil.';
+				return m.voice_no_mic();
 			case 'NotReadableError':
-				return 'Le micro est utilisé par une autre application.';
+				return m.voice_mic_busy();
 			default:
-				return err.message || 'Impossible de démarrer l\'enregistrement';
+				return err.message || m.voice_start_error();
 		}
 	}
 	if (err instanceof Error) {
 		return err.message;
 	}
-	return 'Impossible de démarrer l\'enregistrement';
+	return m.voice_start_error();
 }
 
 export function isVoiceRecordingPermissionError(err: unknown): boolean {
-	return err instanceof DOMException && err.name === 'NotAllowedError';
+	if (err instanceof DOMException && err.name === 'NotAllowedError') {
+		return true;
+	}
+	return err instanceof Error && /permission/i.test(err.message);
 }
 
 export function formatVoiceDuration(ms: number): string {
@@ -56,9 +79,18 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
 		reader.onload = () => resolve(reader.result as string);
-		reader.onerror = () => reject(new Error('Impossible de lire l\'enregistrement audio'));
+		reader.onerror = () => reject(new Error(m.voice_read_error()));
 		reader.readAsDataURL(blob);
 	});
+}
+
+function base64ToBlob(base64: string, mimeType: string): Blob {
+	const binary = atob(base64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		bytes[i] = binary.charCodeAt(i);
+	}
+	return new Blob([bytes], { type: mimeType });
 }
 
 function createMediaRecorder(stream: MediaStream): MediaRecorder {
@@ -74,6 +106,7 @@ function createMediaRecorder(stream: MediaStream): MediaRecorder {
 }
 
 export class VoiceRecorderSession {
+	private useNative = false;
 	private stream: MediaStream | null = null;
 	private recorder: MediaRecorder | null = null;
 	private chunks: Blob[] = [];
@@ -81,8 +114,55 @@ export class VoiceRecorderSession {
 	private startedAt = 0;
 
 	async start(): Promise<void> {
+		if (isNativeApp()) {
+			try {
+				await ensureMicrophonePermission();
+				await this.startWeb();
+				return;
+			} catch (webError) {
+				if (isVoiceRecordingPermissionError(webError)) {
+					throw webError;
+				}
+				try {
+					await this.startNative();
+					return;
+				} catch {
+					throw webError;
+				}
+			}
+		}
+
+		await this.startWeb();
+	}
+
+	private async startNative(): Promise<void> {
+		// #region agent log
+		debugLog('voice:startNative', 'native record start', {}, 'H51');
+		// #endregion
+
+		const canRecord = await VoiceRecorder.canDeviceVoiceRecord();
+		if (!canRecord.value) {
+			throw new Error(m.voice_unsupported_device());
+		}
+
+		await ensureMicrophonePermission();
+
+		const started = await VoiceRecorder.startRecording();
+		if (!started.value) {
+			throw new Error(m.voice_start_error());
+		}
+
+		this.useNative = true;
+		this.startedAt = Date.now();
+
+		// #region agent log
+		debugLog('voice:startNative', 'native record started', {}, 'H51');
+		// #endregion
+	}
+
+	private async startWeb(): Promise<void> {
 		if (!isVoiceRecordingSupported()) {
-			throw new Error('Micro non supporté sur ce navigateur');
+			throw new Error(m.voice_unsupported_browser());
 		}
 
 		this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -91,7 +171,7 @@ export class VoiceRecorderSession {
 		try {
 			this.recorder = createMediaRecorder(this.stream);
 		} catch (err) {
-			this.cleanup();
+			this.cleanupWeb();
 			throw err;
 		}
 
@@ -107,12 +187,40 @@ export class VoiceRecorderSession {
 		this.recorder.start();
 	}
 
-	stop(): Promise<{ blob: Blob; durationMs: number; mimeType: string }> {
+	async stop(): Promise<{ blob: Blob; durationMs: number; mimeType: string }> {
+		if (this.useNative) {
+			const result = await VoiceRecorder.stopRecording();
+			const { recordDataBase64, msDuration, mimeType } = result.value;
+
+			if (!recordDataBase64) {
+				this.useNative = false;
+				throw new Error(m.voice_empty());
+			}
+
+			const blob = base64ToBlob(recordDataBase64, mimeType);
+			this.useNative = false;
+
+			// #region agent log
+			debugLog(
+				'voice:stopNative',
+				'native record stopped',
+				{ durationMs: msDuration, mimeType },
+				'H51'
+			);
+			// #endregion
+
+			return {
+				blob,
+				durationMs: msDuration,
+				mimeType
+			};
+		}
+
 		return new Promise((resolve, reject) => {
 			const recorder = this.recorder;
 			if (!recorder || recorder.state === 'inactive') {
-				this.cleanup();
-				reject(new Error('Aucun enregistrement en cours'));
+				this.cleanupWeb();
+				reject(new Error(m.voice_no_session()));
 				return;
 			}
 
@@ -120,13 +228,13 @@ export class VoiceRecorderSession {
 				const durationMs = Date.now() - this.startedAt;
 				const mimeType = recorder.mimeType || this.mimeType;
 				const blob = new Blob(this.chunks, { type: mimeType });
-				this.cleanup();
+				this.cleanupWeb();
 				resolve({ blob, durationMs, mimeType });
 			};
 
 			recorder.onerror = () => {
-				this.cleanup();
-				reject(new Error('Erreur pendant l\'enregistrement'));
+				this.cleanupWeb();
+				reject(new Error(m.voice_recording_error()));
 			};
 
 			recorder.stop();
@@ -134,13 +242,23 @@ export class VoiceRecorderSession {
 	}
 
 	cancel(): void {
+		if (this.useNative) {
+			void VoiceRecorder.getCurrentStatus().then(async (status) => {
+				if (status.status === RecordingStatus.RECORDING) {
+					await VoiceRecorder.stopRecording().catch(() => {});
+				}
+			});
+			this.useNative = false;
+			return;
+		}
+
 		if (this.recorder && this.recorder.state !== 'inactive') {
 			this.recorder.stop();
 		}
-		this.cleanup();
+		this.cleanupWeb();
 	}
 
-	private cleanup(): void {
+	private cleanupWeb(): void {
 		for (const track of this.stream?.getTracks() ?? []) {
 			track.stop();
 		}

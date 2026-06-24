@@ -1,18 +1,42 @@
 <script lang="ts">
+
 	import { page } from '$app/state';
-	import MapOfflineView from '$lib/components/MapOfflineView.svelte';
+
 	import TopoMap from '$lib/components/TopoMap.svelte';
-	import { onlineState } from '$lib/utils/online.svelte';
+
+	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+
+	import * as m from '$lib/paraglide/messages.js';
+
+
 
 	let focusTreeId = $derived(page.url.searchParams.get('focus') ?? undefined);
+
+
+
+	let pageTitle = $derived.by(() => {
+
+		void appearanceSettingsState.locale;
+
+		return m.title_map();
+
+	});
+
 </script>
 
+
+
 <svelte:head>
-	<title>Carte — Yamadori Scouting</title>
+
+	<title>{pageTitle}</title>
+
 </svelte:head>
 
-{#if onlineState.online}
+
+
+<div class="flex h-full min-h-0 w-full flex-1 flex-col">
+
 	<TopoMap {focusTreeId} />
-{:else}
-	<MapOfflineView {focusTreeId} />
-{/if}
+
+</div>
+

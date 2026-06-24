@@ -1,42 +1,69 @@
+import * as m from '$lib/paraglide/messages.js';
 import type {
 	BarkType,
 	Caliber,
+	CernageStatus,
 	DeadwoodType,
 	NebariType,
 	SizeClass
 } from '$lib/types/tree';
+import type { PhenologyStageId } from '$lib/types/gdd';
+import { getPhenologyStages } from '$lib/constants/gdd-config';
 
-export const NEARI_OPTIONS: { value: NebariType; label: string }[] = [
-	{ value: 'plat_rayonnant', label: 'Plat / Rayonnant' },
-	{ value: 'unilateral_asymetrique', label: 'Unilatéral / Asymétrique' },
-	{ value: 'enroche_fissure', label: 'Enroché / Fissure' }
-];
+export function getNebariOptions(): { value: NebariType; label: string }[] {
+	return [
+		{ value: 'plat_rayonnant', label: m.nebari_plat_rayonnant() },
+		{ value: 'unilateral_asymetrique', label: m.nebari_unilateral_asymetrique() },
+		{ value: 'enroche_fissure', label: m.nebari_enroche_fissure() }
+	];
+}
 
-export const BARK_OPTIONS: { value: BarkType; label: string }[] = [
-	{ value: 'lisse_jeune', label: 'Lisse / Jeune' },
-	{ value: 'ecaillee_mature', label: 'Écaillée / Mature' },
-	{ value: 'cretelee_profonde', label: 'Crételée / Profonde' }
-];
+export function getBarkOptions(): { value: BarkType; label: string }[] {
+	return [
+		{ value: 'lisse_jeune', label: m.bark_lisse_jeune() },
+		{ value: 'ecaillee_mature', label: m.bark_ecaillee_mature() },
+		{ value: 'cretelee_profonde', label: m.bark_cretelee_profonde() }
+	];
+}
 
-export const DEADWOOD_OPTIONS: { value: DeadwoodType; label: string }[] = [
-	{ value: 'aucun', label: 'Aucun' },
-	{ value: 'jin', label: 'Jin (branches)' },
-	{ value: 'shari', label: 'Shari (tronc)' },
-	{ value: 'sabamiki', label: 'Sabamiki (creux)' }
-];
+export function getDeadwoodOptions(): { value: DeadwoodType; label: string }[] {
+	return [
+		{ value: 'aucun', label: m.deadwood_aucun() },
+		{ value: 'jin', label: m.deadwood_jin() },
+		{ value: 'shari', label: m.deadwood_shari() },
+		{ value: 'sabamiki', label: m.deadwood_sabamiki() }
+	];
+}
 
-export const SIZE_OPTIONS: { value: SizeClass; label: string }[] = [
-	{ value: 'shohin', label: 'Shohin (<25 cm)' },
-	{ value: 'chuhin', label: 'Chūhin (25–45 cm)' },
-	{ value: 'dai', label: 'Dai (>45 cm)' }
-];
+export function getSizeOptions(): { value: SizeClass; label: string }[] {
+	return [
+		{ value: 'shohin', label: m.size_shohin() },
+		{ value: 'chuhin', label: m.size_chuhin() },
+		{ value: 'dai', label: m.size_dai() }
+	];
+}
 
-export const CALIBER_OPTIONS: { value: Caliber; label: string }[] = [
-	{ value: 'fronde', label: 'Frondé' },
-	{ value: 'poignet', label: 'Poignet' },
-	{ value: 'canette', label: 'Canette' },
-	{ value: 'cuisse', label: 'Cuisse' }
-];
+export function getCaliberOptions(): { value: Caliber; label: string }[] {
+	return [
+		{ value: 'fronde', label: m.caliber_fronde() },
+		{ value: 'poignet', label: m.caliber_poignet() },
+		{ value: 'canette', label: m.caliber_canette() },
+		{ value: 'cuisse', label: m.caliber_cuisse() }
+	];
+}
+
+export function getPhenologyObservedOptions(): { value: PhenologyStageId; label: string }[] {
+	return getPhenologyStages().map((stage) => ({ value: stage.id, label: stage.label }));
+}
+
+export function getCernageOptions(): { value: CernageStatus; label: string }[] {
+	return [
+		{ value: 'not_started', label: m.cernage_not_started() },
+		{ value: 'partial', label: m.cernage_partial() },
+		{ value: 'advanced', label: m.cernage_advanced() },
+		{ value: 'completed', label: m.cernage_completed() }
+	];
+}
 
 export const SIZE_CLASS_ORDER: Record<SizeClass, number> = {
 	shohin: 0,
@@ -55,14 +82,18 @@ export function getAssessmentSummary(assessment: import('$lib/types/tree').TreeA
 	const parts: string[] = [];
 
 	if (assessment.sizeClass) {
-		const label = SIZE_OPTIONS.find((o) => o.value === assessment.sizeClass)?.label.split(' ')[0];
+		const label = getSizeOptions()
+			.find((o) => o.value === assessment.sizeClass)
+			?.label.split(' ')[0];
 		if (label) parts.push(label);
 	}
 	if (assessment.potentialScore !== null) {
 		parts.push(`${assessment.potentialScore}/10`);
 	}
 	if (assessment.deadwood && assessment.deadwood !== 'aucun') {
-		const label = DEADWOOD_OPTIONS.find((o) => o.value === assessment.deadwood)?.label.split(' ')[0];
+		const label = getDeadwoodOptions()
+			.find((o) => o.value === assessment.deadwood)
+			?.label.split(' ')[0];
 		if (label) parts.push(label);
 	}
 

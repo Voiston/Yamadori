@@ -1,308 +1,1067 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import {
-		DEFAULT_SYNC_CONFIG,
-		loadSyncConfig,
-		saveSyncConfig
-	} from '$lib/sync/config';
-	import { clearStoredPassword } from '$lib/sync/credentials';
+		appearanceSettingsState,
+		initAppearanceSettings,
+		restoreAppearanceSettings,
+		setAppLocale,
+		setDarkMode,
+		setOutdoorMode
+	} from '$lib/stores/appearanceSettings.svelte';
 	import {
-		initSyncEngine,
-		runSync,
-		stopSyncEngine,
-		syncState,
-		testConnection
-	} from '$lib/sync/engine.svelte';
-	import { installState, promptInstall } from '$lib/utils/pwa-install.svelte';
+		initLocationSettings,
+		locationSettingsState,
+		restoreLocationSettings,
+		setBackgroundTrackingEnabled
+	} from '$lib/stores/locationSettings.svelte';
+	import { openBackgroundLocationSettings } from '$lib/utils/backgroundLocation';
+	import { getAppVersionLabel } from '$lib/utils/nativeInit';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import PasswordPromptDialog from '$lib/components/PasswordPromptDialog.svelte';
+	import BackupPasswordFormDialog, {
+		type BackupPasswordFormMode,
+		type BackupPasswordFormResult
+	} from '$lib/components/BackupPasswordFormDialog.svelte';
+	import {
+		backupPasswordSettingsState,
+		changeBackupPassword,
+		getBackupPasswordForExport,
+		getBackupPasswordHint,
+		initBackupPasswordSettings,
+		removeBackupPassword,
+		resetBackupPasswordConfig,
+		setupBackupPassword,
+	} from '$lib/stores/backupPasswordSettings.svelte';
+	import { initParking, parkingStore, restoreParking } from '$lib/stores/parking.svelte';
+	import {
+		initTrees,
+		mergeTreesFromBackup,
+		replaceAllTrees,
+		treeStore
+	} from '$lib/stores/trees.svelte';
+	import {
+		archiveFilename,
+		ArchiveError,
+		buildArchive,
+		clearPendingIncomingBackup,
+		consumePendingIncomingBackup,
+		deliverArchive,
+		incomingBackupState,
+		isLegacyJsonBackupFile,
+		isPasswordProtectedBlob,
+		isZipArchiveFile,
+		parseArchive,
+		parseLegacyBackup,
+		readPendingBackupBlob,
+		type ArchiveDeliveryMode,
+		type ArchiveDeliveryResult,
+		type RebuiltArchive,
+		type YamadoriLegacyBackup
+	} from '$lib/utils/archive';
+	import { hapticSuccess } from '$lib/utils/haptics';
+	import { onMount } from 'svelte';
+	import pkg from '../../../package.json';
+	import {
+		clearTileCache,
+		formatTileCacheSize,
+		getTileCacheStats
+	} from '$lib/utils/map/tileCache';
+	import { clearWeatherCache, getWeatherCacheStats } from '$lib/utils/weatherCache';
+	import { clearCadastreCache, getCadastreCacheStats } from '$lib/utils/cadastre';
+	import { resetOnboarding } from '$lib/utils/onboarding';
+	import { markBackupExported } from '$lib/utils/backupReminder.svelte';
+	import { isAndroidApp, isNativeApp } from '$lib/utils/platform';
+	import { stopWatchingPosition, userPositionState } from '$lib/utils/userPosition.svelte';
+	import { LOCALE_OPTIONS } from '$lib/utils/i18n/locale';
+	import { getIntlLocale } from '$lib/utils/i18n/locale';
+	import * as m from '$lib/paraglide/messages.js';
 
-	let config = $state({ ...DEFAULT_SYNC_CONFIG });
-	let password = $state('');
-	let saving = $state(false);
-	let testing = $state(false);
-	let installing = $state(false);
 	let feedback = $state<{ type: 'ok' | 'error'; message: string } | null>(null);
+	let backupFeedback = $state<{ type: 'ok' | 'error' | 'info'; message: string } | null>(null);
+	let backupFeedbackTimeout: ReturnType<typeof setTimeout> | undefined;
+	let appVersion = $state<string | null>(null);
+	let tileCacheCount = $state<number | null>(null);
+	let tileCacheBytes = $state<number | null>(null);
+	let weatherCacheCount = $state<number | null>(null);
+	let cadastreCacheCount = $state<number | null>(null);
+	let clearingCache = $state(false);
+	let clearingWeatherCache = $state(false);
+	let clearingCadastreCache = $state(false);
+	let backingUp = $state(false);
+	let restoring = $state(false);
+	let showLegacyJsonInput = $state(false);
+	let showReplaceBackupDialog = $state(false);
+	let pendingArchive = $state<RebuiltArchive | null>(null);
+	let pendingLegacyBackup = $state<YamadoriLegacyBackup | null>(null);
+	let importMode = $state<'merge' | 'replace'>('merge');
+	let showPasswordFormDialog = $state(false);
+	let passwordFormMode = $state<BackupPasswordFormMode>('setup');
+	let passwordFormError = $state<string | null>(null);
+	let showPasswordResetDialog = $state(false);
+	let showPasswordImportDialog = $state(false);
+	let passwordImportError = $state<string | null>(null);
+	let pendingPasswordBlob = $state<Blob | null>(null);
+	let pendingPasswordImportMode = $state<'merge' | 'replace'>('merge');
+	let backupInput: HTMLInputElement | undefined = $state();
+	let legacyBackupInput: HTMLInputElement | undefined = $state();
 
-	$effect(() => {
-		void loadSyncConfig().then((stored) => {
-			config = { ...stored };
-		});
+	let intlLocale = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return getIntlLocale();
 	});
 
-	function formatLastSync(value: string | null): string {
-		if (!value) return 'Jamais';
-		return new Date(value).toLocaleString('fr-FR');
+	let pageTitle = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return m.title_settings();
+	});
+
+	function treePluralArgs(count: number) {
+		const trees = count === 1 ? m.settings_tree_one() : m.settings_trees_many();
+		return {
+			count,
+			trees,
+			s: count === 1 ? '' : 's',
+			en: count === 1 ? '' : 'en',
+			'o/i': count === 1 ? 'o' : 'i',
+			es: count === 1 ? '' : 'es'
+		};
 	}
 
-	async function handleSave() {
-		saving = true;
+	async function refreshTileCacheStats(): Promise<void> {
+		const stats = await getTileCacheStats();
+		tileCacheCount = stats.count;
+		tileCacheBytes = stats.bytes;
+	}
+
+	async function refreshWeatherCacheStats(): Promise<void> {
+		const stats = await getWeatherCacheStats();
+		weatherCacheCount = stats.count;
+	}
+
+	async function refreshCadastreCacheStats(): Promise<void> {
+		const stats = await getCadastreCacheStats();
+		cadastreCacheCount = stats.count;
+	}
+
+	$effect(() => {
+		void initLocationSettings();
+		void initAppearanceSettings();
+		void initBackupPasswordSettings();
+		void refreshTileCacheStats();
+		void refreshWeatherCacheStats();
+		void refreshCadastreCacheStats();
+
+		if (isNativeApp()) {
+			void getAppVersionLabel().then((version) => {
+				appVersion = version;
+			});
+		}
+	});
+
+	async function handleBackgroundTrackingChange(enabled: boolean) {
+		feedback = null;
+		await setBackgroundTrackingEnabled(enabled);
+		stopWatchingPosition();
+		if (enabled) {
+			feedback = { type: 'ok', message: m.settings_bg_enabled() };
+		} else {
+			feedback = { type: 'ok', message: m.settings_bg_disabled() };
+		}
+	}
+
+	async function handleOpenLocationSettings() {
+		await openBackgroundLocationSettings();
+	}
+
+	async function handleResetOnboarding() {
+		await resetOnboarding();
+		feedback = { type: 'ok', message: m.settings_onboarding_reset() };
+	}
+
+	async function handleLocaleChange(event: Event) {
+		const value = (event.currentTarget as HTMLSelectElement).value;
+		await setAppLocale(value as (typeof LOCALE_OPTIONS)[number]['value']);
+	}
+
+	function archiveAppVersion(): string {
+		return appVersion ?? pkg.version;
+	}
+
+	function showBackupFeedback(
+		type: 'ok' | 'error' | 'info',
+		message: string,
+		options: { haptic?: boolean } = {}
+	): void {
+		if (backupFeedbackTimeout) {
+			clearTimeout(backupFeedbackTimeout);
+			backupFeedbackTimeout = undefined;
+		}
+
+		backupFeedback = { type, message };
+		if (type === 'ok' && options.haptic !== false) {
+			void hapticSuccess();
+		}
+
+		if (type === 'ok' || type === 'error') {
+			backupFeedbackTimeout = setTimeout(() => {
+				backupFeedback = null;
+				backupFeedbackTimeout = undefined;
+			}, type === 'ok' ? 4000 : 6000);
+		}
+	}
+
+	function formatExportSuccessMessage(result: ArchiveDeliveryResult): string {
+		if (result === 'saved') {
+			return m.settings_export_saved();
+		}
+		if (result === 'shared') {
+			return m.settings_export_shared();
+		}
+		return m.settings_export_downloaded();
+	}
+
+	function formatImportSuccessMessage(treeCount: number, mode: 'merge' | 'replace'): string {
+		const args = treePluralArgs(treeCount);
+		if (mode === 'replace') {
+			return m.settings_import_restored(args);
+		}
+		return m.settings_import_merged(args);
+	}
+
+	function formatImportConfirmMessage(treeCount: number): string {
+		const { trees } = treePluralArgs(treeCount);
+		return `${treeCount} ${trees} — ${m.confirm_default_message()}`;
+	}
+
+	function openPasswordForm(mode: BackupPasswordFormMode) {
+		passwordFormMode = mode;
+		passwordFormError = null;
+		showPasswordFormDialog = true;
+	}
+
+	function passwordResetMessage(): string {
+		return m.settings_backup_password_reset_message();
+	}
+
+	async function handlePasswordFormConfirm(result: BackupPasswordFormResult) {
+		passwordFormError = null;
+		try {
+			if (result.mode === 'setup') {
+				await setupBackupPassword(result.password, result.hint);
+				showPasswordFormDialog = false;
+				showBackupFeedback('ok', m.settings_backup_password_setup_ok());
+				return;
+			}
+
+			if (result.mode === 'change') {
+				const ok = await changeBackupPassword(
+					result.oldPassword,
+					result.newPassword,
+					result.hint
+				);
+				if (!ok) {
+					passwordFormError = m.settings_backup_password_wrong();
+					return;
+				}
+				showPasswordFormDialog = false;
+				showBackupFeedback('ok', m.settings_backup_password_change_ok());
+				return;
+			}
+
+			const ok = await removeBackupPassword(result.oldPassword);
+			if (!ok) {
+				passwordFormError = m.settings_backup_password_wrong();
+				return;
+			}
+			showPasswordFormDialog = false;
+			showBackupFeedback('ok', m.settings_backup_password_remove_ok());
+		} catch (error) {
+			passwordFormError =
+				error instanceof Error ? error.message : m.settings_backup_failed();
+		}
+	}
+
+	async function handlePasswordResetConfirm() {
+		await resetBackupPasswordConfig();
+		showPasswordResetDialog = false;
+		showBackupFeedback('ok', m.settings_backup_password_reset_ok());
+	}
+
+	async function handleExportBackup(mode: ArchiveDeliveryMode) {
+		if (!treeStore.loaded) {
+			feedback = { type: 'error', message: m.settings_loading_wait() };
+			return;
+		}
+
+		backingUp = true;
+		backupFeedback = null;
+		try {
+			let exportPassword: string | undefined;
+			if (backupPasswordSettingsState.configured) {
+				const stored = await getBackupPasswordForExport();
+				if (!stored) {
+					showBackupFeedback('error', m.settings_backup_password_unavailable(), {
+						haptic: false
+					});
+					return;
+				}
+				exportPassword = stored;
+			}
+
+			const filename = archiveFilename();
+			const blob = await buildArchive(
+				{
+					trees: treeStore.trees,
+					parking: parkingStore.position,
+					appearanceSettings: {
+						outdoorMode: appearanceSettingsState.outdoorMode,
+						darkMode: appearanceSettingsState.darkMode,
+						simpleMode: appearanceSettingsState.simpleMode,
+						locale: appearanceSettingsState.locale
+					},
+					locationSettings: {
+						backgroundTrackingEnabled: locationSettingsState.backgroundTrackingEnabled
+					},
+					appVersion: archiveAppVersion()
+				},
+				{ password: exportPassword }
+			);
+			const result = await deliverArchive(blob, filename, mode);
+			showBackupFeedback('ok', formatExportSuccessMessage(result));
+			await markBackupExported(treeStore.trees, parkingStore.position);
+		} catch (error) {
+			showBackupFeedback(
+				'error',
+				error instanceof Error ? error.message : m.settings_backup_failed(),
+				{ haptic: false }
+			);
+		} finally {
+			backingUp = false;
+		}
+	}
+
+	function openBackupImport(mode: 'merge' | 'replace') {
+		importMode = mode;
+		backupInput?.click();
+	}
+
+	function openLegacyBackupImport(mode: 'merge' | 'replace') {
+		importMode = mode;
+		legacyBackupInput?.click();
+	}
+
+	function clearPendingBackup(): void {
+		pendingArchive = null;
+		pendingLegacyBackup = null;
+	}
+
+	async function reloadLocalData(): Promise<void> {
+		await Promise.all([initTrees(), initParking()]);
+	}
+
+	async function applyArchiveData(
+		data: RebuiltArchive,
+		mode: 'merge' | 'replace'
+	): Promise<number> {
+		if (mode === 'replace') {
+			await replaceAllTrees(data.trees);
+		} else {
+			await mergeTreesFromBackup(data.trees);
+		}
+		await restoreParking(data.parking);
+		await restoreAppearanceSettings(data.appearanceSettings);
+		await restoreLocationSettings(data.locationSettings);
+		await reloadLocalData();
+		return treeStore.trees.length;
+	}
+
+	async function applyLegacyBackup(
+		backup: YamadoriLegacyBackup,
+		mode: 'merge' | 'replace'
+	): Promise<number> {
+		if (mode === 'replace') {
+			await replaceAllTrees(backup.trees);
+		} else {
+			await mergeTreesFromBackup(backup.trees);
+		}
+		await restoreParking(backup.parking);
+		await reloadLocalData();
+		return treeStore.trees.length;
+	}
+
+	async function importBackupFromBlob(
+		blob: Blob,
+		mode: 'merge' | 'replace',
+		password?: string
+	): Promise<void> {
+		const needsPassword = await isPasswordProtectedBlob(blob);
+		if (needsPassword && !password) {
+			const stored = await getBackupPasswordForExport();
+			if (stored) {
+				try {
+					await importBackupFromBlob(blob, mode, stored);
+					return;
+				} catch (error) {
+					if (
+						!(error instanceof ArchiveError && error.code === 'ARCHIVE_WRONG_PASSWORD')
+					) {
+						throw error;
+					}
+				}
+			}
+
+			pendingPasswordBlob = blob;
+			pendingPasswordImportMode = mode;
+			passwordImportError = null;
+			showPasswordImportDialog = true;
+			return;
+		}
+
+		restoring = true;
+		backupFeedback = null;
+		try {
+			const archive = await parseArchive(blob, password ? { password } : undefined);
+			showPasswordImportDialog = false;
+			pendingPasswordBlob = null;
+			passwordImportError = null;
+			if (mode === 'replace') {
+				pendingArchive = archive;
+				pendingLegacyBackup = null;
+				showReplaceBackupDialog = true;
+				showBackupFeedback('info', formatImportConfirmMessage(archive.preview.treeCount), {
+					haptic: false
+				});
+				return;
+			}
+			const treeCount = await applyArchiveData(archive, 'merge');
+			showBackupFeedback('ok', formatImportSuccessMessage(treeCount, 'merge'));
+		} catch (error) {
+			if (error instanceof ArchiveError && error.code === 'ARCHIVE_WRONG_PASSWORD') {
+				passwordImportError = error.message;
+				pendingPasswordBlob = blob;
+				pendingPasswordImportMode = mode;
+				showPasswordImportDialog = true;
+				return;
+			}
+			showPasswordImportDialog = false;
+			pendingPasswordBlob = null;
+			passwordImportError = null;
+			const message =
+				error instanceof ArchiveError
+					? error.message
+					: error instanceof Error
+						? error.message
+						: m.settings_restore_failed();
+			showBackupFeedback('error', message, { haptic: false });
+		} finally {
+			restoring = false;
+		}
+	}
+
+	async function handlePasswordImportConfirm(password: string) {
+		if (!pendingPasswordBlob) return;
+		await importBackupFromBlob(pendingPasswordBlob, pendingPasswordImportMode, password);
+	}
+
+	function cancelPasswordImport() {
+		pendingPasswordBlob = null;
+		passwordImportError = null;
+		showPasswordImportDialog = false;
+	}
+
+	async function handleIncomingImport(mode: 'merge' | 'replace') {
+		const pending = await readPendingBackupBlob();
+		if (!pending) {
+			showBackupFeedback('error', m.settings_backup_not_found(), { haptic: false });
+			clearPendingIncomingBackup();
+			return;
+		}
+
+		importMode = mode;
+		await importBackupFromBlob(pending.blob, mode);
+		if (mode === 'merge') {
+			clearPendingIncomingBackup();
+		}
+	}
+
+	function dismissIncomingBackup(): void {
+		clearPendingIncomingBackup();
+		backupFeedback = null;
+	}
+
+	onMount(() => {
+		if (!isAndroidApp()) {
+			return;
+		}
+
+		void consumePendingIncomingBackup();
+	});
+
+	async function handleBackupFileSelected(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file) return;
+
+		if (isLegacyJsonBackupFile(file) && !isZipArchiveFile(file)) {
+			restoring = true;
+			backupFeedback = null;
+			try {
+				const legacy = parseLegacyBackup(await file.text());
+				if (importMode === 'replace') {
+					pendingLegacyBackup = legacy;
+					pendingArchive = null;
+					showReplaceBackupDialog = true;
+					showBackupFeedback('info', formatImportConfirmMessage(legacy.trees.length), {
+						haptic: false
+					});
+					return;
+				}
+				const treeCount = await applyLegacyBackup(legacy, 'merge');
+				showBackupFeedback('ok', formatImportSuccessMessage(treeCount, 'merge'));
+			} catch (error) {
+				showBackupFeedback(
+					'error',
+					error instanceof Error ? error.message : m.settings_restore_failed(),
+					{ haptic: false }
+				);
+			} finally {
+				restoring = false;
+			}
+			return;
+		}
+
+		await importBackupFromBlob(file, importMode);
+	}
+
+	async function handleLegacyBackupFileSelected(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file) return;
+
+		restoring = true;
+		backupFeedback = null;
+		try {
+			const legacy = parseLegacyBackup(await file.text());
+			if (importMode === 'replace') {
+				pendingLegacyBackup = legacy;
+				pendingArchive = null;
+				showReplaceBackupDialog = true;
+				return;
+			}
+			const treeCount = await applyLegacyBackup(legacy, 'merge');
+			showBackupFeedback('ok', formatImportSuccessMessage(treeCount, 'merge'));
+		} catch (error) {
+			showBackupFeedback(
+				'error',
+				error instanceof Error ? error.message : m.settings_restore_failed(),
+				{ haptic: false }
+			);
+		} finally {
+			restoring = false;
+		}
+	}
+
+	async function handleReplaceBackup() {
+		restoring = true;
+		backupFeedback = null;
+		try {
+			if (pendingArchive) {
+				const treeCount = await applyArchiveData(pendingArchive, 'replace');
+				showBackupFeedback('ok', formatImportSuccessMessage(treeCount, 'replace'));
+			} else if (pendingLegacyBackup) {
+				const treeCount = await applyLegacyBackup(pendingLegacyBackup, 'replace');
+				showBackupFeedback('ok', formatImportSuccessMessage(treeCount, 'replace'));
+			}
+		} catch (error) {
+			showBackupFeedback(
+				'error',
+				error instanceof Error ? error.message : m.settings_restore_failed(),
+				{ haptic: false }
+			);
+		} finally {
+			restoring = false;
+			clearPendingBackup();
+			clearPendingIncomingBackup();
+		}
+	}
+
+	async function handleClearWeatherCache() {
+		clearingWeatherCache = true;
 		feedback = null;
 		try {
-			await saveSyncConfig({ ...config });
-			if (!config.rememberPassword) {
-				await clearStoredPassword();
-			}
-			stopSyncEngine();
-			if (config.enabled) {
-				await initSyncEngine();
-			}
-			feedback = { type: 'ok', message: 'Réglages enregistrés.' };
+			await clearWeatherCache();
+			await refreshWeatherCacheStats();
+			feedback = { type: 'ok', message: m.settings_weather_cache_cleared() };
 		} catch (error) {
 			feedback = {
 				type: 'error',
-				message: error instanceof Error ? error.message : 'Enregistrement impossible.'
+				message:
+					error instanceof Error ? error.message : m.settings_weather_cache_clear_failed()
 			};
 		} finally {
-			saving = false;
+			clearingWeatherCache = false;
 		}
 	}
 
-	async function handleTestLogin() {
-		testing = true;
+	async function handleClearTileCache() {
+		clearingCache = true;
 		feedback = null;
-		const result = await testConnection({ ...config, enabled: true }, password);
-		if (result.ok) {
-			await saveSyncConfig({ ...config, enabled: true });
-			config.enabled = true;
-			stopSyncEngine();
-			await initSyncEngine();
-			feedback = { type: 'ok', message: 'Connexion réussie. Synchronisation activée.' };
-		} else {
-			feedback = { type: 'error', message: result.error };
+		try {
+			await clearTileCache();
+			await refreshTileCacheStats();
+			feedback = { type: 'ok', message: m.settings_map_cache_cleared() };
+		} catch (error) {
+			feedback = {
+				type: 'error',
+				message: error instanceof Error ? error.message : m.settings_map_cache_clear_failed()
+			};
+		} finally {
+			clearingCache = false;
 		}
-		testing = false;
 	}
 
-	async function handleSyncNow() {
-		testing = true;
+	async function handleClearCadastreCache() {
+		clearingCadastreCache = true;
 		feedback = null;
-		const ok = await runSync({ fullPush: false });
-		if (ok) {
-			feedback = { type: 'ok', message: 'Synchronisation terminée.' };
-		} else if (syncState.lastError) {
-			feedback = { type: 'error', message: syncState.lastError };
-		} else if (syncState.status === 'offline') {
-			feedback = { type: 'error', message: 'Serveur injoignable pour le moment.' };
+		try {
+			await clearCadastreCache();
+			await refreshCadastreCacheStats();
+			feedback = { type: 'ok', message: m.settings_cadastre_cache_cleared() };
+		} catch (error) {
+			feedback = {
+				type: 'error',
+				message:
+					error instanceof Error ? error.message : m.settings_cadastre_cache_clear_failed()
+			};
+		} finally {
+			clearingCadastreCache = false;
 		}
-		testing = false;
-	}
-
-	async function handleFullPull() {
-		testing = true;
-		feedback = null;
-		const ok = await runSync({ fullPull: true });
-		if (ok) {
-			feedback = syncState.lastError
-				? { type: 'ok', message: `Récupération partielle. ${syncState.lastError}` }
-				: { type: 'ok', message: 'Fiches récupérées depuis le serveur.' };
-		} else {
-			feedback = { type: 'error', message: syncState.lastError ?? 'Récupération impossible.' };
-		}
-		testing = false;
-	}
-
-	async function handleFullPush() {
-		testing = true;
-		feedback = null;
-		const ok = await runSync({ fullPush: true });
-		feedback = ok
-			? { type: 'ok', message: 'Toutes les fiches locales ont été envoyées.' }
-			: { type: 'error', message: syncState.lastError ?? 'Envoi impossible.' };
-		testing = false;
-	}
-
-	async function handleInstall() {
-		installing = true;
-		feedback = null;
-		const accepted = await promptInstall();
-		feedback = accepted
-			? { type: 'ok', message: 'Application installée.' }
-			: { type: 'error', message: 'Installation annulée ou indisponible sur cet appareil.' };
-		installing = false;
 	}
 </script>
 
 <svelte:head>
-	<title>Réglages — Yamadori Scouting</title>
+	<title>{pageTitle}</title>
 </svelte:head>
 
-<div class="flex flex-col gap-6 lg:mx-auto lg:max-w-2xl">
+<div class="flex flex-col gap-6">
 	<div>
-		<h2 class="text-lg font-semibold text-forest-900">Application</h2>
-		<p class="mt-1 text-sm text-muted">
-			Installez Yamadori sur l'écran d'accueil pour un accès rapide et un meilleur mode hors-ligne.
-		</p>
+		<h2 class="text-lg font-semibold text-forest-900">{m.settings_display()}</h2>
+		<p class="mt-1 text-sm text-muted">{m.settings_display_hint()}</p>
 	</div>
 
-	<div class="rounded-xl border border-gray-100 bg-white px-4 py-4 text-sm text-muted">
-		{#if installState.isInstalled}
-			<p class="font-medium text-forest-900">Yamadori est installé sur cet appareil.</p>
-		{:else if installState.canInstall}
-			<p class="font-medium text-forest-900">Installation disponible</p>
-			<p class="mt-1">Ajoutez l'app à votre écran d'accueil en un clic.</p>
+	<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+		<input
+			type="checkbox"
+			class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
+			checked={appearanceSettingsState.outdoorMode}
+			onchange={(event) => void setOutdoorMode(event.currentTarget.checked)}
+		/>
+		<span class="text-sm">
+			<span class="font-medium text-forest-900">{m.settings_outdoor_mode()}</span>
+			<span class="mt-0.5 block text-muted">
+				{m.settings_outdoor_hint()}
+				{#if isNativeApp()}
+					{m.settings_outdoor_android_brightness()}
+				{/if}
+			</span>
+		</span>
+	</label>
+
+	<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+		<input
+			type="checkbox"
+			class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
+			checked={appearanceSettingsState.darkMode}
+			onchange={(event) => void setDarkMode(event.currentTarget.checked)}
+		/>
+		<span class="text-sm">
+			<span class="font-medium text-forest-900">{m.settings_dark_mode()}</span>
+			<span class="mt-0.5 block text-muted">{m.settings_dark_hint()}</span>
+		</span>
+	</label>
+
+	<div class="flex flex-col gap-2">
+		<label for="app-locale" class="text-sm font-medium text-forest-900">{m.settings_language()}</label>
+		<select
+			id="app-locale"
+			class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-forest-900"
+			value={appearanceSettingsState.locale}
+			onchange={(event) => void handleLocaleChange(event)}
+		>
+			{#each LOCALE_OPTIONS as option (option.value)}
+				<option value={option.value}>{option.label}</option>
+			{/each}
+		</select>
+	</div>
+
+	{#if isNativeApp()}
+		<div>
+			<h2 class="text-lg font-semibold text-forest-900">{m.settings_android_app()}</h2>
+			<p class="mt-1 text-sm text-muted">
+				{#if appVersion}
+					{appVersion}
+				{:else}
+					{m.settings_version_loading()}
+				{/if}
+				{#if tileCacheCount !== null}
+					· {m.settings_offline_tiles({ count: tileCacheCount.toLocaleString(intlLocale) })}
+				{/if}
+			</p>
+		</div>
+	{/if}
+
+	<div>
+		<h2 class="text-lg font-semibold text-forest-900">{m.settings_offline_map()}</h2>
+		<p class="mt-1 text-sm text-muted">{m.settings_offline_map_hint()}</p>
+		<ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-muted">
+			<li>{m.settings_offline_tip_1()}</li>
+			<li>{m.settings_offline_tip_2()}</li>
+			<li>{m.settings_offline_tip_3()}</li>
+		</ul>
+		{#if tileCacheCount !== null}
+			<p class="mt-3 text-sm font-medium text-forest-800">
+				{m.settings_tiles_count({ count: tileCacheCount.toLocaleString(intlLocale) })}
+				{#if tileCacheBytes !== null}
+					· {formatTileCacheSize(tileCacheBytes)}
+				{/if}
+			</p>
+		{/if}
+		{#if isNativeApp() && tileCacheCount !== null && tileCacheCount > 0}
 			<button
 				type="button"
-				onclick={handleInstall}
-				disabled={installing}
-				class="mt-3 rounded-xl bg-forest-800 px-4 py-2.5 text-sm font-medium text-white transition active:scale-[0.98] disabled:opacity-50"
+				onclick={() => void handleClearTileCache()}
+				disabled={clearingCache}
+				class="mt-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
 			>
-				{installing ? 'Installation…' : 'Installer l\'application'}
+				{clearingCache ? m.action_clearing() : m.settings_clear_map_cache()}
 			</button>
-		{:else if installState.isIos}
-			<p class="font-medium text-forest-900">iPhone / iPad</p>
-			<ol class="mt-2 list-decimal space-y-1 pl-5">
-				<li>Ouvrez cette page dans <strong>Safari</strong></li>
-				<li>Appuyez sur <strong>Partager</strong> (icône carré + flèche)</li>
-				<li>Choisissez <strong>Sur l'écran d'accueil</strong></li>
-			</ol>
-		{:else}
-			<p class="font-medium text-forest-900">Installation navigateur</p>
-			<p class="mt-1">
-				Chrome / Edge : menu du navigateur (⋮) → <strong>Installer l'application</strong> ou
-				<strong>Ajouter à l'écran d'accueil</strong>.
-			</p>
 		{/if}
 	</div>
 
 	<div>
-		<h2 class="text-lg font-semibold text-forest-900">Synchronisation</h2>
+		<h2 class="text-lg font-semibold text-forest-900">{m.settings_weather_offline()}</h2>
+		<p class="mt-1 text-sm text-muted">{m.settings_weather_offline_hint()}</p>
+		{#if weatherCacheCount !== null}
+			<p class="mt-3 text-sm font-medium text-forest-800">
+				{weatherCacheCount.toLocaleString(intlLocale)}
+				{weatherCacheCount === 1
+					? m.settings_forecast_cached_one()
+					: m.settings_forecast_cached_many()}
+			</p>
+		{/if}
+		{#if weatherCacheCount !== null && weatherCacheCount > 0}
+			<button
+				type="button"
+				onclick={() => void handleClearWeatherCache()}
+				disabled={clearingWeatherCache}
+				class="mt-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
+			>
+				{clearingWeatherCache ? m.action_clearing() : m.settings_clear_weather_cache()}
+			</button>
+		{/if}
+	</div>
+
+	<div>
+		<h2 class="text-lg font-semibold text-forest-900">{m.settings_cadastre_offline()}</h2>
+		<p class="mt-1 text-sm text-muted">{m.settings_cadastre_offline_hint()}</p>
+		{#if cadastreCacheCount !== null}
+			<p class="mt-3 text-sm font-medium text-forest-800">
+				{cadastreCacheCount.toLocaleString(intlLocale)}
+				{cadastreCacheCount === 1
+					? m.settings_cadastre_cached_one()
+					: m.settings_cadastre_cached_many()}
+			</p>
+		{/if}
+		{#if cadastreCacheCount !== null && cadastreCacheCount > 0}
+			<button
+				type="button"
+				onclick={() => void handleClearCadastreCache()}
+				disabled={clearingCadastreCache}
+				class="mt-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
+			>
+				{clearingCadastreCache ? m.action_clearing() : m.settings_clear_cadastre_cache()}
+			</button>
+		{/if}
+	</div>
+
+	<div>
+		<h2 class="text-lg font-semibold text-forest-900">{m.settings_backup()}</h2>
 		<p class="mt-1 text-sm text-muted">
-			Connectez l'app à votre PocketBase via Tailscale. Commencez par votre propre PC pour vous
-			familiariser.
+			{m.settings_backup_hint(treePluralArgs(treeStore.trees.length))}
 		</p>
-	</div>
-
-	<label class="flex flex-col gap-1.5">
-		<span class="text-sm font-medium text-forest-900">URL du serveur</span>
-		<input
-			type="url"
-			bind:value={config.serverUrl}
-			placeholder="https://david-pc.mon-tailnet.ts.net"
-			class="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-forest-600"
-		/>
-		<span class="text-xs text-muted">URL Tailscale Serve ou PocketBase local</span>
-	</label>
-
-	<label class="flex flex-col gap-1.5">
-		<span class="text-sm font-medium text-forest-900">Email</span>
-		<input
-			type="email"
-			bind:value={config.email}
-			autocomplete="username"
-			class="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-forest-600"
-		/>
-	</label>
-
-	<label class="flex flex-col gap-1.5">
-		<span class="text-sm font-medium text-forest-900">Mot de passe</span>
-		<input
-			type="password"
-			bind:value={password}
-			autocomplete="current-password"
-			class="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-forest-600"
-		/>
-		<span class="text-xs text-muted">
-			{#if config.rememberPassword}
-				Stocké chiffré sur cet appareil si vous cochez « Se souvenir »
-			{:else}
-				Saisi à la connexion — non conservé
+		<div class="mt-3 flex flex-col gap-3">
+			{#if isAndroidApp() && incomingBackupState.pending}
+				<div class="rounded-xl border border-forest-200 bg-forest-50 px-4 py-3">
+					<p class="text-sm font-medium text-forest-900">{m.settings_backup_received()}</p>
+					<p class="mt-1 text-sm text-forest-800">
+						{m.settings_backup_received_hint({ name: incomingBackupState.pending.displayName })}
+					</p>
+					<div class="mt-3 flex flex-col gap-2 sm:flex-row">
+						<button
+							type="button"
+							onclick={() => void handleIncomingImport('merge')}
+							disabled={restoring}
+							class="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800 disabled:opacity-50"
+						>
+							{m.action_merge()}
+						</button>
+						<button
+							type="button"
+							onclick={() => void handleIncomingImport('replace')}
+							disabled={restoring}
+							class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-900 disabled:opacity-50"
+						>
+							{m.settings_replace_all()}
+						</button>
+						<button
+							type="button"
+							onclick={dismissIncomingBackup}
+							disabled={restoring}
+							class="rounded-xl px-4 py-2.5 text-sm font-medium text-muted disabled:opacity-50"
+						>
+							{m.action_ignore()}
+						</button>
+					</div>
+				</div>
 			{/if}
-		</span>
-	</label>
-
-	<label class="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3">
-		<input type="checkbox" bind:checked={config.rememberPassword} class="h-4 w-4 rounded" />
-		<span class="text-sm text-forest-900">Se souvenir du mot de passe sur cet appareil</span>
-	</label>
-	<p class="-mt-4 text-xs text-muted">
-		Stocké uniquement sur cet appareil, chiffré. Ne cochez pas sur un appareil partagé.
-	</p>
-
-	<label class="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3">
-		<input type="checkbox" bind:checked={config.enabled} class="h-4 w-4 rounded" />
-		<span class="text-sm text-forest-900">Activer la synchronisation automatique</span>
-	</label>
-
-	<div class="flex flex-col gap-4 lg:grid lg:grid-cols-2 lg:gap-6">
-		<div class="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-muted">
-			<p>État : <strong class="text-forest-900">{syncState.status}</strong></p>
-			<p>En attente : <strong class="text-forest-900">{syncState.pendingCount}</strong></p>
-			<p>Dernière sync : <strong class="text-forest-900">{formatLastSync(syncState.lastSyncedAt)}</strong></p>
-			{#if syncState.lastError}
-				<p class="mt-2 text-red-700">
-					Erreur : <strong class="text-red-800">{syncState.lastError}</strong>
-				</p>
+			<div class="rounded-xl border border-gray-200 bg-white px-4 py-3">
+				{#if backupPasswordSettingsState.configured}
+					<p class="text-sm font-medium text-forest-900">
+						{m.settings_backup_password_configured()}
+					</p>
+					<div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+						<button
+							type="button"
+							onclick={() => openPasswordForm('change')}
+							class="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800"
+						>
+							{m.settings_backup_password_change()}
+						</button>
+						<button
+							type="button"
+							onclick={() => openPasswordForm('remove')}
+							class="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800"
+						>
+							{m.settings_backup_password_remove()}
+						</button>
+					</div>
+					<div class="mt-3">
+						<button
+							type="button"
+							onclick={() => {
+								showPasswordResetDialog = true;
+							}}
+							class="text-left text-xs font-medium text-muted underline-offset-2 hover:underline"
+						>
+							{m.settings_backup_password_forgot()}
+						</button>
+						{#if backupPasswordSettingsState.hint}
+							<p class="mt-1.5 text-xs text-muted">
+								{m.settings_backup_password_hint_prefix()}
+								<span class="font-semibold text-forest-900"
+									>{backupPasswordSettingsState.hint}</span
+								>
+							</p>
+						{/if}
+					</div>
+				{:else}
+					<p class="text-sm text-muted">{m.settings_backup_password_hint_help()}</p>
+					<button
+						type="button"
+						onclick={() => openPasswordForm('setup')}
+						class="mt-3 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800"
+					>
+						{m.settings_backup_password_setup()}
+					</button>
+				{/if}
+			</div>
+			<button
+				type="button"
+				onclick={() => void handleExportBackup('share')}
+				disabled={backingUp || !treeStore.loaded}
+				class="rounded-xl bg-forest-800 px-4 py-3 text-sm font-medium text-white transition active:scale-[0.98] disabled:opacity-50"
+			>
+				{backingUp ? m.action_exporting() : m.action_export()}
+			</button>
+			<button
+				type="button"
+				onclick={() => void handleExportBackup('local')}
+				disabled={backingUp || !treeStore.loaded}
+				class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
+			>
+				{backingUp
+					? m.action_saving()
+					: isAndroidApp()
+						? m.settings_save_downloads()
+						: m.settings_download_backup()}
+			</button>
+			<button
+				type="button"
+				onclick={() => openBackupImport('merge')}
+				disabled={restoring}
+				class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
+			>
+				{restoring ? m.action_importing() : m.action_import()}
+			</button>
+			<button
+				type="button"
+				onclick={() => openBackupImport('replace')}
+				disabled={restoring}
+				class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 transition active:scale-[0.98] disabled:opacity-50"
+			>
+				{m.settings_import_replace()}
+			</button>
+			<button
+				type="button"
+				onclick={() => {
+					showLegacyJsonInput = !showLegacyJsonInput;
+				}}
+				class="text-left text-xs font-medium text-muted underline-offset-2 hover:underline"
+			>
+				{showLegacyJsonInput ? m.settings_hide_legacy_json() : m.settings_show_legacy_json()}
+			</button>
+			{#if showLegacyJsonInput}
+				<div class="flex flex-col gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3">
+					<p class="text-xs text-muted">{m.settings_legacy_json_hint()}</p>
+					<button
+						type="button"
+						onclick={() => openLegacyBackupImport('merge')}
+						disabled={restoring}
+						class="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800"
+					>
+						{m.settings_import_json_merge()}
+					</button>
+					<button
+						type="button"
+						onclick={() => openLegacyBackupImport('replace')}
+						disabled={restoring}
+						class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-900"
+					>
+						{m.settings_import_json_replace()}
+					</button>
+				</div>
 			{/if}
 		</div>
-
-		<div class="rounded-xl border border-gray-100 bg-white px-4 py-4 text-sm text-muted">
-			<p class="font-medium text-forest-900">Guide rapide (ton PC)</p>
-			<ol class="mt-2 list-decimal space-y-1 pl-5">
-				<li>Installer Tailscale sur ton PC et ton téléphone</li>
-				<li>Lancer PocketBase : <code class="text-xs">pocketbase serve --http=127.0.0.1:8090</code></li>
-				<li>Exposer via Tailscale : <code class="text-xs">tailscale serve --bg http://127.0.0.1:8090</code></li>
-				<li>Créer la collection <code class="text-xs">trees</code> (voir docs/SYNC-SETUP.md)</li>
-				<li>Créer un compte utilisateur dans l'admin PocketBase</li>
-			</ol>
-		</div>
+		<input
+			bind:this={backupInput}
+			type="file"
+			accept="application/zip,.zip,.yamadori.zip,application/json,.json"
+			class="hidden"
+			onchange={(event) => void handleBackupFileSelected(event)}
+		/>
+		<input
+			bind:this={legacyBackupInput}
+			type="file"
+			accept="application/json,.json"
+			class="hidden"
+			onchange={(event) => void handleLegacyBackupFileSelected(event)}
+		/>
 	</div>
 
-	{#if feedback}
-		<p
-			class="rounded-xl px-3 py-2 text-sm {feedback.type === 'ok'
-				? 'bg-green-50 text-green-800'
-				: 'bg-red-50 text-red-800'}"
-			role="status"
+	{#if isNativeApp() && isAndroidApp()}
+		<div>
+			<h2 class="text-lg font-semibold text-forest-900">{m.settings_gps_android()}</h2>
+			<p class="mt-1 text-sm text-muted">{m.settings_gps_android_hint()}</p>
+			<ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-muted">
+				<li>{m.settings_gps_tip_precise()}</li>
+				<li>{m.settings_gps_tip_offline()}</li>
+				<li>{m.settings_gps_tip_still()}</li>
+			</ul>
+			<p class="mt-3 text-sm text-muted">{m.location_bg_message()}</p>
+		</div>
+
+		<label class="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3">
+			<input
+				type="checkbox"
+				checked={locationSettingsState.backgroundTrackingEnabled}
+				onchange={(event) =>
+					void handleBackgroundTrackingChange((event.currentTarget as HTMLInputElement).checked)}
+				class="h-4 w-4 rounded"
+			/>
+			<span class="text-sm text-forest-900">{m.settings_bg_tracking()}</span>
+		</label>
+
+		<p class="-mt-4 text-xs text-muted">{m.settings_bg_tracking_hint()}</p>
+
+		<button
+			type="button"
+			onclick={handleOpenLocationSettings}
+			class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98]"
 		>
-			{feedback.message}
-		</p>
+			{m.settings_open_location()}
+		</button>
+
+		<button
+			type="button"
+			onclick={() => void handleResetOnboarding()}
+			class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98]"
+		>
+			{m.settings_reset_onboarding()}
+		</button>
+
+		{#if userPositionState.error}
+			<p class="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
+				{userPositionState.error}
+			</p>
+		{/if}
 	{/if}
 
-	<div class="flex flex-col gap-3">
-		<button
-			type="button"
-			onclick={handleTestLogin}
-			disabled={testing || saving}
-			class="rounded-xl bg-forest-800 px-4 py-3 text-sm font-medium text-white transition active:scale-[0.98] disabled:opacity-50"
-		>
-			Tester la connexion
-		</button>
-
-		<button
-			type="button"
-			onclick={handleSave}
-			disabled={saving || testing}
-			class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
-		>
-			Enregistrer
-		</button>
-
-		<button
-			type="button"
-			onclick={handleSyncNow}
-			disabled={testing || !config.enabled}
-			class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
-		>
-			Synchroniser maintenant
-		</button>
-
-		<button
-			type="button"
-			onclick={handleFullPull}
-			disabled={testing || !config.enabled}
-			class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900 transition active:scale-[0.98] disabled:opacity-50"
-		>
-			Récupérer depuis le serveur
-		</button>
-
-		<button
-			type="button"
-			onclick={handleFullPush}
-			disabled={testing || !config.enabled}
-			class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 transition active:scale-[0.98] disabled:opacity-50"
-		>
-			Envoyer toutes les fiches locales
-		</button>
-	</div>
-
-	<a href="{base}/" class="text-center text-sm font-medium text-forest-800 lg:hidden">Retour à la liste</a>
+	<a href="{base}/" class="text-center text-sm font-medium text-forest-800">{m.layout_back()}</a>
 </div>
+
+{#if backupFeedback}
+	<p
+		class="bottom-safe-toast fixed left-1/2 z-50 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 whitespace-nowrap rounded-full px-6 py-2.5 text-sm font-medium shadow-lg {backupFeedback.type ===
+		'ok'
+			? 'bg-green-800 text-white'
+			: backupFeedback.type === 'info'
+				? 'bg-amber-600 text-white'
+				: 'bg-red-800 text-white'}"
+		role="status"
+		aria-live="polite"
+	>
+		{backupFeedback.message}
+	</p>
+{/if}
+
+<ConfirmDialog
+	bind:open={showReplaceBackupDialog}
+	title={m.settings_replace_title()}
+	message={m.settings_replace_message()}
+	confirmLabel={m.action_replace()}
+	onconfirm={() => void handleReplaceBackup()}
+	oncancel={() => {
+		clearPendingBackup();
+		clearPendingIncomingBackup();
+	}}
+/>
+
+<PasswordPromptDialog
+	bind:open={showPasswordImportDialog}
+	bind:error={passwordImportError}
+	hint={getBackupPasswordHint()}
+	onconfirm={(password) => void handlePasswordImportConfirm(password)}
+	oncancel={cancelPasswordImport}
+/>
+
+<BackupPasswordFormDialog
+	bind:open={showPasswordFormDialog}
+	bind:mode={passwordFormMode}
+	bind:error={passwordFormError}
+	initialHint={backupPasswordSettingsState.hint ?? ''}
+	onconfirm={(result) => void handlePasswordFormConfirm(result)}
+	oncancel={() => {
+		passwordFormError = null;
+	}}
+/>
+
+<ConfirmDialog
+	bind:open={showPasswordResetDialog}
+	title={m.settings_backup_password_reset_title()}
+	message={passwordResetMessage()}
+	confirmLabel={m.action_confirm()}
+	variant="danger"
+	onconfirm={() => void handlePasswordResetConfirm()}
+/>
