@@ -103,8 +103,8 @@
 			<div class="meta">
 				<p><strong>Application :</strong> Yamadori Scouting (fr.yamadori.scouting)</p>
 				<p><strong>Publisher / contact :</strong> <a href="mailto:david.voisard2@gmail.com">david.voisard2@gmail.com</a></p>
-				<p><strong>Last updated :</strong> 26 June 2026</p>
-				<p><strong>App version :</strong> 0.0.7</p>
+				<p><strong>Last updated :</strong> 1 July 2026</p>
+				<p><strong>App version :</strong> 0.4.6</p>
 			</div>
 		</header>
 
@@ -116,19 +116,19 @@
 
 		<section>
 			<h2>Yamadori Manifesto</h2>
-			<p class="intro">Yamadori does not sync your scouting entries to the cloud. Your field notebook lives in your pocket — and you stay in control of what goes in and what goes out.</p>
+			<p class="intro">Yamadori does not sync your scouting entries to the cloud. Your field notebook lives in your pocket.</p>
 		</section>
 
-		<section class="section"><h3>On your device</h3><article class="card"><h4>Your notebook, your phone</h4><p>No account, no Yamadori server. Your scouting entries, photos, voice notes and starting point stay on this device. By default this data is stored unencrypted locally; you can enable local encryption in Settings (optional, Android) — it protects trees, parking, export password and GPS settings, but not weather or map caches.</p></article>
+		<section class="section"><h3>On your device</h3><article class="card"><h4>Your notebook, your phone</h4><p>No account, no Yamadori server. Your scouting entries, photos, voice notes and starting point stay on this device. By default, data is stored unencrypted in local memory; you can enable local encryption in Settings (optional, Android) — it protects trees, parking, export password and GPS settings, but not weather or map caches.</p></article>
 <article class="card"><h4>Built for the forest</h4><p>Map, weather and cadastre data are cached locally. GPS works without a network — even deep in the woods.</p></article>
-<article class="card"><h4>Protect your notebook</h4><p>Export a backup regularly (USB drive, personal cloud). Each .yamadori.zip file is encrypted with its own key. Also password-protect it from Settings → Backup before sharing — the password envelope is still recommended. The password hint is a reminder only, not a secret.</p></article>
+<article class="card"><h4>Protect your notebook</h4><p>Export a backup regularly (USB drive, personal cloud). Without an export password, the file only ensures integrity (checksums) — not confidentiality: anyone with the file can extract the data. With a password, the entire archive is encrypted (PBKDF2 + AES-GCM). The hint is a memory aid only; it cannot recover the password.</p></article>
 <article class="card"><h4>Full transparency</h4><p>Like a paper notebook in your bag, your scouting entries remain readable on an unlocked device. Yamadori does not use Android automatic backup to Google. We recommend a screen lock and password-protected exports.</p></article>
-<article class="card"><h4>Android permissions</h4><p>Camera: tree photos only, when you tap Capture. Microphone: voice notes (30 s max), on your action. Location: scouting, map and weather; &quot;all the time&quot; access is only requested if you enable background tracking. Notifications: only during that tracking. Compass: heading display during capture, processed locally. The permissions wizard on first launch guides you — nothing is requested without reason.</p></article></section>
-<section class="section"><h3>Online</h3><article class="card"><h4>Minimal connectivity</h4><p>When online, only your GPS coordinates (or map extent for tiles) are sent to public services — never your photos or notes. See &quot;Third-party services&quot; for the full list: weather, climate, IGN mapping, cadastre, protected areas and geocoding.</p></article>
+<article class="card"><h4>Android permissions</h4><p>Camera: tree photos only, when you tap Capture. Microphone: voice notes (30 s max), on your action. Location: scouting, map and weather, only while the app is in the foreground. Compass: heading during capture, processed locally. The permissions wizard on first launch guides you — nothing is requested without reason.</p></article></section>
+<section class="section"><h3>Online</h3><article class="card"><h4>Minimal connectivity</h4><p>When online, only your GPS coordinates are sent to public services for weather, agronomy and cadastre — never your photos or notes. Services used: Open-Meteo, IGN Géoplateforme, Nominatim (OpenStreetMap).</p></article>
 <article class="card"><h4>Third-party services consulted</h4><p>Open-Meteo (forecasts and climate history), IGN Géoplateforme (map tiles), IGN Apicarto (cadastre, public forests, Natura 2000 and ZNIEFF protected areas), Nominatim/OpenStreetMap (place labels). Yamadori has no intermediary server: your coordinates go directly to these public services, each with its own privacy policy. Your photos and notes never leave the device this way.</p></article>
 <article class="card"><h4>No tracking</h4><p>No Yamadori account, no ads, no analytics (Firebase, crash reporters, etc.). No data resale. No third-party cookies: the app runs locally in an Android WebView.</p></article></section>
 <section class="section"><h3>You are in control</h3><article class="card"><h4>You decide who sees your spots</h4><p>Sharing a tree or exporting a backup is entirely your choice. Nothing is sent to third parties automatically.</p></article>
-<article class="card"><h4>Transparent GPS</h4><p>In the foreground, GPS is used to scout a tree, display the map and contextualise weather. Background tracking is off by default: you enable it yourself in Settings to find your parking spot or track your route; Android then shows a persistent notification.</p></article>
+<article class="card"><h4>Transparent GPS</h4><p>In the foreground, GPS is used to scout a tree, display the map and contextualise weather. Tracking stops when the app is in the background. No location is sent to a server.</p></article>
 <article class="card"><h4>You cut the network</h4><p>Each network connection can be disabled individually in Settings. If you turn off an API, no more live requests; already downloaded cache remains available offline.</p></article></section>
 
 		<section class="inventory">
@@ -144,7 +144,7 @@
 <article class="card"><h4>Cadastre and protected areas</h4><p>Cached locally. Coordinates sent to IGN when those APIs are enabled. Not shared. Deletion: Settings → clear cadastre cache.</p></article>
 		</section>
 
-		<footer>Yamadori Manifesto — version 0.0.7</footer>
+		<footer>Yamadori Manifesto — version 0.4.6</footer>
 	</main>
 </body>
 </html>

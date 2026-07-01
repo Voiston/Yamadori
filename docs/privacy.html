@@ -103,8 +103,8 @@
 			<div class="meta">
 				<p><strong>Application :</strong> Yamadori Scouting (fr.yamadori.scouting)</p>
 				<p><strong>Éditeur / contact :</strong> <a href="mailto:david.voisard2@gmail.com">david.voisard2@gmail.com</a></p>
-				<p><strong>Dernière mise à jour :</strong> 26 juin 2026</p>
-				<p><strong>Version de l’application :</strong> 0.0.7</p>
+				<p><strong>Dernière mise à jour :</strong> 1 juillet 2026</p>
+				<p><strong>Version de l’application :</strong> 0.4.6</p>
 			</div>
 		</header>
 
@@ -116,19 +116,19 @@
 
 		<section>
 			<h2>Manifeste Yamadori</h2>
-			<p class="intro">Yamadori ne synchronise pas vos repérages dans le cloud. Votre carnet de terrain tient dans votre poche — et vous gardez le contrôle de ce qui y entre et de ce qui en sort.</p>
+			<p class="intro">Yamadori ne synchronise pas vos repérages dans le cloud. Votre carnet de terrain tient dans votre poche.</p>
 		</section>
 
 		<section class="section"><h3>Sur votre appareil</h3><article class="card"><h4>Votre carnet, votre téléphone</h4><p>Pas de compte, pas de serveur Yamadori. Vos repérages, photos, notes vocales et point de départ restent sur cet appareil. Par défaut, ces données sont stockées en clair dans la mémoire locale ; vous pouvez activer le chiffrement local dans Réglages (optionnel, Android) — il protège arbres, parking, mot de passe d'export et réglages GPS, mais pas les caches météo ni carte.</p></article>
 <article class="card"><h4>Pensé pour la forêt</h4><p>Carte, météo et cadastre se mettent en cache localement. Le GPS fonctionne sans réseau — même au fond du bois.</p></article>
-<article class="card"><h4>Protégez votre carnet</h4><p>Exportez régulièrement une sauvegarde (clé USB, cloud personnel). Chaque fichier .yamadori.zip est chiffré avec une clé propre à l'archive. Protégez-le aussi par mot de passe depuis Réglages → Sauvegarde avant de le partager — l'enveloppe mot de passe reste recommandée. L'indice de mot de passe est un simple aide-mémoire, pas un secret.</p></article>
+<article class="card"><h4>Protégez votre carnet</h4><p>Exportez régulièrement une sauvegarde (clé USB, cloud personnel). Sans mot de passe d'export, le fichier n'assure que l'intégrité (contrôles de cohérence) — pas la confidentialité : toute personne ayant le fichier peut en extraire les données. Avec un mot de passe, l'archive entière est chiffrée (PBKDF2 + AES-GCM). L'indice mémorise un rappel ; il ne permet pas de récupérer le mot de passe.</p></article>
 <article class="card"><h4>En toute transparence</h4><p>Comme un carnet papier dans votre sac, vos repérages restent lisibles sur l'appareil déverrouillé. Yamadori n'utilise pas la sauvegarde automatique Android vers Google. Nous recommandons un code de verrouillage et des exports protégés par mot de passe.</p></article>
-<article class="card"><h4>Autorisations Android</h4><p>Caméra : photos d'arbres uniquement, quand vous appuyez sur Capturer. Micro : notes vocales (30 s max), sur votre action. Position : repérage, carte et météo ; l'accès « tout le temps » n'est demandé que si vous activez le suivi en arrière-plan. Notifications : uniquement pendant ce suivi. Boussole : affichage du cap lors de la capture, traité localement. L'assistant permissions au premier lancement vous guide — rien n'est demandé sans raison.</p></article></section>
-<section class="section"><h3>En ligne</h3><article class="card"><h4>Connexion minimale</h4><p>En ligne, seules vos coordonnées GPS (ou l'emprise de la carte pour les tuiles) partent vers des services publics — jamais vos photos ni vos notes. Voir « Services tiers consultés » pour la liste complète : météo, climat, cartographie IGN, cadastre, zones protégées et géocodage.</p></article>
+<article class="card"><h4>Autorisations Android</h4><p>Caméra : photos d'arbres uniquement, quand vous appuyez sur Capturer. Micro : notes vocales (30 s max), sur votre action. Position : repérage, carte et météo, uniquement lorsque l'application est au premier plan. Boussole : cap lors de la capture, traité localement. L'assistant permissions au premier lancement vous guide — rien n'est demandé sans raison.</p></article></section>
+<section class="section"><h3>En ligne</h3><article class="card"><h4>Connexion minimale</h4><p>En ligne, seules vos coordonnées GPS partent vers des services publics pour la météo, l'agronomie et le cadastre — jamais vos photos ni vos notes. Services utilisés : Open-Meteo, IGN Géoplateforme, Nominatim (OpenStreetMap).</p></article>
 <article class="card"><h4>Services tiers consultés</h4><p>Open-Meteo (prévisions et historique climatique), IGN Géoplateforme (tuiles carte), IGN Apicarto (cadastre, forêts publiques, zones protégées Natura 2000 et ZNIEFF), Nominatim/OpenStreetMap (libellé de lieu). Yamadori n'a pas de serveur intermédiaire : vos coordonnées vont directement à ces services publics, chacun avec sa propre politique de confidentialité. Vos photos et notes ne quittent jamais l'appareil par ce biais.</p></article>
 <article class="card"><h4>Aucun pistage</h4><p>Pas de compte Yamadori, pas de publicité, pas d'analytique (Firebase, crash reporters, etc.). Pas de revente de données. Pas de cookies tiers : l'app tourne en local dans une WebView Android.</p></article></section>
 <section class="section"><h3>Vous contrôlez</h3><article class="card"><h4>Vous décidez qui voit vos spots</h4><p>Partager un arbre ou exporter une sauvegarde, c'est une action volontaire de votre part. Rien n'est envoyé automatiquement à un tiers.</p></article>
-<article class="card"><h4>GPS transparent</h4><p>En premier plan, le GPS sert à repérer un arbre, afficher la carte et contextualiser la météo. Le suivi en arrière-plan est désactivé par défaut : vous l'activez vous-même dans Réglages pour retrouver votre parking ou votre trajet ; Android affiche alors une notification persistante.</p></article>
+<article class="card"><h4>GPS transparent</h4><p>En premier plan, le GPS sert à repérer un arbre, afficher la carte et contextualiser la météo. Le suivi s'arrête lorsque l'application est en arrière-plan. Aucune position n'est envoyée à un serveur.</p></article>
 <article class="card"><h4>Vous coupez le réseau</h4><p>Chaque connexion réseau est désactivable individuellement dans Réglages. Si vous coupez une API, plus aucune requête en direct ; le cache déjà téléchargé reste consultable hors ligne.</p></article></section>
 
 		<section class="inventory">
@@ -144,7 +144,7 @@
 <article class="card"><h4>Cadastre et zones protégées</h4><p>Mises en cache localement. Coordonnées envoyées à l'IGN si les APIs sont activées. Non partagées. Suppression : Réglages → vider le cache cadastre.</p></article>
 		</section>
 
-		<footer>Manifeste Yamadori — version 0.0.7</footer>
+		<footer>Manifeste Yamadori — version 0.4.6</footer>
 	</main>
 </body>
 </html>
