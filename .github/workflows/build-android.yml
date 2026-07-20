@@ -32,6 +32,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high
+
+      - name: Validate i18n
+        run: npm run i18n:check
+
       - name: Build web assets and sync Capacitor
         run: npm run build:android
 
