@@ -1,6 +1,6 @@
 # Build APK Android (Yamadori)
 
-Yamadori est une application SvelteKit empaquetée en APK via [Capacitor](https://capacitorjs.com/). La variante Android ajoute le suivi GPS en arrière-plan (optionnel, dans Réglages).
+Yamadori est une application SvelteKit empaquetée en APK via [Capacitor](https://capacitorjs.com/).
 
 ## Prérequis
 
@@ -47,7 +47,7 @@ L'APK debug se trouve dans :
 1. Transférez l'APK sur le téléphone (USB, cloud, etc.).
 2. Autorisez l'installation depuis des sources inconnues pour votre gestionnaire de fichiers.
 3. Installez l'APK.
-4. À la première ouverture, accordez la localisation. Pour le suivi en arrière-plan, activez **Suivi GPS en arrière-plan** dans Réglages puis choisissez **Autoriser tout le temps** dans les réglages Android.
+4. À la première ouverture, accordez la localisation lorsque l'application est au premier plan.
 
 ## Signature release (distribution)
 
@@ -126,9 +126,38 @@ Vous pouvez aussi **partager** un ZIP vers Yamadori depuis une autre application
 - [ ] Partager un ZIP vers Yamadori → même bannière d'import
 - [ ] Import fusionner / remplacer fonctionne comme l'import manuel
 
+## Test interne Play vs APK debug
+
+L'APK **debug** (`fr.yamadori.scouting.debug`) et la release **Play** (`fr.yamadori.scouting`) sont deux applications distinctes : IndexedDB, Secure Storage et préférences ne sont **pas partagés**. Recréez des données de test après installation depuis le Play Store.
+
+### Comparer debug et release localement
+
+```bash
+npm run build:android
+cd android
+./gradlew.bat assembleDebug assembleRelease
+```
+
+Installez les deux APK sur le même appareil et comparez export, mot de passe backup et repérage.
+
+### Isoler un problème ProGuard/R8
+
+Si la release échoue mais pas le debug, désactivez temporairement la minification dans `android/app/build.gradle` (`minifyEnabled false`), rebuild `assembleRelease`, puis retestez. Consultez logcat (`Capacitor`, `YamadoriBackup`, `SecureStorage`) et la console WebView (`chrome://inspect`).
+
+### Checklist test interne (release Play)
+
+- [ ] Repérage 10 min en mouvement GPS instable — pas de gel, sauvegarde OK
+- [ ] Export backup 5+ arbres avec photos — partage **et** Téléchargements
+- [ ] Configurer / changer / supprimer mot de passe backup
+- [ ] Activer chiffrement local → exporter → désactiver
+- [ ] Logcat : aucune rejection plugin non surfacée
+- [ ] **Pro / facturation** : les deux produits in-app non consommables **Actifs** sur la même piste (`yamadori_pro` à 29 €, `yamadori_pro_promo` à 19 € — IDs exacts dans [`src/lib/constants/pro.ts`](../src/lib/constants/pro.ts))
+- [ ] 4e arbre → paywall promo : prix Play affiché avant achat ; achat -34 % OK
+- [ ] Après remboursement test Google : attendre la propagation (quelques heures) avant de retester le SKU promo
+
 ## GPS natif
 
 - **Premier plan** : `@capacitor/geolocation`
-- **Arrière-plan** (opt-in) : `@capacitor-community/background-geolocation` avec notification persistante
+- Le suivi s'arrête lorsque l'app passe en arrière-plan ou que l'écran s'éteint
 
-La précision en forêt dense reste limitée par le signal satellite ; l'APK évite surtout la coupure du suivi quand l'écran s'éteint.
+La précision en forêt dense reste limitée par le signal satellite.

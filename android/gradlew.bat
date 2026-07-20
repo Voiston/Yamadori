@@ -39,7 +39,9 @@ for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
 
 @rem Find java.exe
-if defined JAVA_HOME goto findJavaFromJavaHome
+if not "%JAVA_HOME%"=="" if exist "%JAVA_HOME%\bin\java.exe" goto findJavaFromJavaHome
+call :yamadoriDetectJavaHome
+if not "%JAVA_HOME%"=="" if exist "%JAVA_HOME%\bin\java.exe" goto findJavaFromJavaHome
 
 set JAVA_EXE=java.exe
 %JAVA_EXE% -version >NUL 2>&1
@@ -92,3 +94,33 @@ exit /b %EXIT_CODE%
 if "%OS%"=="Windows_NT" endlocal
 
 :omega
+
+@rem Yamadori: pick a JDK when JAVA_HOME is unset (Windows local dev)
+:yamadoriDetectJavaHome
+for /d %%J in ("C:\Program Files\Java\jdk*") do (
+  if exist "%%J\bin\java.exe" (
+    set "JAVA_HOME=%%~fJ"
+    goto :eof
+  )
+)
+for /d %%J in ("C:\Program Files\Eclipse Adoptium\jdk-*") do (
+  if exist "%%J\bin\java.exe" (
+    set "JAVA_HOME=%%~fJ"
+    goto :eof
+  )
+)
+for /d %%J in ("C:\Program Files\Microsoft\jdk-*") do (
+  if exist "%%J\bin\java.exe" (
+    set "JAVA_HOME=%%~fJ"
+    goto :eof
+  )
+)
+if exist "%LOCALAPPDATA%\Programs\Android Studio\jbr\bin\java.exe" (
+  set "JAVA_HOME=%LOCALAPPDATA%\Programs\Android Studio\jbr"
+  goto :eof
+)
+if exist "C:\Program Files\Android\Android Studio\jbr\bin\java.exe" (
+  set "JAVA_HOME=C:\Program Files\Android\Android Studio\jbr"
+  goto :eof
+)
+goto :eof

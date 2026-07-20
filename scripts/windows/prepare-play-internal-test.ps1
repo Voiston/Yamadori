@@ -97,5 +97,7 @@ Write-Host @"
 [ ] Achat test licence → Pro actif
 [ ] Relance app → Pro persiste
 [ ] Désinstall / réinstall → Restaurer l'achat
-[ ] Fenêtre promo 24h → SKU yamadori_pro_promo
+[ ] Fenêtre promo 24h → SKU yamadori_pro_promo (24,50 €) actif sur la MÊME piste que yamadori_pro
+[ ] Si achat promo échoue : vérifier yamadori_pro_promo Actif dans Play Console (IDs exacts, casse)
+[ ] Après remboursement test : attendre propagation Google (quelques heures) avant de retester le SKU promo
 "@
