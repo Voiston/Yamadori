@@ -1,5 +1,5 @@
 /** Espèces yamadori/bonsaï les plus recherchées en France — ordre = priorité d'affichage. */
-export const BONSAI_SPECIES_PRIORITY = [
+export const BONSAI_SPECIES_EUROPE = [
 	'Pin sylvestre',
 	'Genévrier commun',
 	'Charme commun',
@@ -36,6 +36,65 @@ export const BONSAI_SPECIES_PRIORITY = [
 	'Prunellier',
 	'Pommier sauvage',
 	'Pin cembro'
+] as const;
+
+/** North-American yamadori favourites — after European list for search priority. */
+export const BONSAI_SPECIES_US = [
+	'Utah juniper',
+	'Rocky Mountain juniper',
+	'Ponderosa pine',
+	'Bristlecone pine',
+	'Eastern hemlock',
+	'Red maple',
+	'Coast live oak',
+	'California juniper',
+	'Douglas fir',
+	'Lodgepole pine',
+	'Quaking aspen',
+	'Western larch',
+	'Engelmann spruce'
+] as const;
+
+/** Canadian favourites — after US list. */
+export const BONSAI_SPECIES_CA = [
+	'Eastern white cedar',
+	'White spruce',
+	'Jack pine',
+	'Sugar maple',
+	'Tamarack',
+	'Paper birch',
+	'Yellow birch'
+] as const;
+
+/** New Zealand favourites — after CA list. */
+export const BONSAI_SPECIES_NZ = [
+	'Pohutukawa',
+	'Mānuka',
+	'Kānuka',
+	'Rimu',
+	'Tōtara',
+	'Lancewood',
+	'Southern beech',
+	'Kahikatea',
+	'Kauri'
+] as const;
+
+/** Portuguese favourites — after NZ list. */
+export const BONSAI_SPECIES_PT = [
+	'Sobreiro',
+	'Azinheira',
+	'Oliveira',
+	'Pinheiro-bravo',
+	'Medronheiro',
+	'Carvalho-português'
+] as const;
+
+export const BONSAI_SPECIES_PRIORITY = [
+	...BONSAI_SPECIES_EUROPE,
+	...BONSAI_SPECIES_US,
+	...BONSAI_SPECIES_CA,
+	...BONSAI_SPECIES_NZ,
+	...BONSAI_SPECIES_PT
 ] as const;
 
 const priorityIndex = new Map<string, number>(

@@ -1,4 +1,16 @@
-/** @typedef {{ fr: string; en: string; de: string; it: string; es: string }} LocaleEntry */
+/**
+ * Sync partiel du catalogue i18n vers messages/*.json (mode fusion).
+ *
+ * - Source de vérité Paraglide : messages/{locale}.json (voir project.inlang/settings.json)
+ * - Ce script met à jour / ajoute les clés définies ici via t(...) — il ne supprime jamais
+ *   les clés déjà présentes dans les JSON (ex. settings_backup_password_*, enums agro…)
+ * - Workflow normal : éditer messages/*.json → npm run i18n:compile
+ * - Utiliser ce script uniquement pour propager des clés définies dans le catalogue MJS
+ * - nl/sv/nb : pas de colonne catalogue → les JSON existants sont préservés (pas de fallback EN
+ *   qui écraserait une vraie traduction). L’EN n’est injecté que pour une clé absente.
+ */
+
+/** @typedef {{ fr: string; en: string; de: string; it: string; es: string; nl?: string }} LocaleEntry */
 
 /** @type {Record<string, LocaleEntry>} */
 const catalog = {};
@@ -37,6 +49,7 @@ t('nav_back_to_list', 'Retour à la liste', 'Back to list', 'Zurück zur Liste',
 t('title_list', 'Liste — Yamadori Scouting', 'List — Yamadori Scouting', 'Liste — Yamadori Scouting', 'Lista — Yamadori Scouting', 'Lista — Yamadori Scouting');
 t('title_map', 'Carte — Yamadori Scouting', 'Map — Yamadori Scouting', 'Karte — Yamadori Scouting', 'Mappa — Yamadori Scouting', 'Mapa — Yamadori Scouting');
 t('title_settings', 'Réglages — Yamadori Scouting', 'Settings — Yamadori Scouting', 'Einstellungen — Yamadori Scouting', 'Impostazioni — Yamadori Scouting', 'Ajustes — Yamadori Scouting');
+t('title_privacy', 'Vie privée — Yamadori Scouting', 'Privacy — Yamadori Scouting', 'Datenschutz — Yamadori Scouting', 'Privacy — Yamadori Scouting', 'Privacidad — Yamadori Scouting');
 t('title_capture', 'Nouveau repérage', 'New scouting entry', 'Neue Sichtung', 'Nuovo rilevamento', 'Nuevo registro');
 t('title_parking', 'Point de départ', 'Starting point', 'Startpunkt', 'Punto di partenza', 'Punto de partida');
 t('title_detail', 'Détail', 'Detail', 'Detail', 'Dettaglio', 'Detalle');
@@ -352,6 +365,9 @@ t('gps_accuracy_unknown', 'Précision inconnue', 'Unknown accuracy', 'Unbekannte
 t('gps_accuracy_format', '±{meters} m', '±{meters} m', '±{meters} m', '±{meters} m', '±{meters} m');
 t('gps_locating', 'Localisation en cours…', 'Locating…', 'Standort wird ermittelt…', 'Localizzazione in corso…', 'Localizando…');
 t('gps_accuracy_aria', 'Précision GPS {accuracy}', 'GPS accuracy {accuracy}', 'GPS-Genauigkeit {accuracy}', 'Precisione GPS {accuracy}', 'Precisión GPS {accuracy}');
+t('gps_accuracy_current', 'Actuel', 'Current', 'Aktuell', 'Attuale', 'Actual');
+t('gps_accuracy_best', 'Meilleur', 'Best', 'Beste', 'Migliore', 'Mejor');
+t('gps_accuracy_dual_aria', 'Précision GPS actuelle {current}, meilleure enregistrée {best}', 'Current GPS accuracy {current}, best recorded {best}', 'Aktuelle GPS-Genauigkeit {current}, beste gespeicherte {best}', 'Precisione GPS attuale {current}, migliore registrata {best}', 'Precisión GPS actual {current}, mejor registrada {best}');
 t('gps_waiting_online', "En attente d'un fix GPS — restez immobile quelques secondes, ciel dégagé si possible.", 'Waiting for GPS fix — stay still a few seconds, clear sky if possible.', 'Warte auf GPS-Fix — einige Sekunden stillhalten, freier Himmel wenn möglich.', 'In attesa del fix GPS — resta fermo qualche secondo, cielo libero se possibile.', 'Esperando fix GPS — quédate quieto unos segundos, cielo despejado si es posible.');
 t('gps_waiting_offline', 'Hors-ligne : le GPS fonctionne sans réseau, mais le premier fix peut prendre 30 s à 2 min. Restez immobile, ciel dégagé.', 'Offline: GPS works without network, but first fix may take 30s–2min. Stay still, clear sky.', 'Offline: GPS funktioniert ohne Netz, erster Fix kann 30s–2min dauern.', 'Offline: il GPS funziona senza rete, il primo fix può richiedere 30s–2min.', 'Sin conexión: el GPS funciona sin red, pero el primer fix puede tardar 30s–2min.');
 t('gps_ready_excellent', 'Précision excellente — vous pouvez photographier et enregistrer.', 'Excellent accuracy — you can photograph and save.', 'Ausgezeichnete Genauigkeit — fotografieren und speichern.', 'Precisione eccellente — puoi fotografare e salvare.', 'Precisión excelente — puedes fotografiar y guardar.');
@@ -377,10 +393,6 @@ t('location_unsupported', 'Géolocalisation non supportée sur cet appareil.', '
 t('location_unavailable', 'Géolocalisation non disponible.', 'Geolocation unavailable.', 'Geolokalisierung nicht verfügbar.', 'Geolocalizzazione non disponibile.', 'Geolocalización no disponible.');
 t('location_not_supported', 'Géolocalisation non supportée', 'Geolocation not supported', 'Geolokalisierung nicht unterstützt', 'Geolocalizzazione non supportata', 'Geolocalización no compatible');
 t('location_unavailable_short', 'Position indisponible', 'Position unavailable', 'Position nicht verfügbar', 'Posizione non disponibile', 'Posición no disponible');
-t('location_bg_unsupported', 'Suivi en arrière-plan non supporté sur cette plateforme', 'Background tracking not supported on this platform', 'Hintergrundverfolgung auf dieser Plattform nicht unterstützt', 'Tracciamento in background non supportato', 'Seguimiento en segundo plano no compatible');
-t('location_bg_message', 'Yamadori suit votre position en forêt. Désactivez dans Réglages pour économiser la batterie.', 'Yamadori tracks your position in the forest. Disable in Settings to save battery.', 'Yamadori verfolgt Ihre Position im Wald. In Einstellungen deaktivieren um Akku zu sparen.', 'Yamadori traccia la tua posizione in foresta. Disattiva in Impostazioni per risparmiare batteria.', 'Yamadori rastrea tu posición en el bosque. Desactiva en Ajustes para ahorrar batería.');
-t('location_bg_title', 'Yamadori — suivi GPS', 'Yamadori — GPS tracking', 'Yamadori — GPS-Verfolgung', 'Yamadori — tracciamento GPS', 'Yamadori — seguimiento GPS');
-t('location_bg_denied', "Autorisation de localisation refusée — activez « Tout le temps » dans les réglages Android.", 'Location permission denied — enable "All the time" in Android settings.', 'Standortberechtigung verweigert — „Immer" in Android-Einstellungen aktivieren.', 'Autorizzazione posizione negata — attiva «Sempre» nelle impostazioni Android.', 'Permiso de ubicación denegado — activa «Todo el tiempo» en ajustes Android.');
 
 // ── Compass / altitude ──────────────────────────────────────────────────────
 batch('compass_cardinal', [
@@ -709,17 +721,7 @@ t('settings_hide_legacy_json', "Masquer l'import JSON ancien format", 'Hide lega
 t('settings_legacy_json_hint', 'Ancien format JSON v1 (sans mot de passe). Préférez le ZIP pour les nouvelles sauvegardes.', 'Legacy JSON v1 format (no password). Prefer ZIP for new backups.', 'Altes JSON v1-Format (ohne Passwort). ZIP für neue Sicherungen bevorzugen.', 'Vecchio formato JSON v1 (senza password). Preferisci ZIP per i nuovi backup.', 'Formato JSON v1 antiguo (sin contraseña). Prefiere ZIP para nuevas copias.');
 t('settings_import_json_merge', 'Importer JSON (fusionner)', 'Import JSON (merge)', 'JSON importieren (zusammenführen)', 'Importa JSON (unisci)', 'Importar JSON (fusionar)');
 t('settings_import_json_replace', 'Importer JSON (remplacer tout)', 'Import JSON (replace all)', 'JSON importieren (alles ersetzen)', 'Importa JSON (sostituisci tutto)', 'Importar JSON (reemplazar todo)');
-t('settings_gps_android', 'GPS Android (APK)', 'Android GPS (APK)', 'Android-GPS (APK)', 'GPS Android (APK)', 'GPS Android (APK)');
-t('settings_gps_android_hint', "La précision GPS au moment de la photo est essentielle pour le repérage. L'app utilise le mode haute précision et mémorise le meilleur fix pendant la capture.", 'GPS accuracy at photo time is essential for scouting. The app uses high-precision mode and saves the best fix during capture.', 'GPS-Genauigkeit bei der Fotoaufnahme ist essentiell. Die App nutzt Hochpräzisionsmodus.', 'La precisione GPS al momento della foto è essenziale. L\'app usa la modalità alta precisione.', 'La precisión GPS al tomar la foto es esencial. La app usa modo de alta precisión.');
-t('settings_gps_tip_precise', 'Autorisation Précise (pas « Approximative »)', 'Precise permission (not "Approximate")', 'Genaue Berechtigung (nicht „Ungefähr")', 'Autorizzazione Precisa (non «Approssimativa»)', 'Permiso Preciso (no «Aproximada»)');
-t('settings_gps_tip_offline', 'En montagne hors-ligne : le GPS fonctionne sans réseau, mais le premier fix peut prendre plus longtemps', 'Offline in mountains: GPS works without network but first fix may take longer', 'Offline in den Bergen: GPS funktioniert ohne Netz, erster Fix dauert länger', 'In montagna offline: il GPS funziona senza rete ma il primo fix può richiedere più tempo', 'En montaña sin conexión: el GPS funciona sin red pero el primer fix puede tardar más');
-t('settings_gps_tip_still', 'Restez immobile, ciel dégagé, avant de photographier', 'Stay still, clear sky, before photographing', 'Stillhalten, freier Himmel, vor dem Fotografieren', 'Resta fermo, cielo libero, prima di fotografare', 'Quédate quieto, cielo despejado, antes de fotografiar');
-t('settings_bg_tracking', 'Suivi GPS en arrière-plan', 'Background GPS tracking', 'GPS-Hintergrundverfolgung', 'Tracciamento GPS in background', 'Seguimiento GPS en segundo plano');
-t('settings_bg_tracking_hint', "Android exige l'autorisation « Tout le temps » et affiche une notification pendant le suivi.", 'Android requires "All the time" permission and shows a notification during tracking.', 'Android erfordert „Immer"-Berechtigung und zeigt eine Benachrichtigung.', 'Android richiede l\'autorizzazione «Sempre» e mostra una notifica.', 'Android requiere permiso «Todo el tiempo» y muestra una notificación.');
-t('settings_open_location', 'Ouvrir les réglages de localisation Android', 'Open Android location settings', 'Android-Standorteinstellungen öffnen', 'Apri impostazioni posizione Android', 'Abrir ajustes de ubicación Android');
 t('settings_reset_onboarding', "Relancer l'assistant permissions", 'Restart permissions wizard', 'Berechtigungsassistent neu starten', 'Riavvia assistente permessi', 'Reiniciar asistente de permisos');
-t('settings_bg_enabled', 'Suivi en arrière-plan activé. Android affichera une notification persistante sur la carte et la boussole.', 'Background tracking enabled. Android will show a persistent notification on map and compass.', 'Hintergrundverfolgung aktiviert. Android zeigt eine dauerhafte Benachrichtigung.', 'Tracciamento in background attivato. Android mostrerà una notifica persistente.', 'Seguimiento en segundo plano activado. Android mostrará una notificación persistente.');
-t('settings_bg_disabled', 'Suivi en arrière-plan désactivé.', 'Background tracking disabled.', 'Hintergrundverfolgung deaktiviert.', 'Tracciamento in background disattivato.', 'Seguimiento en segundo plano desactivado.');
 t('settings_onboarding_reset', "Assistant permissions réinitialisé — relancez l'application.", 'Permissions wizard reset — restart the app.', 'Berechtigungsassistent zurückgesetzt — App neu starten.', 'Assistente permessi reimpostato — riavvia l\'app.', 'Asistente de permisos reiniciado — reinicia la aplicación.');
 t('settings_export_saved', 'Export réussi — enregistré dans Téléchargements', 'Export successful — saved to Downloads', 'Export erfolgreich — in Downloads gespeichert', 'Esportazione riuscita — salvata in Download', 'Exportación exitosa — guardada en Descargas');
 t('settings_export_shared', 'Export réussi — prêt à partager', 'Export successful — ready to share', 'Export erfolgreich — bereit zum Teilen', 'Esportazione riuscita — pronta per la condivisione', 'Exportación exitosa — lista para compartir');
@@ -740,6 +742,30 @@ t('settings_map_cache_cleared', 'Cache cartographique vidé.', 'Map cache cleare
 t('settings_map_cache_clear_failed', 'Impossible de vider le cache.', 'Unable to clear cache.', 'Cache kann nicht geleert werden.', 'Impossibile svuotare la cache.', 'No se puede vaciar la caché.');
 t('settings_replace_title', 'Remplacer toutes les données ?', 'Replace all data?', 'Alle Daten ersetzen?', 'Sostituire tutti i dati?', '¿Reemplazar todos los datos?');
 t('settings_replace_message', 'Les arbres et le parking locaux seront remplacés par ceux de la sauvegarde. Cette action est irréversible.', 'Local trees and parking will be replaced by the backup. This action is irreversible.', 'Lokale Bäume und Parkplatz werden durch die Sicherung ersetzt. Unwiderruflich.', 'Gli alberi e il parcheggio locali saranno sostituiti dal backup. Azione irreversibile.', 'Los árboles y el parking locales serán reemplazados por la copia. Acción irreversible.');
+t('settings_privacy_link', 'Vie privée', 'Privacy', 'Datenschutz', 'Privacy', 'Privacidad');
+t('settings_privacy_hint', 'Où vont vos repérages, ce qui reste sur l\'appareil, et ce qui part en ligne.', 'Where your scouting data goes, what stays on your device, and what goes online.', 'Wohin Ihre Sichtungsdaten gehen, was auf dem Gerät bleibt und was online geht.', 'Dove vanno i tuoi rilevamenti, cosa resta sul dispositivo e cosa va online.', 'Adónde van tus registros, qué permanece en el dispositivo y qué sale en línea.');
+
+// ── Privacy manifest ────────────────────────────────────────────────────────
+t('privacy_heading', 'Manifeste Yamadori', 'Yamadori Manifesto', 'Yamadori-Manifest', 'Manifesto Yamadori', 'Manifiesto Yamadori');
+t('privacy_intro', 'Yamadori ne synchronise pas vos repérages dans le cloud. Votre carnet de terrain tient dans votre poche.', 'Yamadori does not sync your scouting entries to the cloud. Your field notebook lives in your pocket.', 'Yamadori synchronisiert Ihre Sichtungen nicht in die Cloud. Ihr Feldbuch steckt in Ihrer Tasche.', 'Yamadori non sincronizza i tuoi rilevamenti nel cloud. Il tuo taccuino da campo sta in tasca.', 'Yamadori no sincroniza tus registros en la nube. Tu cuaderno de campo cabe en el bolsillo.');
+t('privacy_pillar_local_title', 'Votre carnet, votre téléphone', 'Your notebook, your phone', 'Ihr Notizbuch, Ihr Telefon', 'Il tuo taccuino, il tuo telefono', 'Tu cuaderno, tu teléfono');
+t('privacy_pillar_local_body', 'Pas de compte, pas de serveur Yamadori. Vos repérages, photos, notes vocales et point de départ restent sur cet appareil.', 'No account, no Yamadori server. Your scouting entries, photos, voice notes and starting point stay on this device.', 'Kein Konto, kein Yamadori-Server. Ihre Sichtungen, Fotos, Sprachnotizen und Startpunkt bleiben auf diesem Gerät.', 'Nessun account, nessun server Yamadori. I tuoi rilevamenti, foto, note vocali e punto di partenza restano su questo dispositivo.', 'Sin cuenta, sin servidor Yamadori. Tus registros, fotos, notas de voz y punto de partida permanecen en este dispositivo.');
+t('privacy_pillar_offline_title', 'Pensé pour la forêt', 'Built for the forest', 'Für den Wald gemacht', 'Pensato per la foresta', 'Hecho para el bosque');
+t('privacy_pillar_offline_body', 'Carte, météo et cadastre se mettent en cache localement. Le GPS fonctionne sans réseau — même au fond du bois.', 'Map, weather and cadastre data are cached locally. GPS works without a network — even deep in the woods.', 'Karte, Wetter und Kataster werden lokal zwischengespeichert. GPS funktioniert ohne Netz — auch tief im Wald.', 'Mappa, meteo e catasto vengono memorizzati in cache in locale. Il GPS funziona senza rete — anche in fondo al bosco.', 'Mapa, clima y catastro se guardan en caché localmente. El GPS funciona sin red — incluso en lo profundo del bosque.');
+t('privacy_pillar_network_title', 'Connexion minimale', 'Minimal connectivity', 'Minimale Konnektivität', 'Connessione minima', 'Conexión mínima');
+t('privacy_pillar_network_body', 'En ligne, seules vos coordonnées GPS partent vers des services publics pour la météo, l\'agronomie et le cadastre — jamais vos photos ni vos notes. Services utilisés : Open-Meteo, IGN Géoplateforme, Nominatim (OpenStreetMap).', 'When online, only your GPS coordinates are sent to public services for weather, agronomy and cadastre — never your photos or notes. Services used: Open-Meteo, IGN Géoplateforme, Nominatim (OpenStreetMap).', 'Online werden nur Ihre GPS-Koordinaten an öffentliche Dienste für Wetter, Agronomie und Kataster gesendet — nie Ihre Fotos oder Notizen. Dienste: Open-Meteo, IGN Géoplateforme, Nominatim (OpenStreetMap).', 'Online, solo le coordinate GPS vanno a servizi pubblici per meteo, agronomia e catasto — mai le tue foto o note. Servizi: Open-Meteo, IGN Géoplateforme, Nominatim (OpenStreetMap).', 'En línea, solo tus coordenadas GPS van a servicios públicos para clima, agronomía y catastro — nunca tus fotos ni notas. Servicios: Open-Meteo, IGN Géoplateforme, Nominatim (OpenStreetMap).');
+t('privacy_pillar_share_title', 'Vous décidez qui voit vos spots', 'You decide who sees your spots', 'Sie entscheiden, wer Ihre Spots sieht', 'Decidi tu chi vede i tuoi spot', 'Tú decides quién ve tus spots');
+t('privacy_pillar_share_body', 'Partager un arbre ou exporter une sauvegarde, c\'est une action volontaire de votre part. Rien n\'est envoyé automatiquement à un tiers.', 'Sharing a tree or exporting a backup is entirely your choice. Nothing is sent to third parties automatically.', 'Einen Baum teilen oder ein Backup exportieren ist Ihre freie Entscheidung. Nichts wird automatisch an Dritte gesendet.', 'Condividere un albero o esportare un backup è una scelta tua. Nulla viene inviato automaticamente a terzi.', 'Compartir un árbol o exportar una copia es tu decisión. Nada se envía automáticamente a terceros.');
+t('privacy_pillar_backup_title', 'Protégez votre carnet', 'Protect your notebook', 'Schützen Sie Ihr Notizbuch', 'Proteggi il tuo taccuino', 'Protege tu cuaderno');
+t('privacy_pillar_backup_body', 'Exportez régulièrement une sauvegarde (clé USB, cloud personnel). Vous pouvez protéger vos fichiers .yamadori.zip par mot de passe depuis Réglages → Sauvegarde.', 'Export a backup regularly (USB drive, personal cloud). You can password-protect your .yamadori.zip files from Settings → Backup.', 'Exportieren Sie regelmäßig eine Sicherung (USB-Stick, persönliche Cloud). Passwortschutz für .yamadori.zip-Dateien unter Einstellungen → Sicherung.', 'Esporta regolarmente un backup (chiavetta USB, cloud personale). Puoi proteggere i file .yamadori.zip con password da Impostazioni → Backup.', 'Exporta copias con regularidad (USB, nube personal). Puedes proteger tus archivos .yamadori.zip con contraseña en Ajustes → Copia de seguridad.');
+t('privacy_pillar_gps_title', 'GPS transparent', 'Transparent GPS', 'Transparentes GPS', 'GPS trasparente', 'GPS transparente');
+t('privacy_pillar_gps_body', "En premier plan, le GPS sert à repérer un arbre, afficher la carte et contextualiser la météo. Le suivi s'arrête lorsque l'application est en arrière-plan.", 'In the foreground, GPS is used to scout a tree, display the map and contextualise weather. Tracking stops when the app is in the background.', 'Im Vordergrund dient GPS dem Sichten, der Kartenanzeige und der Wetterkontextualisierung. Die Verfolgung stoppt, wenn die App im Hintergrund ist.', 'In primo piano, il GPS serve a rilevare un albero, mostrare la mappa e contestualizzare il meteo. Il tracciamento si interrompe quando l\'app è in background.', 'En primer plano, el GPS sirve para registrar un árbol, mostrar el mapa y contextualizar el clima. El seguimiento se detiene cuando la app está en segundo plano.');
+t('privacy_pillar_permissions_title', 'Autorisations Android', 'Android permissions', 'Android-Berechtigungen', 'Autorizzazioni Android', 'Permisos Android');
+t('privacy_pillar_permissions_body', "Caméra : photos d'arbres uniquement, quand vous appuyez sur Capturer. Micro : notes vocales (30 s max), sur votre action. Position : repérage, carte et météo, uniquement lorsque l'application est au premier plan. Boussole : affichage du cap lors de la capture, traité localement. L'assistant permissions au premier lancement vous guide — rien n'est demandé sans raison.", 'Camera: tree photos only, when you tap Capture. Microphone: voice notes (30 s max), on your action. Location: scouting, map and weather, only while the app is in the foreground. Compass: heading display during capture, processed locally. The permissions wizard on first launch guides you — nothing is requested without reason.', 'Kamera: nur Baumfotos, wenn Sie auf Aufnehmen tippen. Mikrofon: Sprachnotizen (max. 30 s), auf Ihre Aktion. Standort: Sichtung, Karte und Wetter, nur wenn die App im Vordergrund ist. Kompass: Kursanzeige bei der Aufnahme, lokal verarbeitet. Der Berechtigungsassistent beim ersten Start führt Sie — nichts wird grundlos angefragt.', 'Fotocamera: solo foto degli alberi, quando premi Cattura. Microfono: note vocali (max 30 s), su tua azione. Posizione: rilevamento, mappa e meteo, solo quando l\'app è in primo piano. Bussola: visualizzazione del cap durante la cattura, elaborata in locale. La procedura guidata permessi al primo avvio ti accompagna — nulla viene richiesto senza motivo.', 'Cámara: solo fotos de árboles, al pulsar Capturar. Micrófono: notas de voz (30 s máx.), por tu acción. Ubicación: registro, mapa y clima, solo cuando la app está en primer plano. Brújula: visualización del rumbo al capturar, procesada localmente. El asistente de permisos al primer inicio te guía — nada se solicita sin motivo.');
+t('privacy_pillar_honest_title', 'En toute transparence', 'Full transparency', 'Volle Transparenz', 'Piena trasparenza', 'Plena transparencia');
+t('privacy_pillar_honest_body', 'Comme un carnet papier dans votre sac, vos repérages restent lisibles sur l\'appareil déverrouillé. Nous recommandons un code de verrouillage et des exports protégés par mot de passe.', 'Like a paper notebook in your bag, your scouting entries remain readable on an unlocked device. We recommend a screen lock and password-protected exports.', 'Wie ein Papiernotizbuch in der Tasche bleiben Ihre Sichtungen auf einem entsperrten Gerät lesbar. Wir empfehlen eine Bildschirmsperre und passwortgeschützte Exporte.', 'Come un taccuino cartaceo in borsa, i tuoi rilevamenti restano leggibili su un dispositivo sbloccato. Consigliamo un blocco schermo ed export protetti da password.', 'Como un cuaderno de papel en la mochila, tus registros siguen siendo legibles en un dispositivo desbloqueado. Recomendamos bloqueo de pantalla y exportaciones protegidas por contraseña.');
+t('privacy_outro', 'Manifeste Yamadori — version {version}', 'Yamadori Manifesto — version {version}', 'Yamadori-Manifest — Version {version}', 'Manifesto Yamadori — versione {version}', 'Manifiesto Yamadori — versión {version}');
+t('privacy_back_to_settings', 'Retour aux réglages', 'Back to settings', 'Zurück zu Einstellungen', 'Torna alle impostazioni', 'Volver a ajustes');
 
 // ── Backup reminder ─────────────────────────────────────────────────────────
 t('backup_advised', 'Sauvegarde conseillée — exportez vos données', 'Backup advised — export your data', 'Sicherung empfohlen — Daten exportieren', 'Backup consigliato — esporta i tuoi dati', 'Copia de seguridad recomendada — exporta tus datos');
@@ -769,11 +795,9 @@ t('archive_incoming_read_failed', 'Impossible de lire la sauvegarde reçue.', 'U
 t('onboarding_welcome_title', 'Bienvenue sur Yamadori', 'Welcome to Yamadori', 'Willkommen bei Yamadori', 'Benvenuto su Yamadori', 'Bienvenido a Yamadori');
 t('onboarding_welcome_desc', "Ne perdez plus jamais la trace de vos Yamadori : l'application vous permet de garder un emplacement GPS pour chacune de vos trouvailles ! Quelques autorisations seront demandées ensuite (GPS, photos, notes vocales).", 'Never lose track of your yamadori again — the app saves a GPS location for each of your finds! A few permissions will be requested next (GPS, photos, voice notes).', 'Verlieren Sie Ihre Yamadori-Funde nie wieder — die App speichert für jeden Fund einen GPS-Standort! Als Nächstes werden einige Berechtigungen abgefragt (GPS, Fotos, Sprachnotizen).', 'Non perdere mai più le tracce dei tuoi yamadori: l\'app conserva una posizione GPS per ogni ritrovamento! Subito dopo verranno richieste alcune autorizzazioni (GPS, foto, note vocali).', 'No pierdas nunca el rastro de tus yamadori: la app guarda una ubicación GPS para cada hallazgo. A continuación se solicitarán algunos permisos (GPS, fotos, notas de voz).');
 t('onboarding_location_title', 'Localisation précise', 'Precise location', 'Genaue Standortbestimmung', 'Posizione precisa', 'Ubicación precisa');
-t('onboarding_location_desc', "Le GPS géolocalise chaque photo d'arbre. Choisissez « Précise » (pas « Approximative ») quand Android le demande. Pour le suivi en arrière-plan, « Autoriser tout le temps » dans les réglages.", 'GPS geotags each tree photo. Choose "Precise" (not "Approximate") when Android asks. For background tracking, "Allow all the time" in settings.', 'GPS geotaggt jedes Baumfoto. „Genau" wählen (nicht „Ungefähr"). Für Hintergrundverfolgung „Immer erlauben".', 'Il GPS geolocalizza ogni foto. Scegli «Precisa» (non «Approssimativa»). Per il tracciamento in background, «Consenti sempre».', 'El GPS geolocaliza cada foto. Elige «Precisa» (no «Aproximada»). Para seguimiento en segundo plano, «Permitir todo el tiempo».');
+t('onboarding_location_desc', "Le GPS géolocalise chaque photo d'arbre. Choisissez « Précise » (pas « Approximative ») quand Android le demande.", 'GPS geotags each tree photo. Choose "Precise" (not "Approximate") when Android asks.', 'GPS geotaggt jedes Baumfoto. Wählen Sie „Genau" (nicht „Ungefähr"), wenn Android danach fragt.', 'Il GPS geolocalizza ogni foto. Scegli «Precisa» (non «Approssimativa») quando Android lo chiede.', 'El GPS geolocaliza cada foto. Elige «Precisa» (no «Aproximada») cuando Android lo solicite.');
 t('onboarding_camera_title', 'Caméra et micro', 'Camera and microphone', 'Kamera und Mikrofon', 'Fotocamera e microfono', 'Cámara y micrófono');
 t('onboarding_camera_desc', 'Pour photographier les arbres et enregistrer des notes vocales sur le terrain.', 'To photograph trees and record voice notes in the field.', 'Um Bäume zu fotografieren und Sprachnotizen aufzunehmen.', 'Per fotografare gli alberi e registrare note vocali sul campo.', 'Para fotografiar árboles y grabar notas de voz en el campo.');
-t('onboarding_notifications_title', 'Notifications', 'Notifications', 'Benachrichtigungen', 'Notifiche', 'Notificaciones');
-t('onboarding_notifications_desc', 'Android affiche une notification pendant le suivi GPS en arrière-plan. Recommandé si vous activez cette option dans Réglages.', 'Android shows a notification during background GPS tracking. Recommended if you enable this in Settings.', 'Android zeigt eine Benachrichtigung bei GPS-Hintergrundverfolgung. Empfohlen wenn in Einstellungen aktiviert.', 'Android mostra una notifica durante il tracciamento GPS in background. Consigliato se attivi questa opzione.', 'Android muestra una notificación durante el seguimiento GPS en segundo plano. Recomendado si activas esta opción.');
 t('onboarding_compass_title', 'Boussole (optionnel)', 'Compass (optional)', 'Kompass (optional)', 'Bussola (opzionale)', 'Brújula (opcional)');
 t('onboarding_compass_desc', "L'orientation de l'appareil améliore la navigation vers vos arbres. Vous pourrez aussi l'activer plus tard.", 'Device orientation improves navigation to your trees. You can also enable it later.', 'Geräteausrichtung verbessert die Navigation zu Ihren Bäumen. Später aktivierbar.', 'L\'orientamento del dispositivo migliora la navigazione verso i tuoi alberi. Attivabile anche dopo.', 'La orientación del dispositivo mejora la navegación hacia tus árboles. También puedes activarla después.');
 t('onboarding_location_ok', 'Localisation autorisée.', 'Location authorized.', 'Standort autorisiert.', 'Localizzazione autorizzata.', 'Ubicación autorizada.');
@@ -781,8 +805,6 @@ t('onboarding_location_denied', "Localisation refusée — vous pourrez l'active
 t('onboarding_camera_ok', 'Caméra et micro autorisés.', 'Camera and microphone authorized.', 'Kamera und Mikrofon autorisiert.', 'Fotocamera e microfono autorizzati.', 'Cámara y micrófono autorizados.');
 t('onboarding_camera_partial', 'Autorisations partielles — complétez dans Réglages si besoin.', 'Partial permissions — complete in Settings if needed.', 'Teilweise Berechtigungen — in Einstellungen vervollständigen.', 'Autorizzazioni parziali — completa nelle impostazioni se necessario.', 'Permisos parciales — completa en Ajustes si es necesario.');
 t('onboarding_camera_denied', 'Accès refusé — vous pourrez autoriser lors de la capture.', 'Access denied — you can authorize during capture.', 'Zugriff verweigert — bei der Aufnahme autorisierbar.', 'Accesso negato — potrai autorizzare durante la cattura.', 'Acceso denegado — puedes autorizar durante la captura.');
-t('onboarding_notifications_ok', 'Notifications autorisées.', 'Notifications authorized.', 'Benachrichtigungen autorisiert.', 'Notifiche autorizzate.', 'Notificaciones autorizadas.');
-t('onboarding_notifications_denied', 'Notifications refusées — le suivi GPS arrière-plan reste utilisable.', 'Notifications denied — background GPS tracking still usable.', 'Benachrichtigungen verweigert — GPS-Hintergrundverfolgung weiter nutzbar.', 'Notifiche negate — il tracciamento GPS in background resta utilizzabile.', 'Notificaciones denegadas — el seguimiento GPS en segundo plano sigue siendo usable.');
 t('onboarding_compass_ok', 'Boussole activée.', 'Compass enabled.', 'Kompass aktiviert.', 'Bussola attivata.', 'Brújula activada.');
 t('onboarding_compass_denied', "Boussole non activée — bouton disponible sur l'écran boussole.", 'Compass not enabled — button available on compass screen.', 'Kompass nicht aktiviert — Schaltfläche auf Kompassbildschirm verfügbar.', 'Bussola non attivata — pulsante disponibile nella schermata bussola.', 'Brújula no activada — botón disponible en la pantalla de brújula.');
 t('onboarding_skip', 'Passer cette étape', 'Skip this step', 'Diesen Schritt überspringen', 'Salta questo passaggio', 'Omitir este paso');
@@ -818,14 +840,46 @@ t('error_file_read', 'Lecture du fichier impossible.', 'Unable to read file.', '
 t('backup_export_dialog_title', 'Exporter la sauvegarde', 'Export backup', 'Sicherung exportieren', 'Esporta backup', 'Exportar copia de seguridad');
 
 
-import { writeFileSync, mkdirSync } from 'node:fs';
-const locales = ['fr', 'en', 'de', 'it', 'es'];
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+
+const locales = ['fr', 'en', 'de', 'it', 'es', 'nl', 'sv', 'nb'];
+const catalogKeys = Object.keys(catalog);
 mkdirSync('messages', { recursive: true });
+
+let jsonOnlyKeys = new Set();
+
+/** Locales without catalog columns — never overwrite existing JSON with English fallback. */
+const FALLBACK_LOCALES = new Set(['nl', 'sv', 'nb']);
+
 for (const loc of locales) {
-	const out = {};
+	const filePath = `messages/${loc}.json`;
+	const existing = existsSync(filePath) ? JSON.parse(readFileSync(filePath, 'utf8')) : {};
+	const merged = { ...existing };
+
 	for (const [key, vals] of Object.entries(catalog)) {
-		out[key] = vals[loc];
+		const catalogValue = vals[loc];
+		if (catalogValue != null) {
+			merged[key] = catalogValue;
+			continue;
+		}
+		// Seed missing keys for nl/sv/nb from EN only when absent — do not clobber translations.
+		if (FALLBACK_LOCALES.has(loc) && !(key in existing) && vals.en != null) {
+			merged[key] = vals.en;
+		}
 	}
-	writeFileSync(`messages/${loc}.json`, JSON.stringify(out, null, '\t') + '\n');
+
+	writeFileSync(filePath, JSON.stringify(merged, null, '\t') + '\n');
+
+	if (loc === 'fr') {
+		jsonOnlyKeys = new Set(Object.keys(existing).filter((key) => !(key in catalog)));
+	}
 }
-console.log('Keys:', Object.keys(catalog).length);
+
+console.log(`Catalog keys synced: ${catalogKeys.length}`);
+console.log(`JSON-only keys preserved (fr): ${jsonOnlyKeys.size}`);
+if (jsonOnlyKeys.size > 0 && jsonOnlyKeys.size <= 20) {
+	console.log(`  ${[...jsonOnlyKeys].join(', ')}`);
+} else if (jsonOnlyKeys.size > 20) {
+	const sample = [...jsonOnlyKeys].slice(0, 10).join(', ');
+	console.log(`  ${sample}, … (+${jsonOnlyKeys.size - 10} more)`);
+}

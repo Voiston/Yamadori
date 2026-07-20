@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="it">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Informativa sulla privacy — Yamadori Scouting</title>
+	<style>
+		:root {
+			color-scheme: light;
+			--forest-900: #1a2e1a;
+			--forest-800: #2d4a2d;
+			--muted: #5c6b5c;
+			--bg: #f4f7f4;
+			--card: #ffffff;
+			--border: #d8e0d8;
+		}
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+			background: var(--bg);
+			color: var(--forest-900);
+			line-height: 1.55;
+		}
+		main {
+			max-width: 42rem;
+			margin: 0 auto;
+			padding: 1.5rem 1rem 3rem;
+		}
+		header {
+			margin-bottom: 1.5rem;
+		}
+		h1 {
+			margin: 0 0 0.75rem;
+			font-size: 1.5rem;
+			line-height: 1.25;
+		}
+		h2 {
+			margin: 0 0 0.5rem;
+			font-size: 1.125rem;
+		}
+		h3 {
+			margin: 0 0 0.75rem;
+			font-size: 0.75rem;
+			font-weight: 600;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			color: var(--muted);
+		}
+		h4 {
+			margin: 0;
+			font-size: 0.95rem;
+		}
+		p {
+			margin: 0.5rem 0 0;
+		}
+		.meta {
+			font-size: 0.875rem;
+			color: var(--muted);
+		}
+		.meta p { margin: 0.25rem 0; }
+		.lang-switch {
+			margin-bottom: 1rem;
+			font-size: 0.875rem;
+		}
+		.lang-switch a {
+			color: var(--forest-800);
+			font-weight: 600;
+			text-decoration: none;
+		}
+		.lang-switch a:hover { text-decoration: underline; }
+		.lang-switch [aria-current="page"] {
+			font-weight: 700;
+			color: var(--forest-900);
+		}
+		.intro { font-size: 0.95rem; }
+		.section, .inventory, .legal {
+			display: flex;
+			flex-direction: column;
+			gap: 0.75rem;
+			margin-top: 1.5rem;
+		}
+		.card {
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 0.75rem;
+			padding: 0.875rem 1rem;
+		}
+		.card p {
+			color: var(--muted);
+			font-size: 0.9rem;
+		}
+		footer {
+			margin-top: 2rem;
+			text-align: center;
+			font-size: 0.75rem;
+			color: var(--muted);
+		}
+		a { color: var(--forest-800); }
+	</style>
+</head>
+<body>
+	<main>
+		<div class="lang-switch">Lingua : <a href="privacy.html">Français</a> · <a href="privacy-en.html">English</a> · <a href="privacy-de.html">Deutsch</a> · <a href="privacy-es.html">Español</a> · <span aria-current="page">Italiano</span> · <a href="privacy-nl.html">Nederlands</a> · <a href="privacy-sv.html">Svenska</a> · <a href="privacy-nb.html">Norsk</a></div>
+		<header>
+			<h1>Informativa sulla privacy</h1>
+			<div class="meta">
+				<p><strong>Applicazione :</strong> Yamadori Scouting (fr.yamadori.scouting)</p>
+				<p><strong>Editore / contatto :</strong> <a href="mailto:david.voisard2@gmail.com">david.voisard2@gmail.com</a></p>
+				<p><strong>Ultimo aggiornamento :</strong> 19 luglio 2026</p>
+				<p><strong>Versione dell’app :</strong> 0.6.4</p>
+			</div>
+		</header>
+
+		<section class="legal">
+			<article class="card"><h4>Acquisti in-app</h4><p>Yamadori Pro è un acquisto una tantum gestito da Google Play Billing. Le transazioni sono elaborate da Google; Yamadori non raccoglie né conserva i dati di pagamento. Solo un token di acquisto resta sul dispositivo per attivare le funzioni Pro.</p></article>
+			<article class="card"><h4>I tuoi diritti</h4><p>Yamadori non crea account utente e non invia i tuoi dati di scouting a un server dell’editore. Puoi consultare, modificare ed eliminare i dati direttamente nell’app (alberi, foto, note vocali, cache). Per domande, contattaci all’indirizzo sopra.</p></article>
+			<article class="card"><h4>Modifiche</h4><p>Questa informativa può essere aggiornata con le nuove versioni dell’app. La data dell’ultimo aggiornamento è in cima a questa pagina.</p></article>
+		</section>
+
+		<section>
+			<h2>Manifesto Yamadori</h2>
+			<p class="intro">Yamadori non sincronizza i tuoi rilevamenti nel cloud. Il tuo taccuino da campo sta in tasca.</p>
+		</section>
+
+		<section class="section"><h3>Sul tuo dispositivo</h3><article class="card"><h4>Il tuo taccuino, il tuo telefono</h4><p>Nessun account, nessun server Yamadori. I tuoi rilevamenti, foto, note vocali e punto di partenza restano su questo dispositivo. Per impostazione predefinita i dati sono memorizzati in chiaro nella memoria locale; puoi attivare la crittografia locale in Impostazioni (opzionale, Android) — protegge alberi, parcheggio, password di export e impostazioni GPS, ma non le cache meteo e mappa.</p></article>
+<article class="card"><h4>Pensato per la foresta</h4><p>Mappa, meteo e catasto vengono memorizzati in cache in locale. Il GPS funziona senza rete — anche in fondo al bosco.</p></article>
+<article class="card"><h4>Proteggi il tuo taccuino</h4><p>Esporta regolarmente un backup (chiavetta USB, cloud personale). Senza password di export, il file garantisce solo l'integrità (checksum) — non la riservatezza: chiunque abbia il file può estrarre i dati. Con password, l'intero archivio è cifrato (PBKDF2 + AES-GCM). L'indizio è solo un promemoria; non recupera la password.</p></article>
+<article class="card"><h4>Piena trasparenza</h4><p>Come un taccuino cartaceo in borsa, i tuoi rilevamenti restano leggibili su un dispositivo sbloccato. Yamadori non utilizza il backup automatico Android verso Google. Consigliamo un blocco schermo ed export protetti da password.</p></article>
+<article class="card"><h4>Autorizzazioni Android</h4><p>Fotocamera: solo foto degli alberi, quando premi Cattura. Microfono: note vocali (30 s max), su tua azione. Posizione: rilevamento, mappa e meteo, solo con l'app in primo piano. Bussola: cap durante la cattura, elaborata in locale. L'assistente permessi al primo avvio ti guida — nulla viene richiesto senza motivo.</p></article></section>
+<section class="section"><h3>Online</h3><article class="card"><h4>Connessione minima</h4><p>Online vengono inviate solo le coordinate GPS a servizi pubblici (meteo, agronomia, mappa, catasto, aree protette, geocoding) — mai foto o note. A seconda del paese: Open-Meteo, IGN / CNIG / basemap.de / OS / swisstopo / basemap.at / OpenTopo (BE) / PDOK BRT (NL) / OpenTopo (SE) / Kartverket (NO), EEA, Natural England, UFAM, CadGIS, Nominatim (OpenStreetMap), ecc.</p></article>
+<article class="card"><h4>Servizi terzi consultati</h4><p>Open-Meteo (previsioni e storico climatico; uso commerciale con abbonamento dell’editore), mappe nazionali (IGN FR, CNIG ES, basemap.de, Ordnance Survey / OSM, swisstopo CH, basemap.at AT, OpenTopo BE, PDOK BRT NL, OpenTopo SE, Kartverket NO), catasto (IGN Apicarto, Catastro ES, Catasto IT, ALKIS DE parziale, HMLR GB, AV/EGRID CH + AVWFS ZH, comune AT, CadGIS BE, BRK NL, kommun SE, matrikkel NO), aree protette (IGN FR, EEA, Natural England, UFAM/Pro Natura CH), Nominatim/OpenStreetMap (toponimi), elenchi comunali per paese. Yamadori non ha server intermediario: le coordinate vanno direttamente a questi servizi pubblici, ciascuno con la propria privacy. Foto e note non lasciano il dispositivo così.</p></article>
+<article class="card"><h4>Nessun tracciamento</h4><p>Nessun account Yamadori, nessuna pubblicità, nessuna analitica (Firebase, crash reporter, ecc.). Nessuna rivendita di dati. Nessun cookie di terzi: l'app gira in locale in una WebView Android.</p></article></section>
+<section class="section"><h3>Hai il controllo</h3><article class="card"><h4>Decidi tu chi vede i tuoi spot</h4><p>Condividere un albero o esportare un backup è una scelta tua. Nulla viene inviato automaticamente a terzi.</p></article>
+<article class="card"><h4>GPS trasparente</h4><p>In primo piano, il GPS serve a rilevare un albero, mostrare la mappa e contestualizzare il meteo. Il tracciamento si interrompe quando l'app è in background. Nessuna posizione viene inviata a un server.</p></article>
+<article class="card"><h4>Tagli la rete</h4><p>Ogni connessione di rete è disattivabile singolarmente in Impostazioni. Se disattivi un'API, nessuna richiesta in diretta; la cache già scaricata resta consultabile offline.</p></article></section>
+
+		<section class="inventory">
+			<div>
+				<h2>Inventario dei dati</h2>
+				<p class="intro">Cosa gestisce Yamadori per il tuo taccuino da campo — dove è archiviato, cosa va online e come eliminarlo.</p>
+			</div>
+			<article class="card"><h4>Coordinate GPS</h4><p>Archiviato sul dispositivo (alberi, parcheggio, posizione). Inviato online: solo latitudine/longitudine verso le API attive. Condivisibile via export o condivisione albero. Eliminazione: elimina l'albero o svuota le cache in Impostazioni.</p></article>
+<article class="card"><h4>Foto</h4><p>Archiviato sul dispositivo. Mai inviato online da Yamadori. Condivisibile via export o condivisione albero. Eliminazione: elimina l'albero.</p></article>
+<article class="card"><h4>Note vocali</h4><p>Archiviato sul dispositivo. Mai inviato online. Condivisibile solo via export di backup. Eliminazione: elimina l'albero.</p></article>
+<article class="card"><h4>Meteo e clima</h4><p>Memorizzato in cache in locale dopo una richiesta. Coordinate inviate a Open-Meteo se l'API è attiva. Non condiviso. Eliminazione: Impostazioni → svuota cache meteo.</p></article>
+<article class="card"><h4>Tasselli mappa</h4><p>Cache locale. Richieste di tasselli per l’area visibile per paese (IGN, CNIG, basemap.de, OS…). Non condiviso. Eliminazione: Impostazioni → svuota cache mappa.</p></article>
+<article class="card"><h4>Catasto e aree protette</h4><p>Cache locale. Coordinate inviate ai servizi nazionali di catasto / aree protette se abilitati. Non condiviso. Eliminazione: Impostazioni → svuota cache catasto.</p></article>
+		</section>
+
+		<footer>Manifesto Yamadori — versione 0.6.4</footer>
+	</main>
+</body>
+</html>
