@@ -1,5 +1,5 @@
+import { Capacitor } from '@capacitor/core';
 import * as m from '$lib/paraglide/messages.js';
-import { Filesystem } from '@capacitor/filesystem';
 import { isAndroidApp, isNativeApp } from '$lib/utils/platform';
 import { YamadoriBackup, type YamadoriBackupPendingImport } from './yamadoriBackupPlugin';
 
@@ -12,20 +12,55 @@ export const incomingBackupState = $state<{ pending: IncomingBackupPending | nul
 function isPendingImport(
 	value: Partial<IncomingBackupPending>
 ): value is IncomingBackupPending {
-	return typeof value.cachePath === 'string' && typeof value.displayName === 'string';
+	return (
+		typeof value.cachePath === 'string' &&
+		typeof value.displayName === 'string' &&
+		typeof value.fileSizeBytes === 'number' &&
+		typeof value.sha256Prefix === 'string'
+	);
 }
 
-function base64ToBytes(base64: string): Uint8Array {
+async function readBlobFromCachePath(cachePath: string): Promise<Blob> {
+	if (isNativeApp()) {
+		try {
+			const response = await fetch(Capacitor.convertFileSrc(cachePath));
+			if (response.ok) {
+				return await response.blob();
+			}
+		} catch {
+			// Fall through to plugin read.
+		}
+	}
+
+	const { base64 } = await YamadoriBackup.readPendingImportFile({ cachePath });
 	const binary = atob(base64);
 	const bytes = new Uint8Array(binary.length);
 	for (let i = 0; i < binary.length; i += 1) {
 		bytes[i] = binary.charCodeAt(i);
 	}
-	return bytes;
+	return new Blob([bytes], { type: 'application/zip' });
 }
 
 export function clearPendingIncomingBackup(): void {
 	incomingBackupState.pending = null;
+}
+
+export async function deletePendingIncomingBackupFile(): Promise<void> {
+	const pending = incomingBackupState.pending;
+	if (!pending || !isNativeApp() || !isAndroidApp()) {
+		return;
+	}
+
+	try {
+		await YamadoriBackup.deletePendingImportFile({ cachePath: pending.cachePath });
+	} catch {
+		// Best-effort cleanup.
+	}
+}
+
+export async function dismissPendingIncomingBackup(): Promise<void> {
+	await deletePendingIncomingBackupFile();
+	clearPendingIncomingBackup();
 }
 
 export function setPendingIncomingBackup(pending: IncomingBackupPending): void {
@@ -55,15 +90,17 @@ export async function readPendingBackupBlob(): Promise<{
 		return null;
 	}
 
-	const result = await Filesystem.readFile({ path: pending.cachePath });
-	if (typeof result.data !== 'string') {
-		throw new Error(m.error_incoming_backup_read());
-	}
-	const bytes = base64ToBytes(result.data);
+	const blob = await readBlobFromCachePath(pending.cachePath);
 	return {
-		blob: new Blob([Uint8Array.from(bytes)], { type: 'application/zip' }),
+		blob,
 		displayName: pending.displayName
 	};
+}
+
+export function formatIncomingBackupSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export async function initIncomingBackupListener(onReady: () => void): Promise<() => void> {
@@ -89,4 +126,8 @@ export async function initIncomingBackupListener(onReady: () => void): Promise<(
 	return () => {
 		void listener.remove();
 	};
+}
+
+export function formatIncomingBackupNotFoundError(): string {
+	return m.settings_backup_not_found();
 }

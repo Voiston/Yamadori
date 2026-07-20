@@ -3,7 +3,8 @@
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import { MAX_BACKUP_PASSWORD_HINT_LENGTH } from '$lib/stores/backupPasswordSettings.svelte';
 	import * as m from '$lib/paraglide/messages.js';
-	import { portal } from '$lib/utils/portal';
+	import { portal, APP_SHELL_PORTAL_TARGET } from '$lib/utils/portal';
+	import { modalFocus } from '$lib/utils/modalFocus';
 
 	export type BackupPasswordFormMode = 'setup' | 'change' | 'remove';
 
@@ -17,6 +18,7 @@
 		mode = $bindable('setup' as BackupPasswordFormMode),
 		initialHint = '',
 		error = $bindable(null as string | null),
+		trapFocus = true,
 		onconfirm,
 		oncancel
 	}: {
@@ -24,6 +26,7 @@
 		mode?: BackupPasswordFormMode;
 		initialHint?: string;
 		error?: string | null;
+		trapFocus?: boolean;
 		onconfirm?: (result: BackupPasswordFormResult) => void;
 		oncancel?: () => void;
 	} = $props();
@@ -125,7 +128,8 @@
 
 {#if open}
 	<div
-		use:portal
+		use:portal={APP_SHELL_PORTAL_TARGET}
+		data-yamadori-portal
 		class="fixed inset-0 z-[100] flex items-end justify-center bg-forest-900/40 p-4 sm:items-center"
 		role="presentation"
 		onclick={handleBackdropClick}
@@ -135,6 +139,7 @@
 			role="alertdialog"
 			aria-modal="true"
 			aria-labelledby="backup-password-form-title"
+			use:modalFocus={trapFocus}
 		>
 			<h2 id="backup-password-form-title" class="text-lg font-semibold text-forest-900">
 				{title}

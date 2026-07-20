@@ -1,7 +1,7 @@
 import type { Tree, VoiceNote } from '$lib/types/tree';
 import { zip } from 'fflate';
 import { sha256Hex } from './checksums';
-import { encryptPayload, encryptEnvelope, ivToBase64 } from './crypto';
+import { encryptPayload, encryptEnvelope, generateArchiveKeyMaterial, ivToBase64 } from './crypto';
 import {
 	extensionForMime,
 	mediaZipPath,
@@ -29,10 +29,11 @@ const DONNEES_PATH = 'donnees.enc';
 type MediaCollector = {
 	files: ZipEntryMap;
 	paths: string[];
+	dataUrlToPath: Map<string, string>;
 };
 
 function createMediaCollector(): MediaCollector {
-	return { files: {}, paths: [] };
+	return { files: {}, paths: [], dataUrlToPath: new Map() };
 }
 
 function addMediaFromDataUrl(
@@ -42,6 +43,9 @@ function addMediaFromDataUrl(
 ): string {
 	if (!dataUrl.trim()) return '';
 
+	const cached = collector.dataUrlToPath.get(dataUrl);
+	if (cached) return cached;
+
 	const parsed = parseDataUrl(dataUrl);
 	if (!parsed || parsed.bytes.length === 0) return '';
 
@@ -50,6 +54,7 @@ function addMediaFromDataUrl(
 	const path = mediaZipPath(opaqueId, `${filename}.${ext}`);
 	collector.files[path] = parsed.bytes;
 	collector.paths.push(path);
+	collector.dataUrlToPath.set(dataUrl, path);
 	return path;
 }
 
@@ -64,14 +69,6 @@ function exportVoiceNote(
 }
 
 function treeToArchive(tree: Tree, collector: MediaCollector): TreeArchive {
-	const photos = tree.photos.map((photo, index) =>
-		addMediaFromDataUrl(collector, photo, String(index))
-	);
-
-	const voiceNote: VoiceNoteArchive | null = tree.voiceNote
-		? exportVoiceNote(tree.voiceNote, collector, 'voice')
-		: null;
-
 	const visits: TreeVisitArchive[] = tree.visits.map((visit) => ({
 		id: visit.id,
 		visitedAt: visit.visitedAt,
@@ -79,8 +76,21 @@ function treeToArchive(tree: Tree, collector: MediaCollector): TreeArchive {
 		photoPath: addMediaFromDataUrl(collector, visit.photoBase64, `v-${visit.id}`),
 		voiceNote: visit.voiceNote
 			? exportVoiceNote(visit.voiceNote, collector, `voice-${visit.id}`)
-			: null
+			: null,
+		yrsSnapshot: visit.yrsSnapshot ?? null
 	}));
+
+	const photos = tree.photos.map((photo, index) => {
+		if (!photo.trim()) return '';
+		return (
+			collector.dataUrlToPath.get(photo) ??
+			addMediaFromDataUrl(collector, photo, `orphan-${index}`)
+		);
+	});
+
+	const voiceNote: VoiceNoteArchive | null = tree.voiceNote
+		? exportVoiceNote(tree.voiceNote, collector, 'voice')
+		: null;
 
 	return {
 		id: tree.id,
@@ -134,11 +144,12 @@ export async function buildArchive(
 		trees,
 		parking: input.parking,
 		appearanceSettings: input.appearanceSettings,
-		locationSettings: input.locationSettings
+		...(input.apiSettings ? { apiSettings: input.apiSettings } : {})
 	};
 
 	const plaintext = JSON.stringify(payload);
-	const { ciphertext, iv } = await encryptPayload(plaintext);
+	const archiveKeyMaterial = generateArchiveKeyMaterial();
+	const { ciphertext, iv } = await encryptPayload(plaintext, archiveKeyMaterial);
 
 	onProgress?.('encrypt', 60);
 
@@ -154,7 +165,8 @@ export async function buildArchive(
 		exportedAt: new Date().toISOString(),
 		encryption: {
 			algorithm: 'AES-256-GCM',
-			keyScope: 'app',
+			keyScope: 'archive',
+			keyMaterial: ivToBase64(archiveKeyMaterial),
 			iv: ivToBase64(iv)
 		},
 		stats: {

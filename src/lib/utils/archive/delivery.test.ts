@@ -11,6 +11,9 @@ const getUriMock = vi.hoisted(() => vi.fn(async () => ({ uri: 'file://cache/test
 const saveToDownloadsMock = vi.hoisted(() =>
 	vi.fn(async () => ({ uri: 'content://downloads/1', fileName: 'test.yamadori.zip' }))
 );
+const saveToDownloadsFromPathMock = vi.hoisted(() =>
+	vi.fn(async () => ({ uri: 'content://downloads/2', fileName: 'test.yamadori.zip' }))
+);
 
 vi.mock('$lib/utils/platform', () => ({ isNativeApp, isAndroidApp }));
 vi.mock('@capacitor/share', () => ({ Share: { share: shareMock } }));
@@ -23,7 +26,8 @@ vi.mock('@capacitor/filesystem', () => ({
 }));
 vi.mock('./yamadoriBackupPlugin', () => ({
 	YamadoriBackup: {
-		saveToDownloads: saveToDownloadsMock
+		saveToDownloads: saveToDownloadsMock,
+		saveToDownloadsFromPath: saveToDownloadsFromPathMock
 	}
 }));
 
@@ -49,6 +53,7 @@ describe('deliverArchive', () => {
 		writeFileMock.mockClear();
 		getUriMock.mockClear();
 		saveToDownloadsMock.mockClear();
+		saveToDownloadsFromPathMock.mockClear();
 		isNativeApp.mockReturnValue(false);
 		isAndroidApp.mockReturnValue(false);
 	});
@@ -82,5 +87,33 @@ describe('deliverArchive', () => {
 			})
 		);
 		expect(shareMock).not.toHaveBeenCalled();
+	});
+
+	it('uses path-based delivery for large android local exports when legacy fails', async () => {
+		isNativeApp.mockReturnValue(true);
+		isAndroidApp.mockReturnValue(true);
+		saveToDownloadsMock.mockRejectedValueOnce(new Error('bridge limit'));
+
+		const largePayload = 'x'.repeat(1_100_000);
+		const blob = new Blob([largePayload], { type: 'application/zip' });
+		const result = await deliverArchive(blob, 'test.yamadori.zip', 'local');
+
+		expect(result).toBe('saved');
+		expect(saveToDownloadsFromPathMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				cacheUri: 'file://cache/test.yamadori.zip',
+				fileName: 'test.yamadori.zip',
+				mimeType: 'application/zip'
+			})
+		);
+	});
+
+	it('treats canceled share as an error', async () => {
+		isNativeApp.mockReturnValue(true);
+		isAndroidApp.mockReturnValue(true);
+		shareMock.mockRejectedValueOnce(new Error('Share canceled'));
+
+		const blob = new Blob(['zip'], { type: 'application/zip' });
+		await expect(deliverArchive(blob, 'test.yamadori.zip', 'share')).rejects.toThrow();
 	});
 });

@@ -1,10 +1,10 @@
-import { get, set } from 'idb-keyval';
+import { secureIdbGet, secureIdbSet } from '$lib/utils/secure-idb';
 import type { ParkingPosition } from '$lib/types/parking';
 import type { Tree } from '$lib/types/tree';
 import {
 	BACKUP_REMINDER_DISMISS_KEY,
 	BACKUP_REMINDER_STORAGE_KEY,
-	computeDataFingerprint,
+	computeTreeInventoryFingerprint,
 	evaluateBackupWarning,
 	type BackupReminderPersisted,
 	type BackupWarning
@@ -12,7 +12,7 @@ import {
 
 export {
 	BACKUP_REMINDER_STORAGE_KEY,
-	computeDataFingerprint,
+	computeTreeInventoryFingerprint,
 	evaluateBackupWarning,
 	MAX_DAYS_WITHOUT_EXPORT
 } from './backupReminder';
@@ -33,7 +33,7 @@ function readDismissedFromSession(): boolean {
 
 export async function initBackupReminder(): Promise<void> {
 	try {
-		const stored = await get<BackupReminderPersisted>(BACKUP_REMINDER_STORAGE_KEY);
+		const stored = await secureIdbGet<BackupReminderPersisted>(BACKUP_REMINDER_STORAGE_KEY);
 		backupReminderState.lastExportAt = stored?.lastExportAt ?? null;
 		backupReminderState.lastExportFingerprint = stored?.lastExportFingerprint ?? null;
 	} catch (error) {
@@ -48,9 +48,9 @@ export async function initBackupReminder(): Promise<void> {
 
 export async function markBackupExported(
 	trees: Tree[],
-	parking: ParkingPosition | null
+	_parking: ParkingPosition | null
 ): Promise<void> {
-	const fingerprint = computeDataFingerprint(trees, parking);
+	const fingerprint = computeTreeInventoryFingerprint(trees);
 	const lastExportAt = new Date().toISOString();
 
 	backupReminderState.lastExportAt = lastExportAt;
@@ -61,7 +61,7 @@ export async function markBackupExported(
 		sessionStorage.removeItem(BACKUP_REMINDER_DISMISS_KEY);
 	}
 
-	await set(BACKUP_REMINDER_STORAGE_KEY, {
+	await secureIdbSet(BACKUP_REMINDER_STORAGE_KEY, {
 		lastExportAt,
 		lastExportFingerprint: fingerprint
 	} satisfies BackupReminderPersisted);

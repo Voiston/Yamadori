@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { unzip, zip } from 'fflate';
 import { DEFAULT_ASSESSMENT, type Tree } from '$lib/types/tree';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
+import { isValidTreeId } from '$lib/utils/id';
 import { buildArchive } from './export';
+import { encryptPayload, ivToBase64 } from './crypto';
+import { sha256Hex } from './checksums';
 import { normalizeZipEntries, parseArchive, scanEntriesForGpsLeak, isPasswordProtectedBlob } from './import';
 import { isPasswordProtectedArchive } from './crypto';
 import { parseLegacyBackup } from './legacy';
@@ -56,7 +59,15 @@ const baseInput = {
 		savedAt: '2026-01-10T07:00:00.000Z'
 	},
 	appearanceSettings: { outdoorMode: true },
-	locationSettings: { backgroundTrackingEnabled: false },
+	apiSettings: {
+		ignMap: false,
+		ignCadastre: true,
+		ignProtectedAreas: true,
+		openMeteoForecast: true,
+		openMeteoArchive: false,
+		nominatim: true,
+		servicePublicAnnuaire: true
+	},
 	appVersion: '0.0.2-test'
 };
 
@@ -89,6 +100,13 @@ describe('archive media helpers', () => {
 });
 
 describe('archive export/import', () => {
+	it('deduplicates gallery photos already stored on visits', async () => {
+		const blob = await buildArchive(baseInput);
+		const entries = await unzipBlob(blob);
+		const mediaPaths = Object.keys(entries).filter((path) => path.startsWith('media/'));
+		expect(mediaPaths.length).toBe(1);
+	});
+
 	it('round-trips trees, parking and settings automatically', async () => {
 		const blob = await buildArchive(baseInput);
 		const restored = await parseArchive(blob);
@@ -100,6 +118,91 @@ describe('archive export/import', () => {
 		expect(restored.trees[0]?.photos[0]).toContain('data:image/');
 		expect(restored.parking?.latitude).toBe(45.1);
 		expect(restored.appearanceSettings.outdoorMode).toBe(true);
+		expect(restored.apiSettings?.ignMap).toBe(false);
+		expect(restored.apiSettings?.openMeteoArchive).toBe(false);
+	});
+
+	it('uses a unique per-archive encryption key', async () => {
+		const blob1 = await buildArchive(baseInput);
+		const blob2 = await buildArchive(baseInput);
+		const entries1 = await unzipBlob(blob1);
+		const entries2 = await unzipBlob(blob2);
+		const manifest1 = JSON.parse(new TextDecoder().decode(entries1['manifest.json']!));
+		const manifest2 = JSON.parse(new TextDecoder().decode(entries2['manifest.json']!));
+
+		expect(manifest1.encryption.keyScope).toBe('archive');
+		expect(manifest1.encryption.keyMaterial).toBeTruthy();
+		expect(manifest1.encryption.keyMaterial).not.toBe(manifest2.encryption.keyMaterial);
+	});
+
+	it('imports legacy app-scoped archives', async () => {
+		const payload = {
+			version: 2,
+			trees: [
+				{
+					id: 'tree-1',
+					species: 'Érable',
+					notes: '',
+					photos: [],
+					visits: [],
+					assessment: DEFAULT_ASSESSMENT,
+					voiceNote: null,
+					latitude: 45.123456,
+					longitude: 6.654321,
+					accuracyMeters: 5,
+					altitudeMeters: null,
+					frontHeadingDegrees: null,
+					isFavorite: false,
+					climateHistory: null,
+					locationLabel: null,
+					capturedAt: '2026-01-10T08:00:00.000Z'
+				}
+			],
+			parking: null,
+			appearanceSettings: { outdoorMode: false }
+		};
+
+		const { ciphertext, iv } = await encryptPayload(JSON.stringify(payload));
+		const manifest = {
+			formatVersion: 2,
+			appVersion: '0.0.2-test',
+			exportedAt: new Date().toISOString(),
+			encryption: {
+				algorithm: 'AES-256-GCM',
+				keyScope: 'app',
+				iv: ivToBase64(iv)
+			},
+			stats: { treeCount: 1, mediaFileCount: 0 },
+			files: [
+				{
+					path: 'donnees.enc',
+					size: ciphertext.byteLength,
+					sha256: await sha256Hex(ciphertext)
+				}
+			]
+		};
+
+		const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+
+		const legacyBlob = await rezip({
+			'donnees.enc': ciphertext,
+			'manifest.json': manifestBytes
+		});
+
+		const restored = await parseArchive(legacyBlob);
+		expect(restored.trees[0]?.latitude).toBe(45.123456);
+	});
+
+	it('sanitizes malicious tree ids on import', async () => {
+		const maliciousId = 'x" onclick="alert(1)"';
+		const blob = await buildArchive({
+			...baseInput,
+			trees: [sampleTree({ id: maliciousId })]
+		});
+		const restored = await parseArchive(blob);
+
+		expect(restored.trees[0]?.id).not.toContain('onclick');
+		expect(isValidTreeId(restored.trees[0]!.id)).toBe(true);
 	});
 
 	it('round-trips voice notes with audio/aac mime type', async () => {

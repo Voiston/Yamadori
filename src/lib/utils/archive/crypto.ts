@@ -1,4 +1,5 @@
 import { ArchiveError } from './types';
+import * as m from '$lib/paraglide/messages.js';
 
 const APP_ARCHIVE_KEY_MATERIAL = 'yamadori-archive-v2';
 const IV_BYTES = 12;
@@ -174,7 +175,17 @@ export async function decryptEnvelope(
 	}
 }
 
-async function getAppArchiveKey(): Promise<CryptoKey> {
+async function importArchiveKey(keyMaterial: Uint8Array): Promise<CryptoKey> {
+	if (keyMaterial.length !== 32) {
+		throw new ArchiveError('ARCHIVE_INVALID_PAYLOAD', 'Invalid archive encryption key.');
+	}
+	return crypto.subtle.importKey('raw', copyBytes(keyMaterial), 'AES-GCM', false, [
+		'encrypt',
+		'decrypt'
+	]);
+}
+
+async function getLegacyAppArchiveKey(): Promise<CryptoKey> {
 	if (cachedKey) return cachedKey;
 
 	const raw = await crypto.subtle.digest(
@@ -185,11 +196,23 @@ async function getAppArchiveKey(): Promise<CryptoKey> {
 	return cachedKey;
 }
 
+export function generateArchiveKeyMaterial(): Uint8Array {
+	return crypto.getRandomValues(new Uint8Array(32));
+}
+
+async function resolveArchiveKey(keyMaterial?: Uint8Array): Promise<CryptoKey> {
+	if (keyMaterial) {
+		return importArchiveKey(keyMaterial);
+	}
+	return getLegacyAppArchiveKey();
+}
+
 export async function encryptPayload(
-	plaintext: string
+	plaintext: string,
+	keyMaterial?: Uint8Array
 ): Promise<{ ciphertext: Uint8Array; iv: Uint8Array }> {
 	const iv = generateIv();
-	const key = await getAppArchiveKey();
+	const key = await resolveArchiveKey(keyMaterial);
 	const encrypted = await crypto.subtle.encrypt(
 		{ name: 'AES-GCM', iv: copyBytes(iv) },
 		key,
@@ -202,9 +225,13 @@ export async function encryptPayload(
 	};
 }
 
-export async function decryptPayload(ciphertext: Uint8Array, iv: Uint8Array): Promise<string> {
+export async function decryptPayload(
+	ciphertext: Uint8Array,
+	iv: Uint8Array,
+	keyMaterial?: Uint8Array
+): Promise<string> {
 	try {
-		const key = await getAppArchiveKey();
+		const key = await resolveArchiveKey(keyMaterial);
 		const decrypted = await crypto.subtle.decrypt(
 			{ name: 'AES-GCM', iv: copyBytes(iv) },
 			key,
@@ -212,9 +239,6 @@ export async function decryptPayload(ciphertext: Uint8Array, iv: Uint8Array): Pr
 		);
 		return new TextDecoder().decode(decrypted);
 	} catch {
-		throw new ArchiveError(
-			'ARCHIVE_INVALID_PAYLOAD',
-			'Sauvegarde corrompue ou données chiffrées invalides.'
-		);
+		throw new ArchiveError('ARCHIVE_INVALID_PAYLOAD', m.archive_decrypt_failed());
 	}
 }

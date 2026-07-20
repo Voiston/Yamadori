@@ -1,5 +1,5 @@
 import * as m from '$lib/paraglide/messages.js';
-import { unzip } from 'fflate';
+import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate';
 import { sha256Hex } from './checksums';
 import { base64ToBytes, decryptEnvelope, decryptPayload, isPasswordProtectedArchive } from './crypto';
 import { bytesToDataUrl, mimeTypeForExtension } from './media';
@@ -7,6 +7,7 @@ import {
 	ARCHIVE_FORMAT_VERSION,
 	ArchiveError,
 	MAX_ARCHIVE_BYTES,
+	MAX_DECOMPRESSED_BYTES,
 	type ArchiveParseOptions,
 	type ArchiveImportPreview,
 	type ArchiveManifest,
@@ -20,6 +21,7 @@ import {
 } from './types';
 import type { Tree, TreeVisit, VoiceNote } from '$lib/types/tree';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
+import { sanitizeTreeId } from '$lib/utils/id';
 
 const MANIFEST_PATH = 'manifest.json';
 const DONNEES_PATH = 'donnees.enc';
@@ -79,15 +81,79 @@ function readBlobBytesWithFileReader(blob: Blob): Promise<Uint8Array> {
 	});
 }
 
+function concatUnzipChunks(chunks: Uint8Array[]): Uint8Array {
+	const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+	const merged = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		merged.set(chunk, offset);
+		offset += chunk.length;
+	}
+	return merged;
+}
+
 function unzipToMap(data: Uint8Array): Promise<ZipEntryMap> {
 	return new Promise((resolve, reject) => {
-		unzip(data, (error, result) => {
-			if (error) {
-				reject(new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_zip()));
-				return;
+		const entries: ZipEntryMap = {};
+		let totalUncompressed = 0;
+		let failed = false;
+		let openFiles = 0;
+		let pushComplete = false;
+
+		const checkDone = () => {
+			if (!failed && pushComplete && openFiles === 0) {
+				resolve(normalizeZipEntries(entries));
 			}
-			resolve(normalizeZipEntries(result));
+		};
+
+		const unzipper = new Unzip((file) => {
+			if (failed) return;
+
+			const name = normalizeZipPath(file.name);
+			if (name.endsWith('/')) return;
+
+			openFiles += 1;
+			const chunks: Uint8Array[] = [];
+
+			file.ondata = (err, chunk, final) => {
+				if (failed) return;
+
+				if (err) {
+					failed = true;
+					reject(new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_zip()));
+					return;
+				}
+
+				totalUncompressed += chunk.length;
+				if (totalUncompressed > MAX_DECOMPRESSED_BYTES) {
+					failed = true;
+					reject(new ArchiveError('ARCHIVE_TOO_LARGE', m.archive_too_large()));
+					return;
+				}
+
+				chunks.push(chunk);
+				if (final) {
+					entries[name] = concatUnzipChunks(chunks);
+					openFiles -= 1;
+					checkDone();
+				}
+			};
+
+			file.start();
 		});
+
+		unzipper.register(UnzipInflate);
+		unzipper.register(UnzipPassThrough);
+
+		try {
+			unzipper.push(data, true);
+			pushComplete = true;
+			checkDone();
+		} catch {
+			if (!failed) {
+				reject(new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_zip()));
+			}
+		}
 	});
 }
 
@@ -160,13 +226,24 @@ function visitFromArchive(entries: ZipEntryMap, visit: TreeVisitArchive): TreeVi
 		visitedAt: visit.visitedAt,
 		note: visit.note,
 		photoBase64: loadMediaAsDataUrl(entries, visit.photoPath),
-		voiceNote: voiceNoteFromArchive(entries, visit.voiceNote)
+		voiceNote: voiceNoteFromArchive(entries, visit.voiceNote),
+		yrsSnapshot: visit.yrsSnapshot ?? null
 	};
+}
+
+function resolvePayloadKeyMaterial(manifest: ArchiveManifest): Uint8Array | undefined {
+	if (manifest.encryption.keyScope === 'archive') {
+		if (!manifest.encryption.keyMaterial) {
+			throw new ArchiveError('ARCHIVE_MANIFEST_MISSING', m.archive_invalid_manifest());
+		}
+		return base64ToBytes(manifest.encryption.keyMaterial);
+	}
+	return undefined;
 }
 
 function treeFromArchive(entries: ZipEntryMap, archive: TreeArchive): Tree {
 	return {
-		id: archive.id,
+		id: sanitizeTreeId(archive.id),
 		species: archive.species,
 		notes: archive.notes,
 		photos: archive.photos.map((path) => loadMediaAsDataUrl(entries, path)),
@@ -287,7 +364,11 @@ async function parseArchiveZip(
 
 	onProgress?.('decrypt', 70);
 
-	const plaintext = await decryptPayload(encrypted, base64ToBytes(manifest.encryption.iv));
+	const plaintext = await decryptPayload(
+		encrypted,
+		base64ToBytes(manifest.encryption.iv),
+		resolvePayloadKeyMaterial(manifest)
+	);
 
 	let data: YamadoriArchiveData;
 	try {
@@ -313,7 +394,7 @@ async function parseArchiveZip(
 		trees,
 		parking: data.parking,
 		appearanceSettings: data.appearanceSettings ?? { outdoorMode: false, darkMode: false, simpleMode: false },
-		locationSettings: data.locationSettings ?? { backgroundTrackingEnabled: false },
+		apiSettings: data.apiSettings,
 		preview
 	};
 }
@@ -336,4 +417,32 @@ export function scanEntriesForGpsLeak(entries: ZipEntryMap): string[] {
 
 export async function readArchiveFile(file: File): Promise<Blob> {
 	return file;
+}
+
+export async function readArchiveManifestKeyScope(
+	blob: Blob,
+	options?: { password?: string }
+): Promise<'app' | 'archive' | undefined> {
+	if (blob.size > MAX_ARCHIVE_BYTES) {
+		throw new ArchiveError('ARCHIVE_TOO_LARGE', m.archive_too_large());
+	}
+
+	const buffer = await readBlobBytes(blob);
+	let zipBuffer = buffer;
+
+	if (isPasswordProtectedArchive(buffer)) {
+		if (!options?.password) {
+			throw new ArchiveError('ARCHIVE_PASSWORD_REQUIRED', m.archive_password_required());
+		}
+		zipBuffer = await decryptEnvelope(buffer, options.password);
+	}
+
+	const entries = await unzipToMap(zipBuffer);
+	const manifestBytes = getZipEntry(entries, MANIFEST_PATH);
+	if (!manifestBytes) {
+		return undefined;
+	}
+
+	const manifest = parseManifest(manifestBytes);
+	return manifest.encryption.keyScope === 'archive' ? 'archive' : 'app';
 }

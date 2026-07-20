@@ -2,6 +2,7 @@
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import { portal } from '$lib/utils/portal';
+	import { modalFocus } from '$lib/utils/modalFocus';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 
 	let {
@@ -86,6 +87,7 @@
 			aria-modal="true"
 			aria-labelledby="password-dialog-title"
 			aria-describedby="password-dialog-message"
+			use:modalFocus
 		>
 			<h2 id="password-dialog-title" class="text-lg font-semibold text-forest-900">
 				{resolvedTitle}
