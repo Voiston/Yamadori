@@ -9,31 +9,47 @@
 		createSightLine,
 		emptyFeatureCollection
 	} from '$lib/utils/map/geojson';
-	import { getIgnLayerConfig, IGN_ATTRIBUTION, CADASTRE_LAYER } from '$lib/utils/map/ign';
+	import { getIgnLayerConfig } from '$lib/utils/map/ign';
 	import {
 		boundsFromMapCenter,
 		buildIgnWmtsUrl,
 		countTilesForBounds,
+		expandTileUrlTemplate,
 		getDownloadZoomLevels,
 		getTileCacheStats,
 		prefetchTilesForBounds
 	} from '$lib/utils/map/tileCache';
 	import type { IgnLayerId } from '$lib/utils/map/ign';
 	import {
-		createIgnMapStyle,
+		createMapStyle,
 		setBasemapVisibility,
 		setCadastreLayerVisibility,
+		setProtectedAreasLayerVisibility,
 	type MapBasemap
 	} from '$lib/utils/map/styles';
+	import { resolveCountry } from '$lib/geo/resolveCountry';
+	import { applyCountryBasemap } from '$lib/geo/providers/map/applyCountryBasemap';
+	import { getMapProvider } from '$lib/geo/providers/map/registry';
+	import type { MapLayerConfig } from '$lib/geo/providers/map/types';
 	import { getTreeById, treeStore, treesWithGps } from '$lib/stores/trees.svelte';
+	import { getAccessibleTrees } from '$lib/utils/featurePolicy';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import { parkingStore } from '$lib/stores/parking.svelte';
 	import { normalizeHeading360 } from '$lib/utils/haversine';
+	import {
+		shouldUpdateCompassPosition,
+		type CompassPosition
+	} from '$lib/utils/compassPosition';
 	import {
 		createSimpleUserMarkerElement,
 		createUserHeadingMarkerElement,
 		updateUserHeadingMarker
 	} from '$lib/utils/map/userMarker';
+	import {
+		focusCenterMarkerCss,
+		parkingMarkerCss,
+		treeMarkerCss
+	} from '$lib/utils/map/mapMarkerStyles';
 	import ParkingPanel from '$lib/components/ParkingPanel.svelte';
 	import MapDownloadOverlay from '$lib/components/MapDownloadOverlay.svelte';
 	import CadastreBanner from '$lib/components/CadastreBanner.svelte';
@@ -41,6 +57,7 @@
 	import { cadastreLookup, resolveCadastre, resetCadastreLookup } from '$lib/stores/cadastreLookup.svelte';
 	import { cadastreCacheKey } from '$lib/utils/cadastre';
 	import type { CadastreInfo } from '$lib/types/cadastre';
+	import { canUseApi, getApiDisabledError } from '$lib/utils/apiPolicy';
 	import { onlineState } from '$lib/utils/online.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import {
@@ -49,6 +66,7 @@
 		userPositionState,
 		type UserPosition
 	} from '$lib/utils/userPosition.svelte';
+	import { resolveMapTabGpsProfileFromProximity, resolveMapParkingProximity } from '$lib/utils/mapTabGpsProfile';
 	import { hapticSuccess } from '$lib/utils/haptics';
 	import { nativeTap } from '$lib/utils/native-touch';
 	import maplibregl from 'maplibre-gl';
@@ -62,10 +80,14 @@
 	const PITCH_OBLIQUE = 45;
 	const MAP_POSITION_THROTTLE_MS = 750;
 	const MAP_RESIZE_DEBOUNCE_MS = 100;
+	const MAP_DOWNLOAD_ESTIMATE_DEBOUNCE_MS = 200;
+	const MAP_DOWNLOAD_PROGRESS_INTERVAL_MS = 200;
+	const MAP_DOWNLOAD_PROGRESS_TILE_STEP = 5;
 	const FOCUS_FLY_DURATION_MS = 250;
 	const USER_RECENTER_ZOOM = 16;
 	const NAVIGATION_ZOOM = 17;
 	const NAVIGATION_PADDING_BOTTOM = 140;
+	const EMBEDDED_INTRO_ZOOM_IN_DURATION_MS = 1000;
 
 	let {
 		focusTreeId,
@@ -87,6 +109,7 @@
 	let map: MaplibreMap | undefined = $state();
 	let basemap = $state<MapBasemap>('topo');
 	let showCadastreLayer = $state(false);
+	let showProtectedLayer = $state(false);
 	type MapCadastreSelection = {
 		latitude: number;
 		longitude: number;
@@ -114,6 +137,93 @@
 	let parkingMarker: Marker | undefined;
 	let focusCenterMarker: Marker | undefined;
 	let mapReady = $state(false);
+	/** Country of the active map style (follows map center, not only GPS). */
+	let lastMapStyleCountry: ReturnType<typeof resolveCountry> | undefined;
+	/** Style identity including GB nation overlay (england/scotland/wales). */
+	let lastMapStyleKey = '';
+	let styleSwitchTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function styleKeyFor(lat: number, lng: number): string {
+		const country = resolveCountry(lat, lng);
+		if (country !== 'GB') return country ?? 'INTL';
+		const provider = getMapProvider('GB', { latitude: lat, longitude: lng });
+		const tile = provider.protectedAreasOverlay?.tiles[0] ?? '';
+		if (tile.includes('nature.scot')) return 'GB:scotland';
+		if (tile.includes('datamap.gov.wales') || tile.includes('NRW_SSSI')) return 'GB:wales';
+		if (tile.includes('Natura2000') || tile.includes('NIEA')) return 'GB:ni';
+		return 'GB:england';
+	}
+
+	function applyMapStyleForCenter(activeMap: MaplibreMap, lat: number, lng: number): void {
+		const nextCountry = resolveCountry(lat, lng);
+		const nextKey = styleKeyFor(lat, lng);
+		if (nextKey === lastMapStyleKey && nextCountry === lastMapStyleCountry) return;
+
+		// setTiles / setLayoutProperty need the initial style sources+layers present.
+		// Do not advance lastMapStyleKey on failure — a later moveend/load can retry.
+		if (!activeMap.isStyleLoaded() || !activeMap.getSource('ign-plan')) return;
+
+		const location = { latitude: lat, longitude: lng };
+		const provider = getMapProvider(nextCountry, location);
+		if (!provider.cadastreOverlay && showCadastreLayer) {
+			showCadastreLayer = false;
+		}
+		if (!provider.protectedAreasOverlay && showProtectedLayer) {
+			showProtectedLayer = false;
+		}
+		lastMapStyleCountry = nextCountry;
+		lastMapStyleKey = nextKey;
+		// In-place tile swap — avoid full setStyle (re-downloads basemap + overlays).
+		applyCountryBasemap(activeMap, nextCountry, location);
+		setBasemapVisibility(activeMap, basemap);
+		if (!embedded) {
+			setCadastreLayerVisibility(activeMap, showCadastreLayer);
+			setProtectedAreasLayerVisibility(activeMap, showProtectedLayer);
+		}
+	}
+
+	function scheduleMapStyleForCenter(activeMap: MaplibreMap, lat: number, lng: number): void {
+		if (styleSwitchTimer) clearTimeout(styleSwitchTimer);
+		styleSwitchTimer = setTimeout(() => {
+			styleSwitchTimer = null;
+			applyMapStyleForCenter(activeMap, lat, lng);
+		}, 350);
+	}
+
+	const protectedOverlayAvailable = $derived.by(() => {
+		const country =
+			lastMapStyleCountry ?? resolveCountry(defaultCenter[1], defaultCenter[0]);
+		return Boolean(getMapProvider(country).protectedAreasOverlay);
+	});
+
+	const cadastreOverlayAvailable = $derived.by(() => {
+		const country =
+			lastMapStyleCountry ?? resolveCountry(defaultCenter[1], defaultCenter[0]);
+		return Boolean(getMapProvider(country).cadastreOverlay);
+	});
+
+	const mapAttribution = $derived.by(() => {
+		void showCadastreLayer;
+		void showProtectedLayer;
+		void lastMapStyleKey;
+		const country =
+			lastMapStyleCountry ?? resolveCountry(defaultCenter[1], defaultCenter[0]);
+		const center = map?.getCenter();
+		const provider = getMapProvider(
+			country,
+			center
+				? { latitude: center.lat, longitude: center.lng }
+				: { latitude: defaultCenter[1], longitude: defaultCenter[0] }
+		);
+		const parts: string[] = [provider.plan.attribution];
+		if (showCadastreLayer && provider.cadastreOverlay) {
+			parts.push(provider.cadastreOverlay.attribution);
+		}
+		if (showProtectedLayer && provider.protectedAreasOverlay) {
+			parts.push(provider.protectedAreasOverlay.attribution);
+		}
+		return [...new Set(parts)].join(' · ');
+	});
 	let tileError = $state('');
 	let cacheCount = $state(0);
 	let downloadingZone = $state(false);
@@ -128,11 +238,43 @@
 	let vetoChecklistOpen = $state(false);
 	let previousHeadingLock = false;
 	let userManualPan = false;
+	let suppressFollowPanDepth = 0;
+	let followUser = $state(false);
+	let introPlaying = false;
+	let introPlayed = false;
+	let lastFollowCameraPosition: CompassPosition | null = null;
 	let mapInitDone = false;
 	let pendingFocusPopupMarker: Marker | undefined;
 	let mapResizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	let downloadEstimateDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	let downloadAbortController: AbortController | null = null;
 	let lastObservedMapWidth = 0;
 	let lastObservedMapHeight = 0;
+	let lastAccuracyCirclesSignature = '';
+	let lastApproachLineSignature = '';
+	let lastParkingApproachSignature = '';
+	let lastSightLineSignature = '';
+	let lastFocusCenterLngLat = '';
+	let lastParkingLngLat = '';
+	let lastUserLngLat = '';
+	const markerLngLatSignatures = new Map<string, string>();
+
+	function lngLatSignature(lng: number, lat: number): string {
+		return `${lng}|${lat}`;
+	}
+
+	function setMarkerLngLat(marker: Marker, markerId: string, lngLat: [number, number]): void {
+		const signature = lngLatSignature(lngLat[0], lngLat[1]);
+		if (markerLngLatSignatures.get(markerId) === signature) {
+			return;
+		}
+		markerLngLatSignatures.set(markerId, signature);
+		marker.setLngLat(lngLat);
+	}
+
+	function getDownloadLayerIds(): IgnLayerId[] {
+		return basemap === 'satellite' ? ['plan', 'ortho', 'hillshade'] : ['plan', 'ortho'];
+	}
 
 	function scheduleMapContainerResize(instance: maplibregl.Map, container: HTMLElement): void {
 		const { width, height } = container.getBoundingClientRect();
@@ -167,6 +309,17 @@
 		pendingFocusPopupMarker = undefined;
 	}
 
+	function withProgrammaticCameraMove(move: () => void): void {
+		if (!map) {
+			return;
+		}
+		suppressFollowPanDepth++;
+		move();
+		map.once('moveend', () => {
+			suppressFollowPanDepth = Math.max(0, suppressFollowPanDepth - 1);
+		});
+	}
+
 	function isNavigationMode(): boolean {
 		return embedded && headingLock && deviceHeading !== null;
 	}
@@ -175,8 +328,137 @@
 		return embedded && !headingLock;
 	}
 
+	function getEmbeddedTargetCoords(): { lng: number; lat: number } | null {
+		if (focusCenter) {
+			return { lng: focusCenter.longitude, lat: focusCenter.latitude };
+		}
+
+		if (focusTreeId) {
+			const tree = getTreeById(focusTreeId);
+			if (tree && tree.latitude !== null && tree.longitude !== null) {
+				return { lng: tree.longitude, lat: tree.latitude };
+			}
+		}
+
+		return null;
+	}
+
+	function playEmbeddedIntroAnimation(
+		userPos: UserPosition,
+		targetLng: number,
+		targetLat: number
+	): void {
+		if (!map || introPlayed) {
+			return;
+		}
+
+		introPlayed = true;
+		introPlaying = true;
+		userManualPan = true;
+
+		const bounds = new maplibregl.LngLatBounds();
+		bounds.extend([userPos.longitude, userPos.latitude]);
+		bounds.extend([targetLng, targetLat]);
+		withProgrammaticCameraMove(() => {
+			map!.fitBounds(bounds, {
+				padding: 60,
+				maxZoom: 16,
+				pitch: getPitch(),
+				duration: 0
+			});
+		});
+
+		const onOverviewEnd = () => {
+			map?.off('moveend', onOverviewEnd);
+			if (!map) {
+				introPlaying = false;
+				userManualPan = false;
+				return;
+			}
+
+			applyRecenterCamera(userPos, EMBEDDED_INTRO_ZOOM_IN_DURATION_MS);
+
+			const onZoomInEnd = () => {
+				map?.off('moveend', onZoomInEnd);
+				introPlaying = false;
+				userManualPan = false;
+			};
+			map.once('moveend', onZoomInEnd);
+		};
+		map.once('moveend', onOverviewEnd);
+	}
+
+	function tryPlayEmbeddedIntro(): boolean {
+		if (!embedded || introPlayed || !map) {
+			return false;
+		}
+
+		const userPos = userPositionState.position;
+		const target = getEmbeddedTargetCoords();
+		if (!userPos || !target) {
+			return false;
+		}
+
+		playEmbeddedIntroAnimation(userPos, target.lng, target.lat);
+		return true;
+	}
+
+	function syncFollowCamera(): void {
+		if (!map || !followUser || userManualPan || introPlaying) {
+			return;
+		}
+
+		const userPos = userPositionState.position;
+		if (!userPos) {
+			return;
+		}
+
+		if (embedded) {
+			if (isNavigationMode()) {
+				syncNavigationCamera();
+				lastFollowCameraPosition = {
+					latitude: userPos.latitude,
+					longitude: userPos.longitude
+				};
+				return;
+			}
+
+			if (!shouldUpdateCompassPosition(lastFollowCameraPosition, userPos)) {
+				return;
+			}
+
+			if (!headingLock) {
+				syncNorthUpCamera();
+			} else {
+				syncCenterFollowCamera();
+			}
+		} else {
+			if (!shouldUpdateCompassPosition(lastFollowCameraPosition, userPos)) {
+				return;
+			}
+
+			withProgrammaticCameraMove(() => {
+				map!.jumpTo({
+					center: [userPos.longitude, userPos.latitude],
+					bearing: 0,
+					zoom: Math.max(map!.getZoom(), USER_RECENTER_ZOOM),
+					pitch: getPitch()
+				});
+			});
+		}
+
+		lastFollowCameraPosition = {
+			latitude: userPos.latitude,
+			longitude: userPos.longitude
+		};
+	}
+
 	function syncNavigationCamera(): void {
-		if (!map || !isNavigationMode() || userManualPan) {
+		if (!map || !isNavigationMode()) {
+			return;
+		}
+
+		if (userManualPan && !followUser) {
 			return;
 		}
 
@@ -187,12 +469,14 @@
 
 		const bearing = normalizeHeading360(deviceHeading);
 
-		map.jumpTo({
-			center: [userPos.longitude, userPos.latitude],
-			bearing,
-			zoom: Math.max(map.getZoom(), NAVIGATION_ZOOM),
-			pitch: PITCH_TOPDOWN,
-			padding: { top: 0, bottom: NAVIGATION_PADDING_BOTTOM, left: 0, right: 0 }
+		withProgrammaticCameraMove(() => {
+			map!.jumpTo({
+				center: [userPos.longitude, userPos.latitude],
+				bearing,
+				zoom: Math.max(map!.getZoom(), NAVIGATION_ZOOM),
+				pitch: PITCH_TOPDOWN,
+				padding: { top: 0, bottom: NAVIGATION_PADDING_BOTTOM, left: 0, right: 0 }
+			});
 		});
 	}
 
@@ -200,15 +484,17 @@
 		if (!map || !embedded) {
 			return;
 		}
-		map.easeTo({
-			bearing: 0,
-			padding: { top: 0, bottom: 0, left: 0, right: 0 },
-			duration: 400
+		withProgrammaticCameraMove(() => {
+			map!.easeTo({
+				bearing: 0,
+				padding: { top: 0, bottom: 0, left: 0, right: 0 },
+				duration: 400
+			});
 		});
 	}
 
-	function syncNorthUpCamera(): void {
-		if (!map || !embedded || headingLock || userManualPan) {
+	function syncCenterFollowCamera(): void {
+		if (!map || !embedded || userManualPan) {
 			return;
 		}
 
@@ -217,12 +503,22 @@
 			return;
 		}
 
-		map.jumpTo({
-			center: [userPos.longitude, userPos.latitude],
-			bearing: 0,
-			zoom: Math.max(map.getZoom(), NAVIGATION_ZOOM),
-			pitch: PITCH_TOPDOWN
+		withProgrammaticCameraMove(() => {
+			map!.jumpTo({
+				center: [userPos.longitude, userPos.latitude],
+				bearing: 0,
+				zoom: Math.max(map!.getZoom(), NAVIGATION_ZOOM),
+				pitch: PITCH_TOPDOWN
+			});
 		});
+	}
+
+	function syncNorthUpCamera(): void {
+		if (!map || !embedded || headingLock || userManualPan) {
+			return;
+		}
+
+		syncCenterFollowCamera();
 	}
 
 	function syncSightLine(): void {
@@ -232,14 +528,25 @@
 		if (!source) return;
 
 		const userPos = userPositionState.position;
-		if (isNavigationMode() && userPos && deviceHeading !== null) {
+		const heading = deviceHeading;
+		const signature =
+			isNavigationMode() && userPos && heading !== null
+				? `${userPos.longitude}|${userPos.latitude}|${normalizeHeading360(heading)}`
+				: 'empty';
+
+		if (lastSightLineSignature === signature) {
+			return;
+		}
+		lastSightLineSignature = signature;
+
+		if (isNavigationMode() && userPos && heading !== null) {
 			source.setData({
 				type: 'FeatureCollection',
 				features: [
 					createSightLine(
 						userPos.longitude,
 						userPos.latitude,
-						normalizeHeading360(deviceHeading)
+						normalizeHeading360(heading)
 					)
 				]
 			});
@@ -303,7 +610,9 @@
 
 	function setViewMode(next: ViewMode): void {
 		viewMode = next;
-		map?.easeTo({ pitch: getPitch(), duration: 400 });
+		withProgrammaticCameraMove(() => {
+			map!.easeTo({ pitch: getPitch(), duration: 400 });
+		});
 	}
 
 	function escapeHtml(text: string): string {
@@ -315,7 +624,7 @@
 	}
 
 	function buildPopupHtml(tree: Tree): string {
-		const link = `${base}/tree/${tree.id}`;
+		const link = `${base}/tree/${encodeURIComponent(tree.id)}`;
 		const outdoor = appearanceSettingsState.outdoorMode;
 		const secondaryColor = outdoor ? '#000000' : '#374151';
 		const mutedColor = outdoor ? '#000000' : '#6b7280';
@@ -332,10 +641,7 @@
 
 	function createTreeMarkerElement(): HTMLDivElement {
 		const el = document.createElement('div');
-		const outdoor = appearanceSettingsState.outdoorMode;
-		el.style.cssText = outdoor
-			? 'background:#000000;width:16px;height:16px;border-radius:50%;border:3px solid #ffffff;box-shadow:none;'
-			: 'background:#2d4a2d;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);';
+		el.style.cssText = treeMarkerCss(appearanceSettingsState.outdoorMode);
 		return el;
 	}
 
@@ -357,10 +663,7 @@
 
 	function createFocusCenterMarkerElement(): HTMLDivElement {
 		const el = document.createElement('div');
-		const outdoor = appearanceSettingsState.outdoorMode;
-		el.style.cssText = outdoor
-			? 'background:#000000;width:16px;height:16px;border-radius:50%;border:3px solid #ffffff;box-shadow:none;'
-			: 'background:#2d4a2d;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);';
+		el.style.cssText = focusCenterMarkerCss(appearanceSettingsState.outdoorMode);
 		return el;
 	}
 
@@ -407,33 +710,31 @@
 
 	function createParkingMarkerElement(): HTMLDivElement {
 		const el = document.createElement('div');
-		const outdoor = appearanceSettingsState.outdoorMode;
-		el.style.cssText = outdoor
-			? 'background:#000000;width:18px;height:18px;border-radius:50%;border:3px solid #ffffff;box-shadow:none;'
-			: 'background:#ea580c;width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 1px 6px rgba(0,0,0,0.35);';
+		el.style.cssText = parkingMarkerCss(appearanceSettingsState.outdoorMode);
 		return el;
 	}
 
 	function refreshMapAppearance(): void {
+		const outdoor = appearanceSettingsState.outdoorMode;
 		for (const [id, marker] of markers) {
 			const tree = getTreeById(id);
 			if (!tree) continue;
-			marker.getElement().style.cssText = createTreeMarkerElement().style.cssText;
+			marker.getElement().style.cssText = treeMarkerCss(outdoor);
 			popups.get(id)?.setHTML(buildPopupHtml(tree));
 		}
 
 		if (userMarker) {
 			userMarker.remove();
 			userMarker = undefined;
+			lastUserLngLat = '';
 		}
 
 		if (parkingMarker) {
-			parkingMarker.getElement().style.cssText = createParkingMarkerElement().style.cssText;
+			parkingMarker.getElement().style.cssText = parkingMarkerCss(outdoor);
 		}
 
 		if (focusCenterMarker) {
-			focusCenterMarker.getElement().style.cssText =
-				createFocusCenterMarkerElement().style.cssText;
+			focusCenterMarker.getElement().style.cssText = focusCenterMarkerCss(outdoor);
 		}
 	}
 
@@ -495,7 +796,7 @@
 	function syncTreeMarkers(): void {
 		if (!map) return;
 
-		const gpsTrees = treesWithGps();
+		const gpsTrees = getAccessibleTrees(treesWithGps());
 		const currentIds = new Set(gpsTrees.map((tree) => tree.id));
 
 		for (const [id, marker] of markers) {
@@ -503,6 +804,7 @@
 				marker.remove();
 				markers.delete(id);
 				treeMarkerSyncKeys.delete(id);
+				markerLngLatSignatures.delete(id);
 				popups.get(id)?.remove();
 				popups.delete(id);
 			}
@@ -536,9 +838,10 @@
 					.addTo(map);
 				markers.set(tree.id, marker);
 				treeMarkerSyncKeys.set(tree.id, treeMarkerSyncKey(tree));
+				markerLngLatSignatures.set(tree.id, lngLatSignature(lngLat[0], lngLat[1]));
 			} else {
 				const syncKey = treeMarkerSyncKey(tree);
-				marker.setLngLat(lngLat);
+				setMarkerLngLat(marker, tree.id, lngLat);
 				if (treeMarkerSyncKeys.get(tree.id) !== syncKey) {
 					treeMarkerSyncKeys.set(tree.id, syncKey);
 					popups.get(tree.id)?.setHTML(buildPopupHtml(tree));
@@ -546,8 +849,16 @@
 			}
 		}
 
-		const source = map.getSource('accuracy-circles') as GeoJSONSource | undefined;
-		source?.setData(getAccuracyCirclesGeoJson(gpsTrees));
+		const accuracySignature = gpsTrees
+			.filter((tree) => tree.latitude !== null && tree.longitude !== null)
+			.map((tree) => `${tree.id}:${accuracyCircleSyncKey(tree)}`)
+			.sort()
+			.join(';');
+		if (lastAccuracyCirclesSignature !== accuracySignature) {
+			lastAccuracyCirclesSignature = accuracySignature;
+			const source = map.getSource('accuracy-circles') as GeoJSONSource | undefined;
+			source?.setData(getAccuracyCirclesGeoJson(gpsTrees));
+		}
 	}
 
 	function syncApproachLine(): void {
@@ -570,6 +881,16 @@
 			targetLat = focusCenter.latitude;
 		}
 
+		const signature =
+			userPos && targetLng !== null && targetLat !== null
+				? `${userPos.longitude}|${userPos.latitude}|${targetLng}|${targetLat}`
+				: 'empty';
+
+		if (lastApproachLineSignature === signature) {
+			return;
+		}
+		lastApproachLineSignature = signature;
+
 		if (userPos && targetLng !== null && targetLat !== null) {
 			source.setData({
 				type: 'FeatureCollection',
@@ -588,17 +909,21 @@
 		if (!focusCenter) {
 			focusCenterMarker?.remove();
 			focusCenterMarker = undefined;
+			lastFocusCenterLngLat = '';
 			return;
 		}
 
 		const lngLat: [number, number] = [focusCenter.longitude, focusCenter.latitude];
+		const signature = lngLatSignature(lngLat[0], lngLat[1]);
 		if (!focusCenterMarker) {
 			focusCenterMarker = new maplibregl.Marker({
 				element: createFocusCenterMarkerElement()
 			})
 				.setLngLat(lngLat)
 				.addTo(map);
-		} else {
+			lastFocusCenterLngLat = signature;
+		} else if (lastFocusCenterLngLat !== signature) {
+			lastFocusCenterLngLat = signature;
 			focusCenterMarker.setLngLat(lngLat);
 		}
 	}
@@ -611,6 +936,15 @@
 
 		const parking = parkingStore.position;
 		const userPos = userPositionState.position;
+		const signature =
+			parking && userPos
+				? `${userPos.longitude}|${userPos.latitude}|${parking.longitude}|${parking.latitude}`
+				: 'empty';
+
+		if (lastParkingApproachSignature === signature) {
+			return;
+		}
+		lastParkingApproachSignature = signature;
 
 		if (parking && userPos) {
 			source.setData({
@@ -636,6 +970,7 @@
 		if (!parking) {
 			parkingMarker?.remove();
 			parkingMarker = undefined;
+			lastParkingLngLat = '';
 			return;
 		}
 
@@ -644,8 +979,13 @@
 			parkingMarker = new maplibregl.Marker({ element: createParkingMarkerElement() })
 				.setLngLat(lngLat)
 				.addTo(map);
+			lastParkingLngLat = lngLatSignature(lngLat[0], lngLat[1]);
 		} else {
-			parkingMarker.setLngLat(lngLat);
+			const signature = lngLatSignature(lngLat[0], lngLat[1]);
+			if (lastParkingLngLat !== signature) {
+				lastParkingLngLat = signature;
+				parkingMarker.setLngLat(lngLat);
+			}
 		}
 	}
 
@@ -656,6 +996,7 @@
 		if (!userPos) {
 			userMarker?.remove();
 			userMarker = undefined;
+			lastUserLngLat = '';
 			return;
 		}
 
@@ -668,8 +1009,13 @@
 			})
 				.setLngLat(lngLat)
 				.addTo(map);
+			lastUserLngLat = lngLatSignature(lngLat[0], lngLat[1]);
 		} else {
-			userMarker.setLngLat(lngLat);
+			const signature = lngLatSignature(lngLat[0], lngLat[1]);
+			if (lastUserLngLat !== signature) {
+				lastUserLngLat = signature;
+				userMarker.setLngLat(lngLat);
+			}
 		}
 
 		if (usesHeadingConeMarker()) {
@@ -681,22 +1027,18 @@
 		if (!map) return;
 
 		const userPos = userPositionState.position;
+		if (tryPlayEmbeddedIntro()) {
+			return;
+		}
+
 		if (isNavigationMode() && userPos) {
 			syncNavigationCamera();
 			return;
 		}
 
-		const gpsTrees = treesWithGps();
+		const gpsTrees = getAccessibleTrees(treesWithGps());
 		const focusTree = focusTreeId ? getTreeById(focusTreeId) : undefined;
 		const focusMarker = focusTreeId ? markers.get(focusTreeId) : undefined;
-
-		if (embedded && focusCenter && userPos) {
-			const bounds = new maplibregl.LngLatBounds();
-			bounds.extend([userPos.longitude, userPos.latitude]);
-			bounds.extend([focusCenter.longitude, focusCenter.latitude]);
-			map.fitBounds(bounds, { padding: 60, maxZoom: 16, pitch: getPitch(), duration: 0 });
-			return;
-		}
 
 		if (
 			focusTree &&
@@ -704,18 +1046,17 @@
 			focusTree.latitude !== null &&
 			focusTree.longitude !== null
 		) {
-			if (embedded && userPos) {
-				const bounds = new maplibregl.LngLatBounds();
-				bounds.extend([userPos.longitude, userPos.latitude]);
-				bounds.extend([focusTree.longitude, focusTree.latitude]);
-				map.fitBounds(bounds, { padding: 60, maxZoom: 16, pitch: getPitch(), duration: 800 });
-			} else {
+			const focusLatitude = focusTree.latitude;
+			const focusLongitude = focusTree.longitude;
+			if (!embedded) {
 				pendingFocusPopupMarker = undefined;
-				map.flyTo({
-					center: [focusTree.longitude, focusTree.latitude],
-					zoom: 16,
-					pitch: getPitch(),
-					duration: FOCUS_FLY_DURATION_MS
+				withProgrammaticCameraMove(() => {
+					map!.flyTo({
+						center: [focusLongitude, focusLatitude],
+						zoom: 16,
+						pitch: getPitch(),
+						duration: FOCUS_FLY_DURATION_MS
+					});
 				});
 				pendingFocusPopupMarker = focusMarker;
 			}
@@ -726,17 +1067,23 @@
 					bounds.extend([tree.longitude, tree.latitude]);
 				}
 			}
-			map.fitBounds(bounds, { padding: 40, maxZoom: 14 });
+			withProgrammaticCameraMove(() => {
+				map!.fitBounds(bounds, { padding: 40, maxZoom: 14 });
+			});
 		} else if (gpsTrees.length === 1) {
 			const tree = gpsTrees[0];
-			map.flyTo({
-				center: [tree.longitude!, tree.latitude!],
-				zoom: 14,
-				pitch: getPitch(),
-				duration: 800
+			withProgrammaticCameraMove(() => {
+				map!.flyTo({
+					center: [tree.longitude!, tree.latitude!],
+					zoom: 14,
+					pitch: getPitch(),
+					duration: 800
+				});
 			});
 		} else {
-			map.flyTo({ center: defaultCenter, zoom: defaultZoom, pitch: getPitch(), duration: 800 });
+			withProgrammaticCameraMove(() => {
+				map!.flyTo({ center: defaultCenter, zoom: defaultZoom, pitch: getPitch(), duration: 800 });
+			});
 		}
 	}
 
@@ -752,7 +1099,13 @@
 		setCadastreLayerVisibility(map, next);
 	}
 
-	function applyRecenterCamera(position: UserPosition): void {
+	function setProtectedLayer(next: boolean): void {
+		showProtectedLayer = next;
+		if (!map) return;
+		setProtectedAreasLayerVisibility(map, next);
+	}
+
+	function applyRecenterCamera(position: UserPosition, duration = 600): void {
 		if (!map) return;
 
 		const bearing =
@@ -760,50 +1113,47 @@
 				? normalizeHeading360(deviceHeading)
 				: 0;
 
-		map.easeTo({
-			center: [position.longitude, position.latitude],
-			zoom: Math.max(map.getZoom(), isNavigationMode() ? NAVIGATION_ZOOM : USER_RECENTER_ZOOM),
-			bearing,
-			pitch: getPitch(),
-			padding: isNavigationMode()
-				? { top: 0, bottom: NAVIGATION_PADDING_BOTTOM, left: 0, right: 0 }
-				: { top: 0, bottom: 0, left: 0, right: 0 },
-			duration: 600,
-			essential: true
+		withProgrammaticCameraMove(() => {
+			map!.easeTo({
+				center: [position.longitude, position.latitude],
+				zoom: Math.max(map!.getZoom(), isNavigationMode() ? NAVIGATION_ZOOM : USER_RECENTER_ZOOM),
+				bearing,
+				pitch: getPitch(),
+				padding: isNavigationMode()
+					? { top: 0, bottom: NAVIGATION_PADDING_BOTTOM, left: 0, right: 0 }
+					: { top: 0, bottom: 0, left: 0, right: 0 },
+				duration,
+				essential: true
+			});
 		});
 	}
 
-	async function recenterOnUser(): Promise<void> {
+	async function handleRecenterButton(): Promise<void> {
 		if (!map) return;
+
+		if (followUser) {
+			followUser = false;
+			lastFollowCameraPosition = null;
+			return;
+		}
+
+		followUser = true;
+		userManualPan = false;
+		lastFollowCameraPosition = null;
 
 		const cached = userPositionState.position;
 		if (cached) {
 			void hapticSuccess();
 			applyRecenterCamera(cached);
-		}
-
-		if (externalGpsWatch) {
-			if (!cached) {
-				const fresh = await requestCurrentPosition();
-				if (fresh) {
-					void hapticSuccess();
-					applyRecenterCamera(fresh);
-				}
-			}
 			return;
 		}
 
 		const fresh = await requestCurrentPosition();
-		if (
-			fresh &&
-			(!cached ||
-				fresh.latitude !== cached.latitude ||
-				fresh.longitude !== cached.longitude)
-		) {
+		if (fresh) {
+			void hapticSuccess();
 			applyRecenterCamera(fresh);
-			if (!cached) {
-				void hapticSuccess();
-			}
+		} else {
+			followUser = false;
 		}
 	}
 
@@ -816,7 +1166,7 @@
 		const zoomSet = new Set<number>();
 		let totalTiles = 0;
 
-		for (const layerId of ['plan', 'ortho'] as IgnLayerId[]) {
+		for (const layerId of getDownloadLayerIds()) {
 			const layer = getIgnLayerConfig(layerId);
 			const zoomLevels = getDownloadZoomLevels(map.getZoom(), layer.maxZoom);
 			for (const zoom of zoomLevels) {
@@ -829,8 +1179,18 @@
 		downloadTileCount = totalTiles;
 	}
 
+	function scheduleDownloadEstimateRefresh(): void {
+		if (downloadEstimateDebounceTimer) {
+			clearTimeout(downloadEstimateDebounceTimer);
+		}
+		downloadEstimateDebounceTimer = setTimeout(() => {
+			downloadEstimateDebounceTimer = null;
+			refreshDownloadEstimate();
+		}, MAP_DOWNLOAD_ESTIMATE_DEBOUNCE_MS);
+	}
+
 	function startDownloadSelection(): void {
-		if (!map || !onlineState.online || downloadingZone) {
+		if (!map || !canUseApi('ignMap') || downloadingZone) {
 			return;
 		}
 		downloadSelectionMode = true;
@@ -840,6 +1200,8 @@
 	function cancelDownloadSelection(): void {
 		downloadSelectionMode = false;
 		downloadProgress = '';
+		downloadAbortController?.abort();
+		downloadAbortController = null;
 	}
 
 	async function refreshCacheStats(): Promise<void> {
@@ -847,36 +1209,119 @@
 		cacheCount = stats.count;
 	}
 
+	function scheduleDeferredCacheStats(): void {
+		const run = () => {
+			void refreshCacheStats();
+		};
+		if (typeof requestIdleCallback !== 'undefined') {
+			requestIdleCallback(run, { timeout: 10_000 });
+			return;
+		}
+		setTimeout(run, 0);
+	}
+
 	async function handleDownloadZone(): Promise<void> {
-		if (!map || !onlineState.online || downloadingZone) {
+		if (!map || !canUseApi('ignMap') || downloadingZone) {
 			return;
 		}
 
 		downloadingZone = true;
 		downloadProgress = m.map_preparing();
 		tileError = '';
+		downloadAbortController?.abort();
+		const abortController = new AbortController();
+		downloadAbortController = abortController;
+		let lastProgressUpdateAt = 0;
+		let lastProgressDone = 0;
 
 		try {
 			const bounds = boundsFromMapCenter(map);
 			let fetched = 0;
 			let failed = 0;
 
-			for (const layerId of ['plan', 'ortho'] as IgnLayerId[]) {
-				const layer = getIgnLayerConfig(layerId);
+			const userPos = userPositionState.position;
+			const downloadCountry = userPos
+				? resolveCountry(userPos.latitude, userPos.longitude)
+				: resolveCountry(defaultCenter[1], defaultCenter[0]);
+			const mapProvider = getMapProvider(downloadCountry);
+			const useIgnDownload = downloadCountry === 'FR';
+
+			type DownloadLayer = {
+				label: string;
+				maxZoom: number;
+				buildUrl: (z: number, x: number, y: number) => string;
+			};
+
+			const downloadLayers: DownloadLayer[] = [];
+			if (useIgnDownload) {
+				for (const layerId of getDownloadLayerIds()) {
+					const layer = getIgnLayerConfig(layerId);
+					downloadLayers.push({
+						label:
+							layerId === 'plan'
+								? m.map_layer_plan()
+								: layerId === 'ortho'
+									? m.map_layer_satellite()
+									: m.map_layer_relief(),
+						maxZoom: layer.maxZoom,
+						buildUrl: (z, x, y) => buildIgnWmtsUrl(layer.layer, layer.format, z, x, y)
+					});
+				}
+			} else {
+				const pushProviderLayer = (label: string, config: MapLayerConfig | null | undefined) => {
+					if (!config?.tiles?.[0]) return;
+					const template = config.tiles[0];
+					downloadLayers.push({
+						label,
+						maxZoom: config.maxZoom,
+						buildUrl: (z, x, y) => expandTileUrlTemplate(template, z, x, y)
+					});
+				};
+				pushProviderLayer(m.map_layer_plan(), mapProvider.plan);
+				pushProviderLayer(m.map_layer_satellite(), mapProvider.ortho);
+				if (basemap === 'satellite') {
+					pushProviderLayer(m.map_layer_relief(), mapProvider.hillshade);
+				}
+			}
+
+			for (const layer of downloadLayers) {
+				if (abortController.signal.aborted) {
+					break;
+				}
+
 				const zoomLevels = getDownloadZoomLevels(map.getZoom(), layer.maxZoom);
-				const label = layerId === 'plan' ? m.map_layer_plan() : m.map_layer_satellite();
+				const label = layer.label;
 
 				const result = await prefetchTilesForBounds(
 					bounds,
 					zoomLevels,
-					(z, x, y) => buildIgnWmtsUrl(layer.layer, layer.format, z, x, y),
-					(done, total) => {
-						downloadProgress = m.map_tile_progress({ layer: label, done, total });
+					layer.buildUrl,
+					{
+						signal: abortController.signal,
+						onProgress: (done, total) => {
+							const now = Date.now();
+							if (
+								done < total &&
+								done - lastProgressDone < MAP_DOWNLOAD_PROGRESS_TILE_STEP &&
+								now - lastProgressUpdateAt < MAP_DOWNLOAD_PROGRESS_INTERVAL_MS
+							) {
+								return;
+							}
+							lastProgressUpdateAt = now;
+							lastProgressDone = done;
+							downloadProgress = m.map_tile_progress({ layer: label, done, total });
+						}
 					}
 				);
 
 				fetched += result.fetched;
 				failed += result.failed;
+			}
+
+			if (abortController.signal.aborted) {
+				downloadProgress = '';
+				downloadSelectionMode = false;
+				return;
 			}
 
 			downloadProgress =
@@ -886,19 +1331,45 @@
 			await refreshCacheStats();
 			downloadSelectionMode = false;
 		} catch (error) {
+			if (error instanceof DOMException && error.name === 'AbortError') {
+				downloadProgress = '';
+				downloadSelectionMode = false;
+				return;
+			}
 			tileError =
 				error instanceof Error ? error.message : m.map_download_failed();
 		} finally {
 			downloadingZone = false;
+			if (downloadAbortController === abortController) {
+				downloadAbortController = null;
+			}
 		}
 	}
+
+	const mapParkingProximity = $derived.by(() =>
+		resolveMapParkingProximity(
+			parkingStore.position,
+			userPositionState.position?.latitude ?? null,
+			userPositionState.position?.longitude ?? null
+		)
+	);
+
+	const mapTabGpsProfile = $derived.by(() =>
+		resolveMapTabGpsProfileFromProximity({
+			embedded,
+			headingLock,
+			parking: parkingStore.position,
+			proximity: mapParkingProximity
+		})
+	);
 
 	$effect(() => {
 		if (externalGpsWatch) {
 			return;
 		}
 
-		const profile = embedded && headingLock ? 'navigation' : 'watch';
+		const profile = mapTabGpsProfile;
+
 		void requestCurrentPosition(profile);
 		const release = acquireLocationWatch('topo-map', profile);
 		return () => release();
@@ -906,10 +1377,17 @@
 
 	onMount(() => {
 		if (!mapContainer) return;
+		const container = mapContainer;
 
+		const userPos = userPositionState.position;
+		const styleLat = userPos?.latitude ?? defaultCenter[1];
+		const styleLng = userPos?.longitude ?? defaultCenter[0];
+		const styleCountry = resolveCountry(styleLat, styleLng);
+		lastMapStyleCountry = styleCountry;
+		lastMapStyleKey = styleKeyFor(styleLat, styleLng);
 		const instance = new maplibregl.Map({
-			container: mapContainer,
-			style: createIgnMapStyle(),
+			container,
+			style: createMapStyle(styleCountry, { latitude: styleLat, longitude: styleLng }),
 			center: defaultCenter,
 			zoom: defaultZoom,
 			pitch: PITCH_TOPDOWN,
@@ -923,48 +1401,83 @@
 		);
 		instance.on('error', (event) => {
 			const sourceId = (event as { sourceId?: string }).sourceId ?? '';
-			const isIgnSource = sourceId.startsWith('ign-');
 			const message = event.error?.message ?? '';
-			if (!isIgnSource && !message.toLowerCase().includes('tile')) {
+			const isTileish =
+				sourceId.startsWith('ign-') || message.toLowerCase().includes('tile');
+			if (!isTileish) return;
+
+			if (sourceId === 'ign-protected') {
+				tileError = m.map_tiles_error_protected();
 				return;
 			}
-			tileError = m.map_tiles_error();
+			if (sourceId === 'ign-cadastre') {
+				tileError = m.map_tiles_error_cadastre();
+				return;
+			}
+			// Basemap / hillshade failures — keep a generic map-tiles message (not "IGN").
+			if (
+				sourceId === 'ign-plan' ||
+				sourceId === 'ign-ortho' ||
+				sourceId === 'ign-hillshade' ||
+				sourceId.startsWith('ign-')
+			) {
+				tileError = m.map_tiles_error();
+			}
 		});
 		instance.on('data', (event) => {
 			const dataEvent = event as { sourceId?: string; isSourceLoaded?: boolean };
-			if (dataEvent.sourceId?.startsWith('ign-') && dataEvent.isSourceLoaded) {
+			if (
+				dataEvent.isSourceLoaded &&
+				(dataEvent.sourceId === 'ign-plan' ||
+					dataEvent.sourceId === 'ign-ortho' ||
+					dataEvent.sourceId === 'ign-protected' ||
+					dataEvent.sourceId === 'ign-cadastre')
+			) {
+				// Clear banner only when the failing source recovers; overlays shouldn't
+				// wipe a basemap error and vice versa — clear whenever any ign source loads.
 				tileError = '';
 			}
 		});
 		instance.on('load', () => {
 			map = instance;
 			instance.resize();
-			const { width, height } = mapContainer.getBoundingClientRect();
+			const { width, height } = container.getBoundingClientRect();
 			lastObservedMapWidth = width;
 			lastObservedMapHeight = height;
+			// Align basemap tiles to camera center once sources exist (setTiles-safe).
+			const center = instance.getCenter();
+			applyMapStyleForCenter(instance, center.lat, center.lng);
 			requestAnimationFrame(() => {
 				mapReady = true;
 			});
 		});
 		instance.on('moveend', () => {
-			refreshDownloadEstimate();
+			scheduleDownloadEstimateRefresh();
 			if (!embedded && pendingFocusPopupMarker) {
 				openPendingFocusPopup();
 			}
+			const center = instance.getCenter();
+			scheduleMapStyleForCenter(instance, center.lat, center.lng);
 		});
-		instance.on('zoomend', () => refreshDownloadEstimate());
+		instance.on('zoomend', () => scheduleDownloadEstimateRefresh());
 
-		const handleUserPan = () => {
-			if (embedded) {
-				userManualPan = true;
+		const handleUserPan = (
+			event: maplibregl.MapLibreEvent<MouseEvent | TouchEvent | WheelEvent | undefined>
+		) => {
+			if (introPlaying || suppressFollowPanDepth > 0) {
+				return;
 			}
+			if (!event.originalEvent) {
+				return;
+			}
+			userManualPan = true;
+			followUser = false;
+			lastFollowCameraPosition = null;
 		};
-		if (embedded) {
-			instance.on('dragstart', handleUserPan);
-			instance.on('zoomstart', handleUserPan);
-			instance.on('rotatestart', handleUserPan);
-			instance.on('pitchstart', handleUserPan);
-		}
+		instance.on('dragstart', handleUserPan);
+		instance.on('zoomstart', handleUserPan);
+		instance.on('rotatestart', handleUserPan);
+		instance.on('pitchstart', handleUserPan);
 
 		const handleMapClick = (event: maplibregl.MapMouseEvent) => {
 			if (embedded || downloadSelectionMode) return;
@@ -975,11 +1488,9 @@
 		}
 
 		const resizeObserver = new ResizeObserver(() => {
-			if (mapContainer) {
-				scheduleMapContainerResize(instance, mapContainer);
-			}
+			scheduleMapContainerResize(instance, container);
 		});
-		resizeObserver.observe(mapContainer);
+		resizeObserver.observe(container);
 
 		return () => {
 			resizeObserver.disconnect();
@@ -994,6 +1505,10 @@
 			if (cadastreDebounceTimer) {
 				clearTimeout(cadastreDebounceTimer);
 				cadastreDebounceTimer = null;
+			}
+			if (styleSwitchTimer) {
+				clearTimeout(styleSwitchTimer);
+				styleSwitchTimer = null;
 			}
 			pendingFocusPopupMarker = undefined;
 			mapReady = false;
@@ -1015,12 +1530,10 @@
 			if (!embedded) {
 				instance.off('click', handleMapClick);
 			}
-			if (embedded) {
-				instance.off('dragstart', handleUserPan);
-				instance.off('zoomstart', handleUserPan);
-				instance.off('rotatestart', handleUserPan);
-				instance.off('pitchstart', handleUserPan);
-			}
+			instance.off('dragstart', handleUserPan);
+			instance.off('zoomstart', handleUserPan);
+			instance.off('rotatestart', handleUserPan);
+			instance.off('pitchstart', handleUserPan);
 			map = undefined;
 			instance.remove();
 		};
@@ -1045,8 +1558,9 @@
 		syncEmbeddedApproachStyle();
 		if (!embedded && map) {
 			setCadastreLayerVisibility(map, showCadastreLayer);
+			setProtectedAreasLayerVisibility(map, showProtectedLayer);
 		}
-		void refreshCacheStats();
+		scheduleDeferredCacheStats();
 	});
 
 	$effect(() => {
@@ -1061,11 +1575,22 @@
 
 	$effect(() => {
 		if (!mapReady || !map) return;
-		void deviceHeading;
+		void headingLock;
 		void userPositionState.position;
 		void focusTreeId;
 		void focusCenter;
 		scheduleUserPositionSync();
+		if (followUser) {
+			syncFollowCamera();
+		}
+	});
+
+	$effect(() => {
+		if (!mapReady || !map || !embedded || introPlayed || introPlaying) return;
+		void userPositionState.position;
+		void focusTreeId;
+		void focusCenter;
+		tryPlayEmbeddedIntro();
 	});
 
 	$effect(() => {
@@ -1105,7 +1630,7 @@
 	$effect(() => {
 		if (!mapReady || !map) return;
 		void basemap;
-		refreshDownloadEstimate();
+		scheduleDownloadEstimateRefresh();
 	});
 
 	$effect(() => {
@@ -1116,32 +1641,29 @@
 		syncUserMarker();
 	});
 
-	let gpsCount = $derived(treesWithGps().length);
+	let gpsCount = $derived(getAccessibleTrees(treesWithGps()).length);
 	let canRecenter = $derived(mapReady && userPositionState.position !== null);
 
 	const cadastreTarget = $derived.by(() => {
 		if (embedded) {
-			if (focusTreeId) {
-				const tree = getTreeById(focusTreeId);
-				if (tree?.latitude != null && tree.longitude != null) {
-					return {
-						latitude: tree.latitude,
-						longitude: tree.longitude,
-						stored: tree.cadastreInfo
-					};
-				}
+			if (!focusTreeId) {
+				return null;
 			}
 
-			const userPos = userPositionState.position;
-			if (userPos) {
-				return {
-					latitude: userPos.latitude,
-					longitude: userPos.longitude,
-					stored: null
-				};
+			const tree = getTreeById(focusTreeId);
+			if (
+				tree?.latitude == null ||
+				tree.longitude == null ||
+				!tree.cadastreInfo
+			) {
+				return null;
 			}
 
-			return null;
+			return {
+				latitude: tree.latitude,
+				longitude: tree.longitude,
+				stored: tree.cadastreInfo
+			};
 		}
 
 		if (!mapCadastreSelection) {
@@ -1162,7 +1684,7 @@
 	);
 
 	const cadastreBannerLoading = $derived(
-		onlineState.online && cadastreLookup.loading && cadastreDisplay === null
+		canUseApi('ignCadastre') && cadastreLookup.loading && cadastreDisplay === null
 	);
 
 	const cadastreSpecies = $derived.by(() => {
@@ -1176,10 +1698,11 @@
 	});
 
 	const showCadastreBanner = $derived(
-		(cadastreBannerLoading || cadastreDisplay !== null) &&
+		(embedded
+			? cadastreDisplay !== null
+			: (cadastreBannerLoading || cadastreDisplay !== null) && mapCadastreSelection !== null) &&
 			cadastreTargetKey !== '' &&
-			cadastreTargetKey !== cadastreDismissedKey &&
-			(embedded || mapCadastreSelection !== null)
+			cadastreTargetKey !== cadastreDismissedKey
 	);
 
 	function dismissCadastreBanner(): void {
@@ -1233,7 +1756,6 @@
 
 		if (embedded) {
 			const target = cadastreTarget;
-			const online = onlineState.online;
 
 			if (!target) {
 				resetCadastreLookup();
@@ -1242,37 +1764,10 @@
 
 			cadastreLookup.latitude = target.latitude;
 			cadastreLookup.longitude = target.longitude;
-			cadastreLookup.data = target.stored ?? null;
-
-			if (!online && target.stored) {
-				cadastreLookup.loading = false;
-				return;
-			}
-
-			if (target.stored) {
-				cadastreLookup.loading = false;
-				cadastreLookup.data = target.stored;
-				return;
-			}
-
-			if (!online) {
-				cadastreLookup.loading = false;
-				cadastreLookup.data = target.stored ?? null;
-				return;
-			}
-
-			cadastreLookup.loading = true;
-
-			cadastreDebounceTimer = setTimeout(() => {
-				void resolveCadastre(target.latitude, target.longitude, online, target.stored ?? null);
-			}, 500);
-
-			return () => {
-				if (cadastreDebounceTimer) {
-					clearTimeout(cadastreDebounceTimer);
-					cadastreDebounceTimer = null;
-				}
-			};
+			cadastreLookup.data = target.stored;
+			cadastreLookup.loading = false;
+			cadastreLookup.error = '';
+			return;
 		}
 
 		const selection = mapCadastreSelection;
@@ -1281,7 +1776,7 @@
 			return;
 		}
 
-		const online = onlineState.online;
+		const online = canUseApi('ignCadastre');
 		cadastreLookup.latitude = selection.latitude;
 		cadastreLookup.longitude = selection.longitude;
 		cadastreLookup.data = selection.stored ?? null;
@@ -1320,6 +1815,12 @@
 		void showCadastreLayer;
 		setCadastreLayerVisibility(map, showCadastreLayer);
 	});
+
+	$effect(() => {
+		if (!mapReady || !map || embedded) return;
+		void showProtectedLayer;
+		setProtectedAreasLayerVisibility(map, showProtectedLayer);
+	});
 </script>
 
 <div class="relative h-full min-h-0 w-full flex-1">
@@ -1331,7 +1832,7 @@
 			<div class="flex shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-sm backdrop-blur-sm">
 				<button
 					type="button"
-					class="px-2.5 py-1.5 text-[11px] font-semibold transition {basemap === 'topo'
+					class="px-3 py-2 text-xs font-semibold transition {basemap === 'topo'
 						? 'bg-forest-800 text-white'
 						: 'text-forest-900'}"
 					onclick={() => setBasemap('topo')}
@@ -1340,7 +1841,7 @@
 				</button>
 				<button
 					type="button"
-					class="px-2.5 py-1.5 text-[11px] font-semibold transition {basemap === 'satellite'
+					class="px-3 py-2 text-xs font-semibold transition {basemap === 'satellite'
 						? 'bg-forest-800 text-white'
 						: 'text-forest-900'}"
 					onclick={() => setBasemap('satellite')}
@@ -1351,47 +1852,70 @@
 			<div class="flex shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-sm backdrop-blur-sm">
 				<button
 					type="button"
-					class="px-2.5 py-1.5 text-[11px] font-semibold transition {showCadastreLayer
+					class="px-3 py-2 text-xs font-semibold transition {showCadastreLayer
 						? 'bg-forest-800 text-white'
 						: 'text-forest-900'}"
 					onclick={() => setCadastreLayer(!showCadastreLayer)}
-					disabled={!onlineState.online}
-					title={onlineState.online ? undefined : m.settings_offline_map_hint()}
+					disabled={!canUseApi('ignMap') || !cadastreOverlayAvailable}
+					title={!cadastreOverlayAvailable
+						? m.map_layer_cadastre_unavailable()
+						: !canUseApi('ignMap')
+							? onlineState.online
+								? getApiDisabledError('ignMap')
+								: m.settings_offline_map_hint()
+							: m.map_layer_cadastre_title()}
 				>
 					{m.map_layer_cadastre()}
+				</button>
+				<button
+					type="button"
+					class="px-3 py-2 text-xs font-semibold transition {showProtectedLayer
+						? 'bg-forest-800 text-white'
+						: 'text-forest-900'}"
+					onclick={() => setProtectedLayer(!showProtectedLayer)}
+					disabled={!canUseApi('ignMap') || !protectedOverlayAvailable}
+					title={!protectedOverlayAvailable
+						? undefined
+						: !canUseApi('ignMap')
+							? onlineState.online
+								? getApiDisabledError('ignMap')
+								: m.settings_offline_map_hint()
+							: m.map_layer_protected_title()}
+				>
+					{m.map_layer_protected()}
 				</button>
 			</div>
 			<div class="flex shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-sm backdrop-blur-sm">
 				<button
 					type="button"
-					class="px-2.5 py-1.5 text-[11px] font-semibold transition {viewMode === 'topdown'
+					class="px-3 py-2 text-xs font-semibold transition {viewMode === 'topdown'
 						? 'bg-forest-800 text-white'
 						: 'text-forest-900'}"
 					onclick={() => setViewMode('topdown')}
 				>
-					Dessus
+					{m.map_view_topdown()}
 				</button>
 				<button
 					type="button"
-					class="px-2.5 py-1.5 text-[11px] font-semibold transition {viewMode === 'oblique'
+					class="px-3 py-2 text-xs font-semibold transition {viewMode === 'oblique'
 						? 'bg-forest-800 text-white'
 						: 'text-forest-900'}"
 					onclick={() => setViewMode('oblique')}
 				>
-					Oblique
+					{m.map_view_oblique()}
 				</button>
 			</div>
-			{#if showCadastreLayer && onlineState.online}
+			{#if showCadastreLayer && cadastreOverlayAvailable && canUseApi('ignMap')}
 				<span
-					class="shrink-0 rounded-lg bg-white/90 px-2 py-1.5 text-[10px] text-gray-600 shadow-sm backdrop-blur-sm"
+					class="shrink-0 rounded-lg bg-white/90 px-2 py-1.5 text-[11px] text-gray-600 shadow-sm backdrop-blur-sm"
 				>
 					{m.map_cadastre_tap_hint()}
 				</span>
 			{/if}
-			{#if onlineState.online && !downloadSelectionMode}
+			{#if canUseApi('ignMap') && !downloadSelectionMode}
 				<button
 					type="button"
-					class="shrink-0 rounded-lg border border-forest-600/40 bg-forest-50/95 px-2.5 py-1.5 text-[11px] font-semibold text-forest-900 shadow-sm backdrop-blur-sm disabled:opacity-50"
+					class="shrink-0 rounded-lg border border-forest-600/40 bg-forest-50/95 px-3 py-2 text-xs font-semibold text-forest-900 shadow-sm backdrop-blur-sm disabled:opacity-50"
 					onclick={startDownloadSelection}
 					disabled={downloadingZone || !mapReady}
 				>
@@ -1400,7 +1924,7 @@
 			{/if}
 			{#if cacheCount > 0}
 				<span
-					class="shrink-0 rounded-lg bg-white/90 px-2 py-1.5 text-[10px] text-gray-600 shadow-sm backdrop-blur-sm"
+					class="shrink-0 rounded-lg bg-white/90 px-2 py-1.5 text-[11px] text-gray-600 shadow-sm backdrop-blur-sm"
 				>
 					{m.settings_tiles_count({ count: cacheCount })}
 				</span>
@@ -1420,18 +1944,17 @@
 	/>
 	{/if}
 
-	<div
-		class="map-recenter-control pointer-events-auto absolute right-2 z-50 {embedded
-			? 'map-recenter-control--embedded'
-			: ''}"
-	>
+	<div class="map-recenter-control pointer-events-auto absolute right-2 z-50">
 		<button
 			type="button"
-			use:nativeTap={{ onactivate: () => void recenterOnUser(), label: 'map-recenter' }}
-			class="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white/95 text-forest-800 shadow-sm backdrop-blur-sm transition active:scale-95 disabled:opacity-50"
+			use:nativeTap={{ onactivate: () => void handleRecenterButton(), label: 'map-recenter' }}
+			class="map-follow-toggle flex min-h-11 h-11 items-center justify-center gap-1.5 rounded-xl border px-3 text-sm font-semibold shadow-sm backdrop-blur-sm transition active:scale-[0.98] disabled:opacity-50 {followUser
+				? 'map-follow-toggle--active'
+				: 'border-gray-200 bg-white/95 text-forest-900'}"
 			disabled={!canRecenter}
-			aria-label={m.map_orient_north()}
-			title={m.map_north_position()}
+			aria-pressed={followUser}
+			aria-label={followUser ? m.map_follow_active() : m.map_follow_position()}
+			title={followUser ? m.map_unfollow_position() : m.map_follow_position()}
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
@@ -1439,13 +1962,16 @@
 				fill="none"
 				stroke="currentColor"
 				stroke-width="2"
-				class="h-5 w-5"
+				class="h-4 w-4 shrink-0"
 				aria-hidden="true"
 			>
 				<circle cx="12" cy="12" r="3" />
 				<path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round" />
 				<path d="M12 5l-1.5 4.5H12h1.5L12 5z" fill="currentColor" stroke="none" />
 			</svg>
+			<span class="whitespace-nowrap">
+				{followUser ? m.map_follow_short_active() : m.map_follow_short()}
+			</span>
 		</button>
 	</div>
 
@@ -1494,6 +2020,7 @@
 						species={cadastreSpecies}
 						latitude={cadastreTarget.latitude}
 						longitude={cadastreTarget.longitude}
+						scrollable
 						onclose={() => (vetoChecklistOpen = false)}
 					/>
 				</div>
@@ -1506,7 +2033,7 @@
 		<p
 			class="pointer-events-auto self-end max-w-[min(100%,18rem)] rounded bg-white/90 px-2 py-1 text-right text-[10px] leading-snug text-gray-600 shadow-sm"
 		>
-			{showCadastreLayer ? `${IGN_ATTRIBUTION} · ${CADASTRE_LAYER.attribution}` : IGN_ATTRIBUTION}
+			{mapAttribution}
 		</p>
 		<div class="pointer-events-auto w-full">
 			<ParkingPanel />

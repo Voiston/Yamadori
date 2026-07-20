@@ -133,6 +133,14 @@ export async function initAppearanceSettings(): Promise<void> {
 }
 
 export async function setOutdoorMode(enabled: boolean): Promise<void> {
+	if (enabled) {
+		const { disablePowerSavingMode, powerSavingModeState } = await import(
+			'$lib/stores/powerSavingMode.svelte'
+		);
+		if (powerSavingModeState.active) {
+			await disablePowerSavingMode();
+		}
+	}
 	appearanceSettingsState.outdoorMode = enabled;
 	if (enabled) {
 		appearanceSettingsState.darkMode = false;
@@ -162,6 +170,9 @@ export async function setAppLocale(locale: AppLocale): Promise<void> {
 	appearanceSettingsState.locale = locale;
 	applyParaglideLocale(locale);
 	await persistAppearanceSettings();
+	void import('$lib/utils/refreshLocationLabels').then((mod) =>
+		mod.refreshLocationLabelsForUiLocale(locale)
+	);
 }
 
 export async function restoreAppearanceSettings(settings: {
@@ -176,6 +187,9 @@ export async function restoreAppearanceSettings(settings: {
 	if (settings.locale && isValidLocale(settings.locale)) {
 		appearanceSettingsState.locale = settings.locale;
 		applyParaglideLocale(settings.locale);
+		void import('$lib/utils/refreshLocationLabels').then((mod) =>
+			mod.refreshLocationLabelsForUiLocale(settings.locale!)
+		);
 	}
 	if (appearanceSettingsState.outdoorMode && appearanceSettingsState.darkMode) {
 		appearanceSettingsState.darkMode = false;

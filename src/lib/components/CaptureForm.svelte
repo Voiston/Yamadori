@@ -2,14 +2,22 @@
 	import { DEFAULT_ASSESSMENT, type TreeAssessment, type VoiceNote } from '$lib/types/tree';
 	import type { ClimateHistory } from '$lib/types/climate';
 	import { DEFAULT_ENVIRONMENT_EXPOSURE, type EnvironmentExposure } from '$lib/types/environment';
-	import { addTree } from '$lib/stores/trees.svelte';
+	import { addTree, treeStore } from '$lib/stores/trees.svelte';
 	import { agriData } from '$lib/stores/agriData.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import { captureSettingsState } from '$lib/stores/captureSettings.svelte';
 	import { goHome } from '$lib/utils/app-navigation';
+	import { handlePostCaptureSaveNavigation } from '$lib/utils/capture-post-save';
+	import { releaseOnboardingUiLocks } from '$lib/utils/onboardingUi';
+	import {
+		advanceOnboardingPhase,
+		onboardingState,
+		setCaptureSavedDuringTutorial
+	} from '$lib/stores/onboarding.svelte';
 	import { fetchClimateHistory } from '$lib/utils/climate';
 	import { loadAgriData, resetAgriData } from '$lib/stores/agriData.svelte';
 	import { reverseGeocode } from '$lib/utils/geocoding';
-	import { lookupCadastre } from '$lib/utils/cadastre';
+	import { lookupCadastreForCoords } from '$lib/geo/providers/cadastre/dispatch';
 	import { scheduleCadastreBackfill } from '$lib/utils/cadastreBackfill';
 	import { ensureCapturePositionForSave } from '$lib/utils/capture-save-position';
 	import type { CadastreInfo } from '$lib/types/cadastre';
@@ -27,12 +35,10 @@
 	} from '$lib/utils/headingProvider';
 	import { magneticToTrueHeading } from '$lib/utils/haversine';
 	import { loadMagneticDeclinationDeg } from '$lib/utils/magneticDeclination';
-	import { haversineDistanceM } from '$lib/utils/haversine';
 	import GpsAccuracyBadge from './GpsAccuracyBadge.svelte';
 	import GpsStatusCompact from './GpsStatusCompact.svelte';
 	import { shouldConfirmGpsBeforeSave } from '$lib/utils/capture-gps-confirm';
 	import { formatAccuracy, isBetterAccuracy, isPoorAccuracy } from '$lib/utils/gps';
-	import { GPS_EXCELLENT_ACCURACY_THRESHOLD_M, type GpsProfile } from '$lib/utils/geo';
 	import {
 		getAndroidVolumeButtonHint,
 		getGpsCaptureReadyHint,
@@ -48,27 +54,59 @@
 		getSmoothedAltitudeMeters,
 		userPositionState
 	} from '$lib/utils/userPosition.svelte';
-	import { compressImageWithFallback } from '$lib/utils/photo';
-	import { getCaliberOptions, getNebariOptions } from '$lib/constants/assessment';
+	import { photoFileToStorageWithThumb, type PhotoEncoding } from '$lib/utils/photo';
+	import {
+		CAPTURE_AGRI_REFETCH_DISTANCE_M,
+		CAPTURE_ENRICHMENT_DEBOUNCE_MS,
+		CAPTURE_LOCATION_REFETCH_DISTANCE_M,
+		capturePositionKey,
+		shouldRefetchCapturePosition
+	} from '$lib/utils/capture-enrichment';
+	import {
+		createCaptureEnrichmentSession,
+		type CaptureEnrichmentRunResult
+	} from '$lib/utils/capture-enrichment-runner';
+	import { isCameraCaptureActive } from '$lib/utils/cameraCaptureSession';
+	import {
+		getBarkOptions,
+		getCaliberOptions,
+		getDeadwoodOptions,
+		getNebariOptions,
+		getSizeOptions
+	} from '$lib/constants/assessment';
 	import { speciesDisplayName } from '$lib/constants/species-i18n';
 	import * as m from '$lib/paraglide/messages.js';
 	import { getSpeciesSuggestionsForPosition } from '$lib/utils/species-suggestions';
 	import { onMount, tick, untrack } from 'svelte';
-	import { debugCounters, debugLog, resetVisitDebugCounters } from '$lib/utils/debug-log';
 	import { captureFormRoot } from '$lib/utils/native-touch';
-	import { isAndroidApp } from '$lib/utils/platform';
-	import { hapticSuccess } from '$lib/utils/haptics';
+	import { isAndroidApp, isNativeApp } from '$lib/utils/platform';
+	import { App } from '@capacitor/app';
+	import { showAppToast } from '$lib/stores/appToast.svelte';
+	import { hapticError } from '$lib/utils/haptics';
 	import { toYrsStoredSnapshot } from '$lib/utils/yrs';
 	import { startVolumeButtonWatch, stopVolumeButtonWatch } from '$lib/utils/volumeButtons';
 	import SpeciesAutocomplete from './SpeciesAutocomplete.svelte';
+	import CaptureAssessmentSection from './capture/CaptureAssessmentSection.svelte';
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import PhotoPreview from './PhotoPreview.svelte';
-	import VoiceNoteRecorder from './VoiceNoteRecorder.svelte';
+	import VoiceNoteRecorderLazy from './VoiceNoteRecorderLazy.svelte';
 	import YrsScoreBanner from './YrsScoreBanner.svelte';
+	import { canAddTree } from '$lib/utils/featurePolicy';
+	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import CadastreBanner from './CadastreBanner.svelte';
 	import VetoLegalChecklist from './VetoLegalChecklist.svelte';
-	import ClimateDataSection from './ClimateDataSection.svelte';
+	import GeoCapabilityBanner from './GeoCapabilityBanner.svelte';
+	import { resolveCountry } from '$lib/geo/resolveCountry';
+	import ClimateDataSectionLazy from './ClimateDataSectionLazy.svelte';
 	import EnvironmentExposureField from './EnvironmentExposureField.svelte';
+	import { teardownCaptureTutorial } from '$lib/utils/captureTutorialTeardown';
+
+	type VoiceRecorderHandle = {
+		toggleVolumeRecording: () => Promise<void>;
+		isVoiceRecording: () => boolean;
+	};
+
+	let { tutorialActive = false }: { tutorialActive?: boolean } = $props();
 
 	let species = $state('');
 	let notes = $state('');
@@ -76,6 +114,8 @@
 	let voiceNote = $state<VoiceNote | null>(null);
 	let photoFile = $state<File | null>(null);
 	let photoPreviewUrl = $state('');
+	let photoEncoding = $state<PhotoEncoding | null>(null);
+	let photoProcessingBusy = $state(false);
 	let submitting = $state(false);
 	let gpsChecking = $state(false);
 	let gpsWarning = $state('');
@@ -90,6 +130,21 @@
 	const caliberOptions = $derived.by(() => {
 		void appearanceSettingsState.locale;
 		return getCaliberOptions();
+	});
+
+	const barkOptions = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return getBarkOptions();
+	});
+
+	const deadwoodOptions = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return getDeadwoodOptions();
+	});
+
+	const sizeOptions = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return getSizeOptions();
 	});
 
 	const capturePosition = $derived.by(() => {
@@ -145,47 +200,44 @@
 	let climateFetchInFlight = false;
 	let showGpsConfirm = $state(false);
 	let gpsConfirmMessage = $state('');
+	let saveSuccessPulse = $state(false);
 
-	const CAPTURE_IDLE_SPEED_MPS = 0.5;
-	const CAPTURE_IDLE_MS = 10_000;
-	let captureGpsProfile = $state<GpsProfile>('capture');
-	let captureIdleSince = $state<number | null>(null);
-	let quickAssessmentOpen = $state(false);
 	let quickAssessment = $state<TreeAssessment>({ ...DEFAULT_ASSESSMENT });
 	let photoPreviewRef = $state<PhotoPreview | undefined>();
-	let voiceRecorderRef = $state<VoiceNoteRecorder | undefined>();
+	let voiceRecorderRef = $state<VoiceRecorderHandle | undefined>();
 	let voiceSessionActive = $state(false);
 
-	const CLIMATE_REFETCH_DISTANCE_M = 10;
-	const LOCATION_REFETCH_DISTANCE_M = 10;
-	const AGRI_REFETCH_DISTANCE_M = 10;
+	const ENRICHMENT_DEBOUNCE_MS = CAPTURE_ENRICHMENT_DEBOUNCE_MS;
+	const LOCATION_REFETCH_DISTANCE_M = CAPTURE_LOCATION_REFETCH_DISTANCE_M;
+	const AGRI_REFETCH_DISTANCE_M = CAPTURE_AGRI_REFETCH_DISTANCE_M;
+	const BEST_POSITION_MIN_INTERVAL_MS = 500;
+	const enrichmentSession = createCaptureEnrichmentSession();
+	let bestPositionTimer: ReturnType<typeof setTimeout> | null = null;
+	let pendingBestPosition: typeof capturePosition = null;
 
 	function positionKey(latitude: number, longitude: number): string {
-		return `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+		return capturePositionKey(latitude, longitude);
 	}
 
 	const simpleMode = $derived(appearanceSettingsState.simpleMode);
+	const simplified = $derived(simpleMode || tutorialActive);
+	const captureBlocked = $derived(!canAddTree(treeStore.trees.length));
 
 	$effect(() => {
-		if (simpleMode) {
+		if (simplified) {
 			vetoChecklistOpen = false;
 		}
 	});
 
 	const savedPosition = $derived(bestCapturePosition ?? capturePosition);
-
-	const showBestPositionHint = $derived.by(() => {
-		if (simpleMode) return false;
-		if (!bestCapturePosition || !capturePosition) {
-			return false;
-		}
-		const best = bestCapturePosition.accuracyMeters;
-		const live = capturePosition.accuracyMeters;
-		return best !== null && live !== null && best < live;
-	});
+	const captureCountry = $derived(
+		savedPosition ? resolveCountry(savedPosition.latitude, savedPosition.longitude) : null
+	);
+	let enrichmentPosition = $state<typeof savedPosition>(null);
+	let enrichmentDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const gpsCaptureHint = $derived.by(() => {
-		if (simpleMode) return '';
+		if (simplified) return '';
 		if (gpsLoading) {
 			return getGpsCaptureWaitingHint(onlineState.online);
 		}
@@ -195,9 +247,9 @@
 		return '';
 	});
 
-	const gpsCaptureTips = $derived(simpleMode ? [] : getGpsCaptureTips());
+	const gpsCaptureTips = $derived(simplified ? [] : getGpsCaptureTips());
 	const androidVolumeHint = $derived(
-		!simpleMode && isAndroidApp() ? getAndroidVolumeButtonHint() : null
+		captureSettingsState.terrainModeEnabled && isAndroidApp() ? getAndroidVolumeButtonHint() : null
 	);
 
 	$effect(() => {
@@ -232,23 +284,104 @@
 	});
 
 	$effect(() => {
+		const position = savedPosition;
+		if (!position) {
+			enrichmentPosition = null;
+			return;
+		}
+
+		if (enrichmentDebounceTimer) {
+			clearTimeout(enrichmentDebounceTimer);
+		}
+
+		enrichmentDebounceTimer = setTimeout(() => {
+			enrichmentPosition = position;
+			enrichmentDebounceTimer = null;
+		}, ENRICHMENT_DEBOUNCE_MS);
+
+		return () => {
+			if (enrichmentDebounceTimer) {
+				clearTimeout(enrichmentDebounceTimer);
+				enrichmentDebounceTimer = null;
+			}
+		};
+	});
+
+	$effect(() => {
 		let stop: (() => void) | null = null;
 		let cancelled = false;
+		let permissionGranted = false;
+		let appActive = typeof document === 'undefined' || document.visibilityState === 'visible';
 
-		void requestFusedHeadingPermission().then((granted) => {
-			if (!granted || cancelled) {
+		const startSubscription = () => {
+			if (cancelled || !permissionGranted || !appActive || stop) {
 				return;
 			}
 			stop = subscribeFusedHeading((sample) => {
 				sensorHeadingRaw = sample.heading;
 				sensorReference = sample.reference;
 			});
+		};
+
+		const pauseSubscription = () => {
+			stop?.();
+			stop = null;
+			sensorHeadingRaw = null;
+		};
+
+		const handleAppActiveChange = (isActive: boolean) => {
+			appActive = isActive;
+			if (appActive) {
+				startSubscription();
+			} else {
+				pauseSubscription();
+			}
+		};
+
+		const handleVisibilityChange = () => {
+			if (typeof document === 'undefined') {
+				return;
+			}
+			handleAppActiveChange(document.visibilityState === 'visible');
+		};
+
+		void requestFusedHeadingPermission().then((granted) => {
+			if (cancelled) {
+				return;
+			}
+			if (!granted) {
+				return;
+			}
+			permissionGranted = true;
+			startSubscription();
 		});
+
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', handleVisibilityChange);
+		}
+
+		let removeAppListener: (() => void) | undefined;
+		if (isNativeApp()) {
+			void App.addListener('appStateChange', ({ isActive }) => {
+				handleAppActiveChange(isActive);
+			}).then((handle) => {
+				if (cancelled) {
+					void handle.remove();
+					return;
+				}
+				removeAppListener = () => {
+					void handle.remove();
+				};
+			});
+		}
 
 		return () => {
 			cancelled = true;
-			stop?.();
-			sensorHeadingRaw = null;
+			if (typeof document !== 'undefined') {
+				document.removeEventListener('visibilitychange', handleVisibilityChange);
+			}
+			removeAppListener?.();
+			pauseSubscription();
 			resetHeadingFusionState(fusionState);
 		};
 	});
@@ -278,31 +411,117 @@
 
 	const showClimatePanel = $derived(savedPosition !== null);
 
-	$effect(() => {
-		if (simpleMode) return;
-		const position = savedPosition;
-		const currentSpecies = species;
-		const currentExposure = environmentExposure;
-		if (!position) return;
-
-		const inputsKey = `${currentSpecies}|${currentExposure}`;
-		const movedEnough = shouldRefetchAgri(position);
-		if (!movedEnough && inputsKey === lastAgriInputsKey) return;
-
-		lastAgriInputsKey = inputsKey;
-		if (movedEnough) {
-			agriFetchAnchor = { latitude: position.latitude, longitude: position.longitude };
+	function applyEnrichmentResult(patch: CaptureEnrichmentRunResult): void {
+		if (patch.clearClimate) {
+			clearClimateState();
+		}
+		if (patch.clearLocation) {
+			clearLocationState();
 		}
 
-		void loadAgriData(position.latitude, position.longitude, false, {
-			species: currentSpecies,
-			environmentExposure: currentExposure
-		});
-	});
+		if (patch.climate.history !== undefined) {
+			climateHistory = patch.climate.history;
+		}
+		if (patch.climate.loading !== undefined) {
+			climateLoading = patch.climate.loading;
+		}
+		if (patch.climate.error !== undefined) {
+			if (
+				patch.climate.error &&
+				typeof navigator !== 'undefined' &&
+				!navigator.onLine
+			) {
+				climateError = `${m.tree_climate_unavailable()} — ${m.climate_online_required().toLowerCase()}`;
+			} else if (patch.climate.error) {
+				climateError = patch.climate.error;
+			} else {
+				climateError = '';
+			}
+		}
+		if (patch.climate.anchor !== undefined) {
+			climateAnchor = patch.climate.anchor;
+		}
+		if (patch.climate.autoFetchKey !== undefined) {
+			climateAutoFetchKey = patch.climate.autoFetchKey;
+		}
+		if (patch.climate.locked !== undefined) {
+			climateLocked = patch.climate.locked;
+		}
+		if (patch.climate.fetchedApproximate !== undefined) {
+			climateFetchedApproximate = patch.climate.fetchedApproximate;
+		}
+		if (patch.climate.fetchInFlight !== undefined) {
+			climateFetchInFlight = patch.climate.fetchInFlight;
+		}
 
-	$effect(() => {
-		debugCounters.submitting = submitting;
-	});
+		if (patch.location.label !== undefined) {
+			locationLabel = patch.location.label;
+		}
+		if (patch.location.loading !== undefined) {
+			locationLoading = patch.location.loading;
+		}
+		if (patch.location.anchor !== undefined) {
+			locationAnchor = patch.location.anchor;
+		}
+		if (patch.location.fetchKey !== undefined) {
+			locationFetchKey = patch.location.fetchKey;
+		}
+		if (patch.location.cadastreInfo !== undefined) {
+			cadastreInfo = patch.location.cadastreInfo;
+		}
+		if (patch.location.cadastreLoading !== undefined) {
+			cadastreLoading = patch.location.cadastreLoading;
+		}
+		if (patch.location.cadastreFetchKey !== undefined) {
+			cadastreFetchKey = patch.location.cadastreFetchKey;
+		}
+
+		if (patch.agri.lastInputsKey !== undefined) {
+			lastAgriInputsKey = patch.agri.lastInputsKey;
+		}
+		if (patch.agri.fetchAnchor !== undefined) {
+			agriFetchAnchor = patch.agri.fetchAnchor;
+		}
+	}
+
+	function shouldDeferCaptureEnrichment(): boolean {
+		return isCameraCaptureActive() || photoProcessingBusy;
+	}
+
+	function flushBestCapturePosition(): void {
+		const position = pendingBestPosition;
+		pendingBestPosition = null;
+		bestPositionTimer = null;
+		if (!position) {
+			return;
+		}
+		const currentBest = bestCapturePosition;
+		if (isBetterAccuracy(position.accuracyMeters, currentBest?.accuracyMeters ?? null)) {
+			bestCapturePosition = position;
+		}
+		if (gpsLoading) {
+			gpsLoading = false;
+		}
+	}
+
+	function scheduleBestCapturePosition(position: NonNullable<typeof capturePosition>): void {
+		const currentBest = untrack(() => bestCapturePosition);
+		if (!isBetterAccuracy(position.accuracyMeters, currentBest?.accuracyMeters ?? null)) {
+			if (gpsLoading) {
+				gpsLoading = false;
+			}
+			return;
+		}
+
+		pendingBestPosition = position;
+		if (bestPositionTimer) {
+			return;
+		}
+
+		bestPositionTimer = setTimeout(() => {
+			flushBestCapturePosition();
+		}, BEST_POSITION_MIN_INTERVAL_MS);
+	}
 
 	const climateApproximate = $derived(
 		savedPosition !== null && isPoorAccuracy(savedPosition.accuracyMeters)
@@ -327,16 +546,6 @@
 			return;
 		}
 
-		debugCounters.climateFetches += 1;
-		// #region agent log
-		debugLog(
-			'CaptureForm:loadClimateForPosition',
-			'climate fetch start',
-			{ key, force, inFlight: climateFetchInFlight },
-			'H1'
-		);
-		// #endregion
-
 		climateFetchInFlight = true;
 		climateAutoFetchKey = key;
 		climateLoading = true;
@@ -359,19 +568,6 @@
 		} finally {
 			climateLoading = false;
 			climateFetchInFlight = false;
-			// #region agent log
-			debugLog(
-				'CaptureForm:loadClimateForPosition',
-				'climate fetch end',
-				{
-					key,
-					hasError: !!climateError,
-					hasHistory: !!climateHistory,
-					errorMessage: climateError || null
-				},
-				'H1'
-			);
-			// #endregion
 		}
 	}
 
@@ -433,82 +629,29 @@
 	}
 
 	function shouldRefetchClimate(
-		position: { latitude: number; longitude: number; accuracyMeters?: number | null }
+		_position: { latitude: number; longitude: number; accuracyMeters?: number | null }
 	): boolean {
-		if (climateLocked && climateHistory) {
-			return false;
-		}
-
-		if (
-			climateHistory &&
-			climateFetchedApproximate &&
-			!isPoorAccuracy(position.accuracyMeters ?? null)
-		) {
-			return true;
-		}
-
-		const anchor = untrack(() => climateAnchor);
-		if (!anchor) {
-			return true;
-		}
-		return (
-			haversineDistanceM(
-				anchor.latitude,
-				anchor.longitude,
-				position.latitude,
-				position.longitude
-			) >= CLIMATE_REFETCH_DISTANCE_M
-		);
+		// Climate archive is loaded on first expand of ClimateDataSection (see onretry),
+		// not on every GPS settle during capture enrichment.
+		return false;
 	}
 
 	function shouldRefetchLocation(
 		position: { latitude: number; longitude: number }
 	): boolean {
-		const anchor = untrack(() => locationAnchor);
-		if (!anchor) {
-			return true;
-		}
-		return (
-			haversineDistanceM(
-				anchor.latitude,
-				anchor.longitude,
-				position.latitude,
-				position.longitude
-			) >= LOCATION_REFETCH_DISTANCE_M
+		return shouldRefetchCapturePosition(
+			untrack(() => locationAnchor),
+			position,
+			LOCATION_REFETCH_DISTANCE_M
 		);
 	}
 
 	function shouldRefetchAgri(position: { latitude: number; longitude: number }): boolean {
-		const anchor = untrack(() => agriFetchAnchor);
-		if (!anchor) {
-			return true;
-		}
-		return (
-			haversineDistanceM(
-				anchor.latitude,
-				anchor.longitude,
-				position.latitude,
-				position.longitude
-			) >= AGRI_REFETCH_DISTANCE_M
+		return shouldRefetchCapturePosition(
+			untrack(() => agriFetchAnchor),
+			position,
+			AGRI_REFETCH_DISTANCE_M
 		);
-	}
-
-	function syncClimateAndLocationForPosition(
-		position: NonNullable<typeof savedPosition>
-	): void {
-		if (!simpleMode && shouldRefetchClimate(position)) {
-			void loadClimateForPosition(position.latitude, position.longitude);
-		}
-
-		if (isPoorAccuracy(position.accuracyMeters)) {
-			clearLocationState();
-			return;
-		}
-
-		if (shouldRefetchLocation(position)) {
-			void loadLocationForPosition(position.latitude, position.longitude);
-			void loadCadastreForPosition(position.latitude, position.longitude);
-		}
 	}
 
 	async function loadCadastreForPosition(latitude: number, longitude: number, force = false) {
@@ -527,7 +670,7 @@
 		cadastreLoading = true;
 
 		try {
-			cadastreInfo = await lookupCadastre(latitude, longitude);
+			cadastreInfo = await lookupCadastreForCoords(latitude, longitude);
 		} catch {
 			cadastreInfo = null;
 		} finally {
@@ -563,15 +706,25 @@
 	}
 
 	$effect(() => {
-		const position = savedPosition;
-		debugCounters.climateEffectRuns += 1;
+		const position = enrichmentPosition;
+		const mode = simplified;
+		const online = onlineState.online;
+		const currentSpecies = species;
+		const currentExposure = environmentExposure;
+		void photoProcessingBusy;
+
 		if (!position) {
+			enrichmentSession.cancel();
 			untrack(clearClimateState);
 			untrack(clearLocationState);
 			return;
 		}
 
-		const needsClimate = !simpleMode && shouldRefetchClimate(position);
+		if (shouldDeferCaptureEnrichment()) {
+			return;
+		}
+
+		const needsClimate = !mode && shouldRefetchClimate(position);
 		const needsLocation =
 			!isPoorAccuracy(position.accuracyMeters) && shouldRefetchLocation(position);
 		const needsLocationReset =
@@ -584,19 +737,70 @@
 					cadastreLoading ||
 					locationAnchor
 			);
+		const needsAgri =
+			!mode &&
+			(shouldRefetchAgri(position) ||
+				`${currentSpecies}|${currentExposure}` !== lastAgriInputsKey);
+		const needsCadastreRetry =
+			online &&
+			!cadastreInfo &&
+			!isPoorAccuracy(position.accuracyMeters);
 
-		if (!needsClimate && !needsLocation && !needsLocationReset) {
+		if (!needsClimate && !needsLocation && !needsLocationReset && !needsAgri && !needsCadastreRetry) {
 			return;
 		}
 
-		syncClimateAndLocationForPosition(position);
-	});
+		const controller = new AbortController();
+		let cancelled = false;
 
-	$effect(() => {
-		if (!onlineState.online) return;
-		const position = savedPosition;
-		if (!position || cadastreInfo || isPoorAccuracy(position.accuracyMeters)) return;
-		void loadCadastreForPosition(position.latitude, position.longitude, true);
+		void enrichmentSession
+			.run({
+				position,
+				simpleMode: mode,
+				online,
+				species: currentSpecies,
+				environmentExposure: currentExposure,
+				signal: controller.signal,
+				shouldRefetchClimate,
+				shouldRefetchLocation,
+				shouldRefetchAgri,
+				needsCadastreRetry: () => needsCadastreRetry,
+				climate: {
+					history: climateHistory,
+					loading: climateLoading,
+					error: climateError,
+					anchor: climateAnchor,
+					autoFetchKey: climateAutoFetchKey,
+					locked: climateLocked,
+					fetchedApproximate: climateFetchedApproximate,
+					fetchInFlight: climateFetchInFlight
+				},
+				location: {
+					label: locationLabel,
+					loading: locationLoading,
+					anchor: locationAnchor,
+					fetchKey: locationFetchKey,
+					cadastreInfo,
+					cadastreLoading,
+					cadastreFetchKey
+				},
+				agri: {
+					fetchAnchor: agriFetchAnchor,
+					lastInputsKey: lastAgriInputsKey
+				}
+			})
+			.then((result) => {
+				if (cancelled) {
+					return;
+				}
+				applyEnrichmentResult(result);
+			});
+
+		return () => {
+			cancelled = true;
+			controller.abort();
+			enrichmentSession.cancel();
+		};
 	});
 
 	$effect(() => {
@@ -605,13 +809,15 @@
 			return;
 		}
 
-		const currentBest = untrack(() => bestCapturePosition);
-		if (isBetterAccuracy(position.accuracyMeters, currentBest?.accuracyMeters ?? null)) {
-			bestCapturePosition = position;
-		}
-		if (gpsLoading) {
-			gpsLoading = false;
-		}
+		scheduleBestCapturePosition(position);
+
+		return () => {
+			if (bestPositionTimer) {
+				clearTimeout(bestPositionTimer);
+				bestPositionTimer = null;
+			}
+			flushBestCapturePosition();
+		};
 	});
 
 	$effect(() => {
@@ -642,8 +848,6 @@
 			return;
 		}
 
-		void hapticSuccess();
-
 		if (voiceRecorderRef?.isVoiceRecording()) {
 			await voiceRecorderRef.toggleVolumeRecording();
 		}
@@ -658,60 +862,20 @@
 	onMount(() => {
 		submitting = false;
 		submitLock = false;
-		debugCounters.submitting = false;
-		resetVisitDebugCounters();
 		resetPositionSmoothing();
-		debugCounters.captureMounts += 1;
-		// #region agent log
-		debugLog('CaptureForm:onMount', 'form mounted', { mounts: debugCounters.captureMounts }, 'H2');
-		// #endregion
+		bestCapturePosition = null;
+		gpsLoading = true;
 	});
 
 	$effect(() => {
-		const best = bestCapturePosition;
-		const live = capturePosition;
-		const speed = live?.speedMps ?? best?.speedMps ?? null;
-		const bestAccuracy = best?.accuracyMeters ?? null;
-		const liveAccuracy = live?.accuracyMeters ?? null;
-
-		if (
-			live &&
-			(liveAccuracy === null ||
-				isPoorAccuracy(liveAccuracy) ||
-				(speed !== null && speed >= CAPTURE_IDLE_SPEED_MPS))
-		) {
-			captureIdleSince = null;
-			captureGpsProfile = 'capture';
-			return;
-		}
-
-		if (
-			best &&
-			bestAccuracy !== null &&
-			bestAccuracy <= GPS_EXCELLENT_ACCURACY_THRESHOLD_M &&
-			(speed === null || speed < CAPTURE_IDLE_SPEED_MPS)
-		) {
-			if (captureIdleSince === null) {
-				captureIdleSince = Date.now();
-			} else if (Date.now() - captureIdleSince >= CAPTURE_IDLE_MS) {
-				captureGpsProfile = 'proximity';
-			}
-			return;
-		}
-
-		captureIdleSince = null;
-		captureGpsProfile = 'capture';
-	});
-
-	$effect(() => {
-		const profile = captureGpsProfile;
-		void requestCurrentPosition(profile);
-		const release = acquireLocationWatch('capture-form', profile);
+		void requestCurrentPosition('capture');
+		const release = acquireLocationWatch('capture-form', 'capture');
 		return () => release();
 	});
 
 	$effect(() => {
-		if (!isAndroidApp()) {
+		if (!isAndroidApp() || !captureSettingsState.terrainModeEnabled) {
+			void stopVolumeButtonWatch();
 			return;
 		}
 
@@ -731,7 +895,7 @@
 	});
 
 	function buildCaptureAssessment(): TreeAssessment {
-		if (simpleMode) {
+		if (simplified) {
 			return { ...DEFAULT_ASSESSMENT };
 		}
 		return {
@@ -747,29 +911,22 @@
 		gpsWarning = '';
 		gpsSuccess = '';
 
+		if (captureBlocked) {
+			openProPaywall('tree_limit');
+			return;
+		}
+
 		const trimmedSpecies = species.trim();
 
 		submitting = true;
-		const saveStartedAt = performance.now();
-		debugLog('CaptureForm:handleSubmit', 'submit start', { submitting: true }, 'H3');
 		await tick();
 
 		try {
 			const knownPosition = bestCapturePosition ?? capturePosition;
-			const gpsStartedAt = performance.now();
-			const gpsSource = await ensureCapturePositionForSave(
+			await ensureCapturePositionForSave(
 				knownPosition,
 				getLastGpsUpdateAt(),
 				() => requestCurrentPosition('capture')
-			);
-			debugLog(
-				'CaptureForm:saveTree',
-				'gps resolve',
-				{
-					gpsMs: Math.round(performance.now() - gpsStartedAt),
-					gpsSource
-				},
-				'H3'
 			);
 			await tick();
 
@@ -791,21 +948,29 @@
 			}
 
 			let photos: string[] = [];
+			let photoThumbs: string[] | undefined;
 			if (photoFile) {
-				photos = [await compressImageWithFallback(photoFile)];
+				if (photoEncoding?.full) {
+					photos = [photoEncoding.full];
+					photoThumbs = [photoEncoding.thumb];
+				} else {
+					const encoded = await photoFileToStorageWithThumb(photoFile);
+					photos = [encoded.full];
+					photoThumbs = [encoded.thumb];
+				}
 			}
 
 			const capturedAt = new Date().toISOString();
 			const yrsAtCapture =
-				!simpleMode && agriData.data?.yrs
+				!simplified && agriData.data?.yrs
 					? toYrsStoredSnapshot(agriData.data.yrs, capturedAt)
 					: null;
 
-			const persistStartedAt = performance.now();
 			await addTree({
 				species: trimmedSpecies,
-				notes: simpleMode ? '' : notes.trim(),
+				notes: simplified ? '' : notes.trim(),
 				photos,
+				photoThumbs,
 				voiceNote,
 				latitude,
 				longitude,
@@ -813,7 +978,7 @@
 				altitudeMeters,
 				frontHeadingDegrees,
 				isFavorite: false,
-				climateHistory: simpleMode ? null : climateHistory,
+				climateHistory: simplified ? null : climateHistory,
 				locationLabel,
 				cadastreInfo: savedCadastreInfo,
 				harvestEthicsConfirmation: null,
@@ -821,29 +986,31 @@
 				yrsAtCapture,
 				assessment: buildCaptureAssessment()
 			});
-			debugLog(
-				'CaptureForm:saveTree',
-				'persist done',
-				{ persistMs: Math.round(performance.now() - persistStartedAt) },
-				'H3'
-			);
 
 			scheduleCadastreBackfill();
 
-			await new Promise((resolve) => setTimeout(resolve, 50));
-			await goHome();
-			debugLog(
-				'CaptureForm:saveTree',
-				'submit complete',
-				{ totalMs: Math.round(performance.now() - saveStartedAt) },
-				'H3'
-			);
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement.';
-		} finally {
 			submitting = false;
 			submitLock = false;
-			debugLog('CaptureForm:handleSubmit', 'submit end', { submitting: false }, 'H3');
+			gpsChecking = false;
+
+			saveSuccessPulse = true;
+			showAppToast('ok', m.capture_tree_saved());
+			await handlePostCaptureSaveNavigation({
+				phase: onboardingState.phase,
+				advanceToProtection: async () => {
+					teardownCaptureTutorial();
+					await advanceOnboardingPhase('protection');
+					await releaseOnboardingUiLocks();
+				},
+				markCaptureSavedDuringTutorial: () => setCaptureSavedDuringTutorial(true),
+				goHome
+			});
+		} catch (err) {
+			void hapticError();
+			error = err instanceof Error ? err.message : m.capture_save_error();
+			submitting = false;
+			submitLock = false;
+			gpsChecking = false;
 		}
 	}
 
@@ -881,28 +1048,18 @@
 		submitLock = false;
 	}
 
-	function toggleQuickAssessmentChip<K extends keyof TreeAssessment>(
-		key: K,
-		value: TreeAssessment[K]
-	) {
-		quickAssessment = {
-			...quickAssessment,
-			[key]: quickAssessment[key] === value ? null : value
-		};
-	}
-
-	function handlePhoto(file: File, previewUrl: string) {
+	function handlePhoto(file: File, previewUrl: string, encoding: PhotoEncoding) {
 		photoFile = file;
 		photoPreviewUrl = previewUrl;
+		photoEncoding = encoding;
 		frontHeadingDegrees = currentHeading;
 	}
 
+	function handlePhotoProcessingChange(busy: boolean) {
+		photoProcessingBusy = busy;
+	}
+
 	function selectSpecies(name: string, event?: Event) {
-		debugCounters.speciesClicks += 1;
-		debugCounters.visitSpeciesClicks += 1;
-		// #region agent log
-		debugLog('CaptureForm:selectSpecies', 'species selected', { name }, 'H4');
-		// #endregion
 		event?.preventDefault();
 		event?.stopPropagation();
 		if (document.activeElement instanceof HTMLElement) {
@@ -927,10 +1084,12 @@
 		onClimateRetry: retryClimate
 	}}
 >
-	{#if !simpleMode}
+	{#if !simplified || tutorialActive}
 		<div class="order-0 flex flex-col gap-4 md:col-span-2">
-			{#if showClimatePanel}
-				<EnvironmentExposureField bind:value={environmentExposure} disabled={submitting} />
+			{#if !simplified}
+				{#if showClimatePanel}
+					<EnvironmentExposureField bind:value={environmentExposure} disabled={submitting} />
+				{/if}
 			{/if}
 			<YrsScoreBanner
 				gpsReady={savedPosition !== null}
@@ -946,6 +1105,7 @@
 			{photoFile}
 			{frontLabel}
 			onfile={handlePhoto}
+			onprocessingchange={handlePhotoProcessingChange}
 		/>
 
 		{#if error}
@@ -953,24 +1113,26 @@
 		{/if}
 
 		{#if gpsWarning}
-			<p class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
+			<p class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status" aria-live="polite">
 				{gpsWarning}
 			</p>
 		{/if}
 
-		{#if gpsSuccess && !simpleMode}
-			<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800" role="status">
+		{#if gpsSuccess && !simplified}
+			<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800" role="status" aria-live="polite">
 				{gpsSuccess}
 			</p>
 		{/if}
 
-		<VoiceNoteRecorder
-			bind:this={voiceRecorderRef}
-			bind:value={voiceNote}
-			bind:sessionActive={voiceSessionActive}
-			disabled={submitting}
-			compact
-		/>
+		<div>
+			<VoiceNoteRecorderLazy
+				bind:this={voiceRecorderRef}
+				bind:value={voiceNote}
+				bind:sessionActive={voiceSessionActive}
+				disabled={submitting}
+				compact
+			/>
+		</div>
 
 		{#if androidVolumeHint}
 			<p class="rounded-lg border border-forest-200 bg-forest-50 px-3 py-2 text-sm text-forest-800" role="status">
@@ -983,13 +1145,21 @@
 		<div class="flex flex-col gap-2">
 			<label for="species" class="text-sm font-medium text-forest-900">{m.capture_species_optional()}</label>
 
-			{#if simpleMode}
+			{#if simplified}
+				<div data-capture-tutorial="gps">
 				<GpsStatusCompact
 					loading={gpsLoading}
-					accuracyMeters={savedPosition?.accuracyMeters ?? null}
+					accuracyMeters={capturePosition?.accuracyMeters ?? null}
+					bestAccuracyMeters={capturePosition
+						? (bestCapturePosition?.accuracyMeters ?? capturePosition.accuracyMeters)
+						: undefined}
 					{locationLabel}
 					{locationLoading}
 				/>
+				</div>
+				{#if savedPosition}
+					<GeoCapabilityBanner country={captureCountry} />
+				{/if}
 				{#if cadastreLoading || cadastreInfo}
 					<CadastreBanner
 						info={cadastreInfo}
@@ -1010,20 +1180,26 @@
 					{/if}
 				{/if}
 			{:else if gpsLoading}
+				<div data-capture-tutorial="gps">
 				<GpsAccuracyBadge accuracyMeters={null} loading={true} />
-			{:else if savedPosition}
-				<GpsAccuracyBadge accuracyMeters={savedPosition.accuracyMeters} />
-				{#if showBestPositionHint && bestCapturePosition}
-					<p class="text-sm text-forest-600" role="status">
-						{m.gps_saved({ accuracy: formatAccuracy(bestCapturePosition.accuracyMeters) })}
-					</p>
-				{/if}
+				</div>
+			{:else if capturePosition}
+				<div data-capture-tutorial="gps">
+				<GpsAccuracyBadge
+					accuracyMeters={capturePosition.accuracyMeters}
+					bestAccuracyMeters={bestCapturePosition?.accuracyMeters ??
+						capturePosition.accuracyMeters}
+				/>
 				{#if locationLoading}
 					<p class="text-sm text-muted" role="status">{m.capture_location_identifying()}</p>
 				{:else if locationLabel}
 					<p class="text-sm font-medium text-forest-800" role="status">
 						{m.share_location({ location: locationLabel })}
 					</p>
+				{/if}
+				</div>
+				{#if savedPosition}
+					<GeoCapabilityBanner country={captureCountry} />
 				{/if}
 				{#if cadastreLoading || cadastreInfo}
 					<CadastreBanner
@@ -1045,7 +1221,7 @@
 				{/if}
 			{/if}
 
-			{#if !simpleMode && gpsCaptureHint}
+			{#if !simplified && gpsCaptureHint}
 				<p class="text-sm text-muted" role="status">{gpsCaptureHint}</p>
 			{/if}
 
@@ -1055,11 +1231,11 @@
 				</p>
 			{/if}
 
-			{#if !simpleMode}
+			{#if !simplified}
 			<details class="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-muted">
 				<summary class="cursor-pointer font-medium text-forest-800">{m.gps_forest_tips_title()}</summary>
 				<ul class="mt-2 list-disc space-y-1 pl-5">
-					{#each gpsCaptureTips as tip}
+					{#each gpsCaptureTips as tip (tip)}
 						<li>{tip}</li>
 					{/each}
 				</ul>
@@ -1097,6 +1273,8 @@
 				bind:value={species}
 				disabled={submitting}
 				highlight={speciesHighlight}
+				latitude={savedPosition?.latitude ?? null}
+				longitude={savedPosition?.longitude ?? null}
 				onselect={(name) => selectSpecies(name)}
 			/>
 
@@ -1105,112 +1283,36 @@
 			{/if}
 		</div>
 
-		{#if !simpleMode}
-		<section class="rounded-xl border border-gray-100 bg-white shadow-sm">
-			<button
-				type="button"
-				class="flex w-full items-center justify-between gap-3 p-4 text-left"
-				onclick={() => (quickAssessmentOpen = !quickAssessmentOpen)}
-				aria-expanded={quickAssessmentOpen}
-			>
-				<div>
-					<h3 class="text-sm font-medium text-forest-900">{m.capture_quick_assessment()}</h3>
-					<p class="mt-1 text-sm text-muted">{m.capture_quick_assessment_hint()}</p>
-				</div>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					class="h-5 w-5 shrink-0 text-muted transition {quickAssessmentOpen ? 'rotate-180' : ''}"
-					aria-hidden="true"
-				>
-					<path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
-				</svg>
-			</button>
+		{#if !simplified || tutorialActive}
+			<CaptureAssessmentSection
+				bind:assessment={quickAssessment}
+				{submitting}
+				{caliberOptions}
+				{nebariOptions}
+				{barkOptions}
+				{deadwoodOptions}
+				{sizeOptions}
+			/>
+		{/if}
 
-			{#if quickAssessmentOpen}
-				<div class="flex flex-col gap-4 border-t border-gray-100 p-4">
-					<div class="flex flex-col gap-2">
-						<span class="text-sm font-medium text-forest-900">
-							{m.assessment_potential()} (1–10) : {quickAssessment.potentialScore ?? '—'}/10
-						</span>
-						<div class="grid grid-cols-5 gap-2">
-							{#each Array.from({ length: 10 }, (_, index) => index + 1) as score (score)}
-								<button
-									type="button"
-									disabled={submitting}
-									onclick={() => toggleQuickAssessmentChip('potentialScore', score)}
-									class="flex h-10 items-center justify-center rounded-lg text-sm font-medium transition active:scale-[0.98] disabled:opacity-50 {quickAssessment.potentialScore ===
-									score
-										? 'bg-forest-800 text-white'
-										: 'border border-gray-200 bg-white text-forest-900'}"
-								>
-									{score}
-								</button>
-							{/each}
-						</div>
-					</div>
-
-					<div class="flex flex-col gap-2">
-						<span class="text-sm font-medium text-forest-900">{m.assessment_caliber()}</span>
-						<div class="flex flex-wrap gap-2">
-							{#each caliberOptions as option (option.value)}
-								<button
-									type="button"
-									disabled={submitting}
-									onclick={() => toggleQuickAssessmentChip('caliber', option.value)}
-									class="rounded-full px-3 py-2 text-sm transition active:scale-[0.98] disabled:opacity-50 {quickAssessment.caliber ===
-									option.value
-										? 'bg-forest-800 text-white'
-										: 'border border-gray-200 bg-white text-forest-900'}"
-								>
-									{option.label}
-								</button>
-							{/each}
-						</div>
-					</div>
-
-					<div class="flex flex-col gap-2">
-						<span class="text-sm font-medium text-forest-900">{m.assessment_nebari()}</span>
-						<div class="flex flex-wrap gap-2">
-							{#each nebariOptions as option (option.value)}
-								<button
-									type="button"
-									disabled={submitting}
-									onclick={() => toggleQuickAssessmentChip('nebari', option.value)}
-									class="rounded-full px-3 py-2 text-sm transition active:scale-[0.98] disabled:opacity-50 {quickAssessment.nebari ===
-									option.value
-										? 'bg-forest-800 text-white'
-										: 'border border-gray-200 bg-white text-forest-900'}"
-								>
-									{option.label}
-								</button>
-							{/each}
-						</div>
-					</div>
-				</div>
-			{/if}
-		</section>
-
-		<div class="flex flex-col gap-2">
-			<label for="notes" class="text-sm font-medium text-forest-900">{m.capture_notes()}</label>
-			<textarea
-				id="notes"
-				bind:value={notes}
-				rows="3"
-				placeholder={m.capture_notes_placeholder()}
-				disabled={submitting}
-				class="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
-			></textarea>
-		</div>
-	{/if}
+		{#if !simplified}
+			<div class="flex flex-col gap-2">
+				<label for="notes" class="text-sm font-medium text-forest-900">{m.capture_notes()}</label>
+				<textarea
+					id="notes"
+					bind:value={notes}
+					rows="3"
+					placeholder={m.capture_notes_placeholder()}
+					disabled={submitting}
+					class="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
+				></textarea>
+			</div>
+		{/if}
 	</div>
 
-	{#if !simpleMode && showClimatePanel}
+	{#if !simplified && showClimatePanel}
 		<div class="order-3 md:col-span-2">
-			<ClimateDataSection
+			<ClimateDataSectionLazy
 				climate={climateHistory}
 				loading={climateLoading}
 				error={climateError}
@@ -1218,6 +1320,8 @@
 				offline={!onlineState.online}
 				{species}
 				environmentExposure={environmentExposure}
+				latitude={savedPosition?.latitude ?? null}
+				longitude={savedPosition?.longitude ?? null}
 				onretry={retryClimate}
 			/>
 		</div>
@@ -1228,9 +1332,12 @@
 	<footer class="capture-screen__footer">
 		<button
 			type="button"
+			data-capture-tutorial="save"
 			data-capture-action="submit"
 			disabled={submitting || gpsChecking || submitLock}
-			class="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.99] disabled:opacity-50"
+			class="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.99] disabled:opacity-50 {saveSuccessPulse
+				? 'save-success-pulse'
+				: ''}"
 			onclick={(event) => void handleSubmit(event)}
 		>
 			{#if submitting || gpsChecking}
@@ -1258,6 +1365,7 @@
 
 	<ConfirmDialog
 		bind:open={showGpsConfirm}
+		trapFocus={onboardingState.phase !== 'capture'}
 		title={m.gps_confirm_title()}
 		message={gpsConfirmMessage}
 		confirmLabel={m.confirm_save_anyway()}

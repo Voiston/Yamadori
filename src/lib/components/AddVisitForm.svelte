@@ -10,35 +10,22 @@
 
 	import * as m from '$lib/paraglide/messages.js';
 
-	import { compressImage } from '$lib/utils/photo';
+	import { photoFileToStorageWithThumb, type PhotoEncoding } from '$lib/utils/photo';
 
 	import { toYrsStoredSnapshot } from '$lib/utils/yrs';
+
+	import { showDetailFeedback } from '$lib/stores/appToast.svelte';
 
 	import PhotoPreview from './PhotoPreview.svelte';
 
 	import VoiceNoteRecorder from './VoiceNoteRecorder.svelte';
 
-
-
-	let {
-
-		treeId,
-
-		onsuccess
-
-	}: {
-
-		treeId: string;
-
-		onsuccess?: (message: string) => void;
-
-	} = $props();
-
-
+	let { treeId }: { treeId: string } = $props();
 
 	let note = $state('');
 
 	let photoFile = $state<File | null>(null);
+	let photoEncoding = $state<PhotoEncoding | null>(null);
 
 	let photoPreviewKey = $state(0);
 
@@ -69,20 +56,23 @@
 		try {
 
 			let photoBase64 = '';
+			let photoThumbBase64: string | undefined;
 
 			if (photoFile) {
-
-				photoBase64 = await compressImage(photoFile);
-
+				if (photoEncoding?.full) {
+					photoBase64 = photoEncoding.full;
+					photoThumbBase64 = photoEncoding.thumb;
+				} else {
+					const encoded = await photoFileToStorageWithThumb(photoFile);
+					photoBase64 = encoded.full;
+					photoThumbBase64 = encoded.thumb;
+				}
 			}
 
-
-
 			await addVisit(treeId, {
-
 				note: note.trim(),
-
 				photoBase64: photoBase64 || undefined,
+				photoThumbBase64,
 
 				voiceNote,
 
@@ -99,12 +89,13 @@
 			note = '';
 
 			photoFile = null;
+			photoEncoding = null;
 
 			voiceNote = null;
 
 			photoPreviewKey += 1;
 
-			onsuccess?.(m.visit_added());
+			showDetailFeedback(m.visit_added());
 
 		} finally {
 
@@ -116,9 +107,11 @@
 
 
 
-	function handlePhoto(file: File, _previewUrl?: string) {
+	function handlePhoto(file: File, _previewUrl: string, encoding: PhotoEncoding) {
 
 		photoFile = file;
+
+		photoEncoding = encoding;
 
 	}
 

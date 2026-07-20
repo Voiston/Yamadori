@@ -1,6 +1,6 @@
 <script lang="ts">
 
-	import { getCoverPhoto } from '$lib/types/tree';
+	import { getCoverPhotoThumb } from '$lib/types/tree';
 
 	import type { Tree } from '$lib/types/tree';
 
@@ -14,17 +14,21 @@
 
 	import { speciesDisplayName } from '$lib/constants/species-i18n';
 
+	import { getAssessmentSummary } from '$lib/constants/assessment';
+
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 
 	import * as m from '$lib/paraglide/messages.js';
+	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
+	import AppLogoImage from './AppLogoImage.svelte';
 
 
 
-	let { tree, distanceMeters = null }: { tree: Tree; distanceMeters?: number | null } = $props();
+	let { tree, distanceMeters = null, locked = false }: { tree: Tree; distanceMeters?: number | null; locked?: boolean } = $props();
 
 
 
-	let coverPhoto = $derived(getCoverPhoto(tree));
+	let coverPhoto = $derived(getCoverPhotoThumb(tree));
 
 	let displayLabel = $derived.by(() => {
 
@@ -33,6 +37,19 @@
 		const raw = tree.species.trim();
 
 		return raw ? speciesDisplayName(raw) : m.tree_species_unset();
+
+	});
+
+	let coverPhotoAlt = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return `${m.photo_label()} — ${displayLabel}`;
+	});
+
+	let assessmentSummary = $derived.by(() => {
+
+		void appearanceSettingsState.locale;
+
+		return tree.assessment ? getAssessmentSummary(tree.assessment) : '';
 
 	});
 
@@ -48,6 +65,29 @@
 
 
 
+{#if locked}
+	<button
+		type="button"
+		class="relative block w-full rounded-xl text-left transition active:scale-[0.98]"
+		aria-label={m.pro_tree_locked()}
+		onclick={() => openProPaywall('tree_locked')}
+	>
+		<article
+			class="pointer-events-none flex items-center gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm blur-[3px] select-none narrow:gap-3 narrow:p-3"
+			aria-hidden="true"
+		>
+			{@render cardContent()}
+		</article>
+		<div
+			class="absolute inset-0 flex items-center justify-center rounded-xl bg-white/30"
+			aria-hidden="true"
+		>
+			<span class="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900 shadow-sm">
+				{m.pro_upgrade_cta()}
+			</span>
+		</div>
+	</button>
+{:else}
 <a
 
 	href="{base}/tree/{tree.id}"
@@ -60,10 +100,18 @@
 
 	<article
 
-		class="flex items-center gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition"
+		class="flex items-center gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition narrow:gap-3 narrow:p-3"
 
 	>
 
+		{@render cardContent()}
+
+	</article>
+
+</a>
+{/if}
+
+{#snippet cardContent()}
 		<div class="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100">
 
 			{#if coverPhoto}
@@ -72,39 +120,19 @@
 
 					src={coverPhoto}
 
-					alt={m.tree_visit_photo_alt()}
+					alt={coverPhotoAlt}
 
 					class="h-full w-full object-cover"
+
+					loading="lazy"
+
+					decoding="async"
 
 				/>
 
 			{:else}
 
-				<div class="flex h-full w-full items-center justify-center text-forest-600">
-
-					<svg
-
-						xmlns="http://www.w3.org/2000/svg"
-
-						viewBox="0 0 24 24"
-
-						fill="currentColor"
-
-						class="h-8 w-8 opacity-40"
-
-						aria-hidden="true"
-
-					>
-
-						<path
-
-							d="M12 2C8.5 2 6 4.5 6 8c0 2 1 3.8 2.5 5-2.5 1.2-4.5 4-4.5 7.5 0 4.1 3.4 7.5 7.5 7.5s7.5-3.4 7.5-7.5c0-3.5-2-6.3-4.5-7.5C17 11.8 18 10 18 8c0-3.5-2.5-6-6-6z"
-
-						/>
-
-					</svg>
-
-				</div>
+				<AppLogoImage class="h-full w-full object-cover" />
 
 			{/if}
 
@@ -142,7 +170,7 @@
 
 				{/if}
 
-				<h2 class="truncate text-lg font-semibold text-forest-900">{displayLabel}</h2>
+				<h2 class="truncate text-lg font-semibold text-forest-900 narrow:text-base">{displayLabel}</h2>
 
 				{#if showApproxBadge}
 
@@ -152,7 +180,7 @@
 
 					>
 
-						~approx.
+						{m.tree_approx_badge()}
 
 					</span>
 
@@ -161,6 +189,20 @@
 			</div>
 
 			<p class="mt-0.5 text-sm text-muted">{formatDate(tree.capturedAt)}</p>
+
+			{#if assessmentSummary}
+
+				<span
+
+					class="mt-1 inline-block rounded-full bg-forest-50 px-2 py-0.5 text-xs font-medium text-forest-800"
+
+				>
+
+					{assessmentSummary}
+
+				</span>
+
+			{/if}
 
 			{#if tree.latitude !== null && tree.longitude !== null}
 
@@ -193,8 +235,5 @@
 			{/if}
 
 		</div>
-
-	</article>
-
-</a>
+{/snippet}
 

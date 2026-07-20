@@ -10,7 +10,7 @@
 		haversineBearingDeg,
 		haversineDistanceM
 	} from '$lib/utils/haversine';
-	import { userPositionState } from '$lib/utils/userPosition.svelte';
+	import { getPublishedUserPosition } from '$lib/utils/userPosition.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let {
@@ -31,20 +31,22 @@
 	});
 
 	let distance = $derived.by(() => {
-		if (!parking || !userPositionState.position) return null;
+		const position = getPublishedUserPosition();
+		if (!parking || !position) return null;
 		return haversineDistanceM(
-			userPositionState.position.latitude,
-			userPositionState.position.longitude,
+			position.latitude,
+			position.longitude,
 			parking.latitude,
 			parking.longitude
 		);
 	});
 
 	let bearing = $derived.by(() => {
-		if (!parking || !userPositionState.position) return null;
+		const position = getPublishedUserPosition();
+		if (!parking || !position) return null;
 		return haversineBearingDeg(
-			userPositionState.position.latitude,
-			userPositionState.position.longitude,
+			position.latitude,
+			position.longitude,
 			parking.latitude,
 			parking.longitude
 		);
@@ -158,7 +160,7 @@
 				onclick={handleClear}
 				class="flex h-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-xs font-medium text-muted transition active:scale-[0.98]"
 			>
-				Effacer
+				{m.action_clear()}
 			</button>
 		</div>
 	{/if}

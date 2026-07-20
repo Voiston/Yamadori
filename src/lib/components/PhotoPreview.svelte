@@ -1,38 +1,51 @@
 <script lang="ts">
 	import { App } from '@capacitor/app';
 	import { tick, onMount } from 'svelte';
-	import { debugCounters, debugLog } from '$lib/utils/debug-log';
 	import { hapticLight } from '$lib/utils/haptics';
 	import { nativeTap } from '$lib/utils/native-touch';
 	import { isNativeApp } from '$lib/utils/platform';
 	import { capturePhoto } from '$lib/utils/nativeCamera';
+	import {
+		beginCameraCapture,
+		endCameraCapture
+	} from '$lib/utils/cameraCaptureSession';
+	import { encodePhotoFile, type PhotoEncoding } from '$lib/utils/photo';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let {
 		previewUrl = '',
 		photoFile = null,
 		frontLabel = null,
-		onfile
+		onfile,
+		onprocessingchange
 	}: {
 		previewUrl?: string;
 		photoFile?: File | null;
 		frontLabel?: string | null;
-		onfile?: (file: File, previewUrl: string) => void;
+		onfile?: (file: File, previewUrl: string, encoding: PhotoEncoding) => void;
+		onprocessingchange?: (busy: boolean) => void;
 	} = $props();
 
 	let inputEl: HTMLInputElement | undefined = $state();
 	let frameEl: HTMLDivElement | undefined = $state();
 	let picking = $state(false);
+	let processingPhoto = $state(false);
 	let error = $state('');
 	let pickingTimeoutId: ReturnType<typeof setTimeout> | undefined;
 
 	const displayUrl = $derived(previewUrl);
-
-	$effect(() => {
-		debugCounters.picking = picking;
-	});
+	const photoBusy = $derived(picking || processingPhoto);
+	const photoButtonLabel = $derived(
+		displayUrl ? `${m.action_edit()} — ${m.photo_label()}` : m.photo_take()
+	);
+	const previewAlt = $derived(displayUrl ? m.photo_label() : '');
 
 	const PICKING_TIMEOUT_MS = 8000;
+
+	function setProcessing(busy: boolean) {
+		processingPhoto = busy;
+		onprocessingchange?.(busy);
+	}
 
 	function revokePreviewUrl(url: string) {
 		if (url.startsWith('blob:')) {
@@ -51,6 +64,8 @@
 		clearPickingTimeout();
 		pickingTimeoutId = setTimeout(() => {
 			picking = false;
+			setProcessing(false);
+			endCameraCapture();
 			error = m.photo_interrupted();
 		}, PICKING_TIMEOUT_MS);
 	}
@@ -66,27 +81,39 @@
 			return;
 		}
 		const url = URL.createObjectURL(photoFile);
-		onfile?.(photoFile, url);
+		onfile?.(photoFile, url, { full: '', thumb: '' });
+	}
+
+	async function showPreparedPhoto(file: File) {
+		if (previewUrl) {
+			revokePreviewUrl(previewUrl);
+		}
+
+		setProcessing(true);
+		try {
+			const encoded = await encodePhotoFile(file);
+			const url = URL.createObjectURL(encoded.previewBlob);
+			onfile?.(encoded.previewFile, url, { full: encoded.full, thumb: encoded.thumb });
+			void hapticLight();
+			await tick();
+			void frameEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		} catch (err) {
+			console.error('Photo preview prepare failed:', err);
+			error = err instanceof Error ? err.message : m.photo_not_received();
+		} finally {
+			setProcessing(false);
+			endCameraCapture();
+		}
 	}
 
 	async function handleFile(file: File) {
-		if (previewUrl) {
-			revokePreviewUrl(previewUrl);
-		}
-		const url = URL.createObjectURL(file);
-		onfile?.(file, url);
-		await tick();
-		void frameEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		beginCameraCapture();
+		await showPreparedPhoto(file);
 	}
 
-	async function handleCapture(file: File, url: string) {
-		if (previewUrl) {
-			revokePreviewUrl(previewUrl);
-		}
-		onfile?.(file, url);
-		void hapticLight();
-		await tick();
-		void frameEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+	async function handleCapture(file: File, nativePreviewUrl: string) {
+		revokePreviewUrl(nativePreviewUrl);
+		await showPreparedPhoto(file);
 	}
 
 	function handleChange(event: Event) {
@@ -98,19 +125,19 @@
 	}
 
 	export function isPicking(): boolean {
-		return picking;
+		return photoBusy;
+	}
+
+	export function isProcessingPhoto(): boolean {
+		return processingPhoto;
 	}
 
 	export async function openCamera() {
-		if (picking) return;
-		debugCounters.photoOpens += 1;
-		debugCounters.visitPhotoOpens += 1;
-		// #region agent log
-		debugLog('PhotoPreview:openCamera', 'photo open', { picking }, 'H4');
-		// #endregion
+		if (photoBusy) return;
 		picking = true;
 		error = '';
 		blurActiveField();
+		beginCameraCapture();
 		startPickingTimeout();
 
 		try {
@@ -120,26 +147,26 @@
 					await handleCapture(result.file, result.previewUrl);
 				} else {
 					error = m.photo_not_received();
+					endCameraCapture();
 				}
 				return;
 			}
 
 			inputEl?.click();
+			return;
 		} catch (err) {
 			console.error('Photo capture failed:', err);
-			error =
-				err instanceof Error ? err.message : m.photo_not_received();
+			error = err instanceof Error ? err.message : m.photo_not_received();
+			endCameraCapture();
 		} finally {
 			clearPickingTimeout();
 			picking = false;
-			// #region agent log
-			debugLog('PhotoPreview:openCamera', 'photo end', { picking }, 'H3');
-			// #endregion
 		}
 	}
 
 	onMount(() => {
 		picking = false;
+		setProcessing(false);
 		clearPickingTimeout();
 
 		if (!isNativeApp()) {
@@ -151,9 +178,6 @@
 				picking = false;
 				clearPickingTimeout();
 				restorePreviewFromFile();
-				// #region agent log
-				debugLog('PhotoPreview:resume', 'app active after camera', { picking }, 'H52');
-				// #endregion
 			}
 		});
 
@@ -168,12 +192,39 @@
 
 	<button
 		type="button"
+		data-capture-tutorial="photo"
 		use:nativeTap={{ onactivate: () => void openCamera(), label: 'photo' }}
-		disabled={picking}
+		disabled={photoBusy}
+		aria-label={photoButtonLabel}
 		class="relative flex min-h-48 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-gray-200 bg-white transition active:scale-[0.99] disabled:opacity-60"
 	>
-		{#if displayUrl}
-			<img src={displayUrl} alt="" class="h-full w-full object-cover" />
+		{#if processingPhoto}
+			<div class="flex flex-col items-center gap-3 px-6 py-8 text-center">
+				<svg
+					class="h-8 w-8 animate-spin text-forest-800"
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+					aria-hidden="true"
+				>
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+					></circle>
+					<path
+						class="opacity-75"
+						fill="currentColor"
+						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+					></path>
+				</svg>
+				<span class="text-sm text-muted">{m.action_saving()}</span>
+			</div>
+		{:else if displayUrl}
+			<img
+				src={displayUrl}
+				alt={previewAlt}
+				class="h-full w-full object-cover"
+				decoding="async"
+				loading="lazy"
+			/>
 			<span
 				class="absolute bottom-3 right-3 rounded-lg bg-forest-900/80 px-3 py-1.5 text-sm font-medium text-white"
 			>

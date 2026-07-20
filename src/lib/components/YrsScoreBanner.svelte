@@ -2,7 +2,7 @@
 	import { agriData } from '$lib/stores/agriData.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import type { YrsDecision } from '$lib/types/yrs';
-	import { onlineState } from '$lib/utils/online.svelte';
+	import { canUseApi } from '$lib/utils/apiPolicy';
 	import { resolveYrsBannerDisplayState } from '$lib/utils/yrsBannerState';
 	import { getYrsBannerAccentClasses, getYrsBannerClasses } from '$lib/utils/yrs';
 	import * as m from '$lib/paraglide/messages.js';
@@ -24,7 +24,7 @@
 			yrs,
 			loading,
 			gpsReady,
-			online: onlineState.online,
+			online: canUseApi('openMeteoForecast'),
 			fromCache,
 			locationError
 		})
@@ -69,6 +69,7 @@
 	role="status"
 	aria-live="polite"
 	aria-label={yrsScoreLabel}
+	data-capture-tutorial="yrs"
 >
 	<div class="absolute inset-y-0 left-0 w-1 {accentClass}" aria-hidden="true"></div>
 
@@ -80,6 +81,7 @@
 				<p class="mt-1 text-2xl font-semibold tabular-nums leading-none text-forest-900">
 					{yrs.score}<span class="text-base font-normal text-muted">/100</span>
 				</p>
+				<p class="mt-1.5 text-[11px] leading-snug text-muted">{m.yrs_timing_hint()}</p>
 			{:else if displayState === 'calculating'}
 				<p class="mt-1 text-sm text-forest-700">{m.yrs_calculating()}</p>
 			{:else if displayState === 'gps_required'}

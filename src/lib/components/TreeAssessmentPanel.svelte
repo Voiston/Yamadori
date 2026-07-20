@@ -272,12 +272,12 @@
 				<span class="text-sm font-medium text-forest-900">
 					{m.assessment_potential()} : {tree.assessment.potentialScore ?? '—'}/10
 				</span>
-				<div class="grid grid-cols-5 gap-2">
+				<div class="grid grid-cols-5 gap-2 narrow:gap-1">
 					{#each Array.from({ length: 10 }, (_, i) => i + 1) as score (score)}
 						<button
 							type="button"
 							onclick={() => toggleChip('potentialScore', score, tree.assessment.potentialScore)}
-							class="flex h-10 items-center justify-center rounded-lg text-sm font-medium transition active:scale-[0.98] {tree.assessment.potentialScore ===
+							class="flex h-10 items-center justify-center rounded-lg text-sm font-medium transition active:scale-[0.98] narrow:text-xs {tree.assessment.potentialScore ===
 							score
 								? 'bg-forest-800 text-white'
 								: 'border border-gray-200 bg-white text-forest-900'}"

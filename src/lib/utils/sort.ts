@@ -66,6 +66,31 @@ function distanceForTree(tree: Tree, userPosition?: UserPosition): number | null
 	);
 }
 
+function distanceFromMap(
+	tree: Tree,
+	userPosition: UserPosition | undefined,
+	distanceMap: Map<string, number> | undefined
+): number | null {
+	if (distanceMap) {
+		return distanceMap.get(tree.id) ?? null;
+	}
+	return distanceForTree(tree, userPosition);
+}
+
+export function buildTreeDistanceMap(
+	trees: Tree[],
+	userPosition: UserPosition
+): Map<string, number> {
+	const map = new Map<string, number>();
+	for (const tree of trees) {
+		const distance = distanceForTree(tree, userPosition);
+		if (distance !== null) {
+			map.set(tree.id, distance);
+		}
+	}
+	return map;
+}
+
 function compareNullableNumber(
 	a: number | null,
 	b: number | null,
@@ -80,7 +105,8 @@ function compareNullableNumber(
 export function sortTrees(
 	trees: Tree[],
 	key: SortKey,
-	userPosition?: UserPosition
+	userPosition?: UserPosition,
+	distanceMap?: Map<string, number>
 ): Tree[] {
 	const sorted = [...trees];
 
@@ -96,14 +122,14 @@ export function sortTrees(
 				return a.capturedAt.localeCompare(b.capturedAt);
 			case 'distance_asc':
 				return compareNullableNumber(
-					distanceForTree(a, userPosition),
-					distanceForTree(b, userPosition),
+					distanceFromMap(a, userPosition, distanceMap),
+					distanceFromMap(b, userPosition, distanceMap),
 					'asc'
 				);
 			case 'distance_desc':
 				return compareNullableNumber(
-					distanceForTree(a, userPosition),
-					distanceForTree(b, userPosition),
+					distanceFromMap(a, userPosition, distanceMap),
+					distanceFromMap(b, userPosition, distanceMap),
 					'desc'
 				);
 			case 'potential_desc':

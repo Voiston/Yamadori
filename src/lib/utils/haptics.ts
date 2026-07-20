@@ -36,3 +36,27 @@ export async function hapticSelection(): Promise<void> {
 		// Haptics unavailable.
 	}
 }
+
+export async function hapticWarning(): Promise<void> {
+	if (!isNativeApp()) {
+		return;
+	}
+
+	try {
+		await Haptics.notification({ type: NotificationType.Warning });
+	} catch {
+		// Haptics unavailable.
+	}
+}
+
+export async function hapticError(): Promise<void> {
+	if (!isNativeApp()) {
+		return;
+	}
+
+	try {
+		await Haptics.notification({ type: NotificationType.Error });
+	} catch {
+		// Haptics unavailable.
+	}
+}

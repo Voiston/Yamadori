@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 
+/* Very narrow phones (~320–360px): compact chrome without changing ≥360px layouts. */
+@custom-variant narrow (@media (max-width: 360px));
+
 @theme {
 	--color-forest-900: #1a2e1a;
 	--color-forest-800: #2d4a2d;
@@ -30,11 +33,54 @@
 	}
 
 	.pb-safe {
-		padding-bottom: env(safe-area-inset-bottom);
+		padding-bottom: max(0.75rem, var(--safe-bottom));
 	}
 
 	.pb-safe-unified {
 		padding-bottom: max(0.75rem, var(--safe-bottom));
+	}
+
+	/* Onboarding : pas de marge par défaut (web). */
+	.pb-onboarding-sheet {
+		padding-bottom: 0;
+	}
+
+	/* Gestes (Pixel, etc.) : fine marge de respiration, sans env() gonflé. */
+	html[data-nav-bar='gesture'] {
+		--safe-bottom: 10px;
+	}
+
+	html[data-nav-bar='buttons'] {
+		--safe-bottom: var(--inset-bottom, 0px);
+	}
+
+	html[data-nav-bar='gesture'] .pb-safe,
+	html[data-nav-bar='gesture'] .pb-safe-unified,
+	html[data-nav-bar='gesture'] .veto-checklist__footer {
+		padding-bottom: 10px;
+	}
+
+	html[data-nav-bar='gesture'] .capture-screen__footer {
+		padding-bottom: var(--gesture-clearance, 18px);
+	}
+
+	html[data-nav-bar='gesture'] .onboarding-sheet-actions {
+		padding-bottom: var(--gesture-clearance, 18px);
+	}
+
+	/* Barre 3 boutons : clearance sous les boutons, pas sous tout le panneau. */
+	html[data-nav-bar='buttons'] .pb-safe,
+	html[data-nav-bar='buttons'] .pb-safe-unified {
+		padding-bottom: var(--safe-bottom);
+	}
+
+	html[data-nav-bar='buttons'] .capture-screen__footer,
+	html[data-nav-bar='buttons'] .veto-checklist__footer {
+		padding-bottom: var(--safe-bottom);
+	}
+
+	html[data-nav-bar='buttons'] .onboarding-sheet-actions {
+		padding-bottom: var(--safe-bottom);
 	}
 
 	.pb-above-nav {
@@ -53,8 +99,30 @@
 		scroll-padding-bottom: max(1.5rem, calc(1.5rem + var(--safe-bottom)), 3rem);
 	}
 
+	[data-capture-tutorial] {
+		scroll-margin-top: var(--tutorial-scroll-margin-top, 1rem);
+		scroll-margin-bottom: var(--tutorial-scroll-margin-bottom, 8rem);
+	}
+
 	.bottom-safe-toast {
 		bottom: max(6rem, calc(6rem + var(--safe-bottom)), calc(3rem + var(--safe-bottom)));
+	}
+
+	@keyframes save-success-pulse {
+		0%,
+		100% {
+			transform: scale(1);
+			box-shadow: none;
+		}
+
+		50% {
+			transform: scale(1.02);
+			box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-forest-600) 40%, transparent);
+		}
+	}
+
+	.save-success-pulse {
+		animation: save-success-pulse 0.35s ease-out;
 	}
 
 	.map-controls-top {
@@ -73,9 +141,17 @@
 		top: calc(env(safe-area-inset-top, 0px) + 8rem);
 	}
 
-	.map-recenter-control--embedded {
-		top: auto;
-		bottom: calc(5rem + var(--safe-bottom));
+	.map-follow-toggle--active {
+		background-color: var(--color-forest-800);
+		color: #ffffff;
+		border-color: var(--color-forest-600);
+		box-shadow:
+			0 0 0 2px #ffffff,
+			0 0 0 4px var(--color-forest-600);
+	}
+
+	.map-follow-toggle--active svg {
+		stroke: currentColor;
 	}
 
 	.map-cadastre-banner {
@@ -96,6 +172,14 @@
 		max-height: min(60vh, 28rem);
 		min-height: 0;
 		flex-direction: column;
+		overflow: hidden;
+		touch-action: pan-y;
+	}
+
+	.map-cadastre-checklist .veto-checklist--confirmable {
+		flex: 1;
+		min-height: 0;
+		max-height: 100%;
 	}
 
 	.capture-screen {
@@ -265,6 +349,21 @@ html[data-outdoor] .simple-mode-toggle:not(.simple-mode-toggle--active) {
 	border: 2px solid #000000 !important;
 }
 
+html[data-outdoor] .map-follow-toggle--active {
+	background-color: #000000 !important;
+	color: #ffffff !important;
+	border: 2px solid #000000 !important;
+	box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px #000000 !important;
+}
+
+html[data-outdoor] .map-follow-toggle--active svg {
+	stroke: #ffffff !important;
+}
+
+html[data-outdoor] .map-follow-toggle--active svg [fill='currentColor'] {
+	fill: #ffffff !important;
+}
+
 /* Mode sombre OLED — noir pur pour économie batterie */
 html[data-dark] {
 	--color-surface: #000000;
@@ -377,6 +476,19 @@ html[data-dark] .simple-mode-toggle--active {
 }
 
 html[data-dark] .outdoor-mode-toggle--active svg {
+	stroke: #ffffff !important;
+}
+
+html[data-dark] .map-follow-toggle--active {
+	background-color: #4a7c4a !important;
+	color: #ffffff !important;
+	border-color: #86efac !important;
+	box-shadow:
+		0 0 0 2px #000000,
+		0 0 0 4px #86efac !important;
+}
+
+html[data-dark] .map-follow-toggle--active svg {
 	stroke: #ffffff !important;
 }
 

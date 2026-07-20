@@ -15,7 +15,7 @@
 	import { shareTree, shareTreePhoto } from '$lib/utils/share';
 
 	import { isNativeApp } from '$lib/utils/platform';
-
+	import { showDetailFeedback } from '$lib/stores/appToast.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
 
@@ -28,9 +28,7 @@
 
 		simpleMode = false,
 
-		onedit,
-
-		onfeedback
+		onedit
 
 	}: {
 
@@ -41,8 +39,6 @@
 		simpleMode?: boolean;
 
 		onedit?: () => void;
-
-		onfeedback?: (message: string) => void;
 
 	} = $props();
 
@@ -74,15 +70,15 @@
 
 		if (result === 'shared') {
 
-			onfeedback?.(m.feedback_shared());
+			showDetailFeedback(m.feedback_shared());
 
 		} else if (result === 'copied') {
 
-			onfeedback?.(m.feedback_copied());
+			showDetailFeedback(m.feedback_copied());
 
 		} else {
 
-			onfeedback?.(m.feedback_copy_failed());
+			showDetailFeedback(m.feedback_copy_failed());
 
 		}
 
@@ -96,7 +92,7 @@
 
 		const ok = await copyCoordinates(tree.latitude, tree.longitude);
 
-		onfeedback?.(ok ? m.feedback_coords_copied() : m.feedback_copy_failed());
+		showDetailFeedback(ok ? m.feedback_coords_copied() : m.feedback_copy_failed());
 
 	}
 
@@ -106,11 +102,11 @@
 
 		if (result === 'shared') {
 
-			onfeedback?.(m.feedback_photo_shared());
+			showDetailFeedback(m.feedback_photo_shared());
 
 		} else {
 
-			onfeedback?.(m.feedback_copy_failed());
+			showDetailFeedback(m.feedback_copy_failed());
 
 		}
 
@@ -196,7 +192,7 @@
 
 			</svg>
 
-			Y aller
+			{m.tree_navigate()}
 
 		</button>
 

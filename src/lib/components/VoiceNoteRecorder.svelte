@@ -11,7 +11,7 @@
 		isVoiceRecordingPermissionError,
 		isVoiceRecordingSupported
 	} from '$lib/utils/voice';
-	import { hapticLight, hapticSuccess } from '$lib/utils/haptics';
+	import { hapticError, hapticLight, hapticSuccess } from '$lib/utils/haptics';
 	import { nativeTap } from '$lib/utils/native-touch';
 	import { isNativeApp } from '$lib/utils/platform';
 	import * as m from '$lib/paraglide/messages.js';
@@ -197,6 +197,8 @@
 
 			hint = getVoiceRecordingErrorMessage(err);
 
+			void hapticError();
+
 			return false;
 
 		}
@@ -254,6 +256,8 @@
 			recorderState = 'idle';
 
 			hint = err instanceof Error ? err.message : m.voice_stop_error();
+
+			void hapticError();
 
 			return false;
 
@@ -503,7 +507,7 @@
 
 				</svg>
 
-				Stop
+				{m.voice_stop()}
 
 			</button>
 
@@ -612,6 +616,8 @@
 		<button
 
 			type="button"
+
+			data-capture-tutorial="voice"
 
 			use:nativeTap={{ onactivate: () => void handleStart(), label: 'voice-start' }}
 

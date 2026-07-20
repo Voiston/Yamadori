@@ -17,12 +17,17 @@
 	});
 </script>
 
-<div class="flex gap-2" role="group" aria-label={m.filter_group_label()}>
+<div
+	class="flex min-w-0 shrink gap-2 overflow-x-auto"
+	role="group"
+	aria-label={m.filter_group_label()}
+>
 	{#each options as option (option.id)}
 		<button
 			type="button"
 			onclick={() => (value = option.id)}
-			class="h-10 rounded-full px-4 text-sm font-medium transition active:scale-[0.98] {value === option.id
+			class="h-10 shrink-0 rounded-full px-4 text-sm font-medium transition active:scale-[0.98] narrow:px-3 narrow:text-xs {value ===
+			option.id
 				? 'bg-forest-800 text-white'
 				: 'border border-gray-200 bg-white text-forest-900'}"
 			aria-pressed={value === option.id}

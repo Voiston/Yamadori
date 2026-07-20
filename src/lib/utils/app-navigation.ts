@@ -20,13 +20,16 @@ export function getBackNavigationTarget(
 	const isParkingCompass = routeId === '/parking/compass';
 	const isDetail = routeId === '/tree/[id]';
 	const isSettings = routeId === '/settings';
-	const showBack = isCapture || isDetail || isCompass || isParkingCompass || isSettings;
+	const isPrivacy = routeId === '/settings/privacy';
+	const showBack = isCapture || isDetail || isCompass || isParkingCompass || isSettings || isPrivacy;
 
-	const href = isParkingCompass
-		? `${base}/map`
-		: isCompass && treeId
-			? `${base}/tree/${treeId}`
-			: `${base}/`;
+	const href = isPrivacy
+		? `${base}/settings`
+		: isParkingCompass
+			? `${base}/map`
+			: isCompass && treeId
+				? `${base}/tree/${treeId}`
+				: `${base}/`;
 
 	return { showBack, href };
 }

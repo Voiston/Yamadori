@@ -1,6 +1,5 @@
 import * as m from '$lib/paraglide/messages.js';
 import type { VoiceNote } from '$lib/types/tree';
-import { debugLog } from '$lib/utils/debug-log';
 import { isNativeApp } from '$lib/utils/platform';
 import { RecordingStatus, VoiceRecorder } from 'capacitor-voice-recorder';
 
@@ -136,10 +135,6 @@ export class VoiceRecorderSession {
 	}
 
 	private async startNative(): Promise<void> {
-		// #region agent log
-		debugLog('voice:startNative', 'native record start', {}, 'H51');
-		// #endregion
-
 		const canRecord = await VoiceRecorder.canDeviceVoiceRecord();
 		if (!canRecord.value) {
 			throw new Error(m.voice_unsupported_device());
@@ -154,10 +149,6 @@ export class VoiceRecorderSession {
 
 		this.useNative = true;
 		this.startedAt = Date.now();
-
-		// #region agent log
-		debugLog('voice:startNative', 'native record started', {}, 'H51');
-		// #endregion
 	}
 
 	private async startWeb(): Promise<void> {
@@ -199,15 +190,6 @@ export class VoiceRecorderSession {
 
 			const blob = base64ToBlob(recordDataBase64, mimeType);
 			this.useNative = false;
-
-			// #region agent log
-			debugLog(
-				'voice:stopNative',
-				'native record stopped',
-				{ durationMs: msDuration, mimeType },
-				'H51'
-			);
-			// #endregion
 
 			return {
 				blob,

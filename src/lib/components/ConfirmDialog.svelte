@@ -4,7 +4,9 @@
 
 	import * as m from '$lib/paraglide/messages.js';
 
-	import { portal } from '$lib/utils/portal';
+	import { portal, APP_SHELL_PORTAL_TARGET } from '$lib/utils/portal';
+	import { modalFocus } from '$lib/utils/modalFocus';
+	import { hapticWarning } from '$lib/utils/haptics';
 
 
 
@@ -19,6 +21,8 @@
 		confirmLabel,
 
 		variant = 'danger',
+
+		trapFocus = true,
 
 		onconfirm,
 
@@ -35,6 +39,8 @@
 		confirmLabel?: string;
 
 		variant?: 'danger' | 'default';
+
+		trapFocus?: boolean;
 
 		onconfirm?: () => void;
 
@@ -74,6 +80,8 @@
 
 		open = false;
 
+		void hapticWarning();
+
 		oncancel?.();
 
 	}
@@ -81,6 +89,10 @@
 
 
 	function handleConfirm() {
+
+		if (variant === 'danger') {
+			void hapticWarning();
+		}
 
 		onconfirm?.();
 
@@ -124,7 +136,9 @@
 
 	<div
 
-		use:portal
+		use:portal={APP_SHELL_PORTAL_TARGET}
+
+		data-yamadori-portal
 
 		class="fixed inset-0 z-[100] flex items-end justify-center bg-forest-900/40 p-4 sm:items-center"
 
@@ -145,6 +159,8 @@
 			aria-labelledby="dialog-title"
 
 			aria-describedby="dialog-message"
+
+			use:modalFocus={trapFocus}
 
 		>
 

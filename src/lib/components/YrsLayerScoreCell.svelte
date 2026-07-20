@@ -9,14 +9,18 @@
 		breakdown,
 		isPenalty = false,
 		open = false,
-		ontoggle
+		interactive = true,
+		ontoggle,
+		onlockedclick
 	}: {
 		label: string;
 		displayValue: string;
 		breakdown: YrsLayerBreakdown;
 		isPenalty?: boolean;
 		open?: boolean;
+		interactive?: boolean;
 		ontoggle?: () => void;
+		onlockedclick?: () => void;
 	} = $props();
 
 	const scoreDetailAria = $derived.by(() => {
@@ -36,6 +40,7 @@
 </script>
 
 <div class="relative">
+	{#if interactive}
 	<button
 		type="button"
 		class="w-full rounded-lg bg-white px-3 py-2 text-left transition active:scale-[0.98] {open
@@ -51,8 +56,22 @@
 		<p class="text-muted">{label}</p>
 		<p class="font-semibold {isPenalty ? 'text-red-700' : 'text-forest-800'}">{displayValue}</p>
 	</button>
+	{:else}
+	<button
+		type="button"
+		class="w-full rounded-lg bg-white px-3 py-2 text-left transition active:scale-[0.98]"
+		aria-label={scoreDetailAria}
+		onclick={(event) => {
+			event.stopPropagation();
+			onlockedclick?.();
+		}}
+	>
+		<p class="text-muted">{label}</p>
+		<p class="font-semibold {isPenalty ? 'text-red-700' : 'text-forest-800'}">{displayValue}</p>
+	</button>
+	{/if}
 
-	{#if open}
+	{#if interactive && open}
 		<div
 			role="region"
 			aria-label={scoreDetailAria}

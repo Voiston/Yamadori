@@ -42,6 +42,15 @@ export const CADASTRE_LAYER: IgnLayerConfig = {
 	style: 'PCI vecteur'
 };
 
+/** ZNIEFF type 1 (Patrinat / INPN) — indicative protected-nature overlay for verification. */
+export const PROTECTED_AREAS_LAYER: IgnLayerConfig = {
+	layer: 'Patrinat_ZNIEFF1',
+	format: 'image/png',
+	maxZoom: 16,
+	attribution: '© IGN / Patrinat — ZNIEFF1',
+	style: 'normal'
+};
+
 function getApiKey(): string | undefined {
 	const key = import.meta.env.VITE_IGN_API_KEY;
 	return typeof key === 'string' && key.trim() ? key.trim() : undefined;

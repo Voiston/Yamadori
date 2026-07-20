@@ -4,11 +4,22 @@
 
 	import CaptureForm from '$lib/components/CaptureForm.svelte';
 
+	import FirstCaptureGuide from '$lib/components/FirstCaptureGuide.svelte';
+
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+
+	import {
+		advanceOnboardingPhase,
+		onboardingState,
+		setCaptureSavedDuringTutorial
+	} from '$lib/stores/onboarding.svelte';
 
 	import * as m from '$lib/paraglide/messages.js';
 
 	import { isNativeApp } from '$lib/utils/platform';
+	import { releaseOnboardingUiLocks } from '$lib/utils/onboardingUi';
+	import { teardownCaptureTutorial } from '$lib/utils/captureTutorialTeardown';
+	import { tick } from 'svelte';
 
 
 
@@ -37,6 +48,26 @@
 	let formKey = $state(bumpCaptureEntry());
 
 	let skipNextCaptureNavigateBump = true;
+
+
+
+	let guideDismissed = $state(false);
+
+	let showCaptureGuide = $derived(
+		!guideDismissed &&
+			isNativeApp() &&
+			onboardingState.loaded &&
+			onboardingState.phase === 'capture'
+	);
+
+	async function handleCaptureGuideSkip() {
+		guideDismissed = true;
+		teardownCaptureTutorial();
+		await tick();
+		setCaptureSavedDuringTutorial(false);
+		await advanceOnboardingPhase('protection');
+		await releaseOnboardingUiLocks();
+	}
 
 
 
@@ -83,8 +114,10 @@
 
 
 {#key formKey}
-
-	<CaptureForm />
-
+	<div class="capture-tutorial-root relative flex min-h-0 flex-1 flex-col">
+		<CaptureForm tutorialActive={showCaptureGuide} />
+		{#if showCaptureGuide}
+			<FirstCaptureGuide onskip={() => void handleCaptureGuideSkip()} />
+		{/if}
+	</div>
 {/key}
-

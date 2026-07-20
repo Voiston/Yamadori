@@ -4,6 +4,11 @@
 
 	import { getMainNavTabs } from '$lib/navigation';
 
+	import { treeStore } from '$lib/stores/trees.svelte';
+
+	import { canAddTree } from '$lib/utils/featurePolicy';
+	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
+
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 
 	import * as m from '$lib/paraglide/messages.js';
@@ -22,6 +27,8 @@
 
 	});
 
+	let captureBlocked = $derived(!canAddTree(treeStore.trees.length));
+
 </script>
 
 
@@ -39,7 +46,20 @@
 		{#each navTabs as tab (tab.href)}
 
 			{@const active = routeId === tab.routeId}
+			{@const isCaptureTab = tab.routeId === '/capture'}
+			{@const disabled = isCaptureTab && captureBlocked}
 
+			{#if disabled}
+				<button
+					type="button"
+					class="flex flex-1 flex-col items-center justify-center gap-1 text-muted opacity-70 transition active:scale-95"
+					aria-label={m.pro_tree_limit_reached()}
+					onclick={() => openProPaywall('tree_limit')}
+				>
+					<NavIcon icon={tab.icon} />
+					<span class="text-xs font-medium">{tab.label}</span>
+				</button>
+			{:else}
 			<a
 
 				href={tab.href}
@@ -59,6 +79,7 @@
 				<span class="text-xs font-medium">{tab.label}</span>
 
 			</a>
+			{/if}
 
 		{/each}
 

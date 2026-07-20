@@ -87,12 +87,21 @@ export function getAssessmentSummary(assessment: import('$lib/types/tree').TreeA
 			?.label.split(' ')[0];
 		if (label) parts.push(label);
 	}
-	if (assessment.potentialScore !== null) {
+	if (assessment.potentialScore !== null && assessment.potentialScore !== undefined) {
 		parts.push(`${assessment.potentialScore}/10`);
+	}
+	if (assessment.trunkDiameterCm != null && Number.isFinite(assessment.trunkDiameterCm)) {
+		parts.push(`Ø ${assessment.trunkDiameterCm} cm`);
 	}
 	if (assessment.deadwood && assessment.deadwood !== 'aucun') {
 		const label = getDeadwoodOptions()
 			.find((o) => o.value === assessment.deadwood)
+			?.label.split(' ')[0];
+		if (label) parts.push(label);
+	}
+	if (assessment.bark) {
+		const label = getBarkOptions()
+			.find((o) => o.value === assessment.bark)
 			?.label.split(' ')[0];
 		if (label) parts.push(label);
 	}

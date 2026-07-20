@@ -1,12 +1,13 @@
 import type { AgriData } from '$lib/types/agri';
 import type { OpenMeteoForecastResponse } from '$lib/utils/agri';
+import { REGIONAL_API_COORD_DECIMALS, regionalApiCoordinates } from '$lib/utils/geo';
 import { toStorable } from '$lib/utils/idb-store';
 import { haversineDistanceM } from '$lib/utils/haversine';
 import { createStore, del, get, keys, set } from 'idb-keyval';
 
 const weatherStore = createStore('yamadori-weather-cache', 'forecasts');
 
-export const MAX_CACHE_ENTRIES = 20;
+export const MAX_CACHE_ENTRIES = 50;
 /** Données considérées fraîches — pas d'appel API si le cache est plus récent. */
 export const MAX_FRESH_AGE_MS = 3 * 60 * 60 * 1000;
 /** Durée de rétention en IndexedDB pour le repli hors-ligne (même périmé). */
@@ -28,7 +29,8 @@ export interface CachedWeatherLookup {
 }
 
 export function gridKeyForCoordinates(latitude: number, longitude: number): string {
-	return `${latitude.toFixed(2)}_${longitude.toFixed(2)}`;
+	const { latitude: lat, longitude: lon } = regionalApiCoordinates(latitude, longitude);
+	return `${lat.toFixed(REGIONAL_API_COORD_DECIMALS)}_${lon.toFixed(REGIONAL_API_COORD_DECIMALS)}`;
 }
 
 export function isCacheEntryFresh(fetchedAt: string, now = new Date()): boolean {

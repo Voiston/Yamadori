@@ -2,7 +2,7 @@
 	import type { CompassTarget } from '$lib/types/compass';
 	import CompassDial from '$lib/components/CompassDial.svelte';
 	import CompassNavArrow from '$lib/components/CompassNavArrow.svelte';
-	import TopoMap from '$lib/components/TopoMap.svelte';
+	import TopoMapLazy from '$lib/components/TopoMapLazy.svelte';
 	import {
 		formatDistance,
 		haversineBearingDeg,
@@ -74,7 +74,6 @@
 	let orientationEnabled = $state(false);
 	let orientationError = $state('');
 	let smoothedBearing = $state<number | null>(null);
-	let displayedDistance = $state<number | null>(null);
 	let lastBearingPosition = $state<{ latitude: number; longitude: number } | null>(null);
 	let displayRotation = $state(0);
 	let declinationDeg = $state<number | null>(null);
@@ -90,7 +89,18 @@
 		return m.onboarding_compass_title().replace(/\s*\([^)]*\)$/, '');
 	});
 
-	const distance = $derived(displayedDistance);
+	const distance = $derived.by(() => {
+		const position = userPositionState.position;
+		if (!position || target.latitude === null || target.longitude === null) {
+			return null;
+		}
+		return haversineDistanceM(
+			position.latitude,
+			position.longitude,
+			target.latitude,
+			target.longitude
+		);
+	});
 
 	const declinationGridKey = $derived.by(() => {
 		const position = userPositionState.position;
@@ -149,7 +159,6 @@
 		if (!position || target.latitude === null || target.longitude === null) {
 			untrack(() => {
 				smoothedBearing = null;
-				displayedDistance = null;
 				lastBearingPosition = null;
 			});
 			return;
@@ -178,12 +187,6 @@
 			: Number.POSITIVE_INFINITY;
 
 		smoothedBearing = smoothBearing(previousBearing, nextBearing, movedMeters);
-		displayedDistance = haversineDistanceM(
-			position.latitude,
-			position.longitude,
-			target.latitude,
-			target.longitude
-		);
 		lastBearingPosition = {
 			latitude: position.latitude,
 			longitude: position.longitude
@@ -249,10 +252,10 @@
 
 	$effect(() => {
 		let profile: GpsProfile;
-		if (viewMode === 'map') {
-			profile = headingLocked ? 'navigation' : 'watch';
+		if (headingLocked) {
+			profile = 'navigation';
 		} else {
-			profile = headingLocked ? 'navigation' : 'proximity';
+			profile = 'watch';
 		}
 		void requestCurrentPosition(profile);
 		const release = acquireLocationWatch('compass', profile);
@@ -419,7 +422,7 @@
 			</div>
 		</div>
 
-		<TopoMap
+		<TopoMapLazy
 			{focusTreeId}
 			focusCenter={mapFocusCenter}
 			embedded

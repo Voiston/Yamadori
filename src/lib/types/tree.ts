@@ -23,6 +23,8 @@ export interface TreeVisit {
 	visitedAt: string;
 	note: string;
 	photoBase64: string;
+	/** Optional 128px thumbnail for list rendering. */
+	photoThumbBase64?: string;
 	voiceNote?: VoiceNote | null;
 	yrsSnapshot?: YrsStoredSnapshot | null;
 }
@@ -65,6 +67,8 @@ export interface Tree {
 	species: string;
 	notes: string;
 	photos: string[];
+	/** Thumbnails parallel to photos when available (list / map). */
+	photoThumbs?: string[];
 	visits: TreeVisit[];
 	assessment: TreeAssessment;
 	voiceNote: VoiceNote | null;
@@ -91,6 +95,10 @@ export type NewTree = Omit<Tree, 'id' | 'capturedAt' | 'visits'>;
 
 export function getCoverPhoto(tree: Pick<Tree, 'photos'>): string {
 	return tree.photos[0] ?? '';
+}
+
+export function getCoverPhotoThumb(tree: Pick<Tree, 'photos' | 'photoThumbs'>): string {
+	return tree.photoThumbs?.[0] ?? tree.photos[0] ?? '';
 }
 
 export function getTreeDisplayLabel(

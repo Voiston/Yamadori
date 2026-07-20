@@ -60,6 +60,8 @@
 
 							class="h-16 w-16 shrink-0 overflow-hidden rounded-lg"
 
+							aria-label={m.tree_visit_photo_alt()}
+
 							onclick={() => openPhoto(visit.photoBase64)}
 
 						>
