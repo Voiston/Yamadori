@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import { agriData, loadAgriData } from '$lib/stores/agriData.svelte';
 	import type { ClimateHistory } from '$lib/types/climate';
 	import type { PhenologyStageId } from '$lib/types/gdd';
 	import type { CernageStatus, YrsDecision } from '$lib/types/yrs';
 	import type { EnvironmentExposure } from '$lib/types/environment';
-	import { agriData } from '$lib/stores/agriData.svelte';
 	import AgriPanel from './AgriPanel.svelte';
 	import ClimatePanel from './ClimatePanel.svelte';
+	import { resolveCountry } from '$lib/geo/resolveCountry';
 	import * as m from '$lib/paraglide/messages.js';
 
 	interface Props {
@@ -19,6 +20,8 @@
 		observedPhenologyStage?: PhenologyStageId | null;
 		cernageStatus?: CernageStatus | null;
 		environmentExposure?: EnvironmentExposure;
+		latitude?: number | null;
+		longitude?: number | null;
 		onretry?: () => void;
 		open?: boolean;
 	}
@@ -33,11 +36,20 @@
 		observedPhenologyStage = null,
 		cernageStatus = null,
 		environmentExposure = 'OPEN',
+		latitude = null,
+		longitude = null,
 		onretry,
 		open = $bindable(false)
 	}: Props = $props();
 
+	let climateFetchRequested = $state(false);
+
 	const yrs = $derived(agriData.data?.yrs ?? null);
+	const showFranceCalibrationDisclaimer = $derived(
+		latitude != null &&
+			longitude != null &&
+			resolveCountry(latitude, longitude) !== 'FR'
+	);
 
 	const yrsDecisionLabels = $derived.by((): Record<YrsDecision, string> => {
 		void appearanceSettingsState.locale;
@@ -55,6 +67,28 @@
 		if (decision === 'RISK') return 'text-orange-700';
 		return 'text-red-700';
 	}
+
+	$effect(() => {
+		if (!open) {
+			climateFetchRequested = false;
+			return;
+		}
+		if (latitude === null || longitude === null) {
+			return;
+		}
+
+		void loadAgriData(latitude, longitude, false, {
+			species,
+			observedPhenologyStage,
+			cernageStatus,
+			environmentExposure
+		});
+
+		if (!climate && !loading && !climateFetchRequested && onretry) {
+			climateFetchRequested = true;
+			onretry();
+		}
+	});
 </script>
 
 <details class="rounded-lg border border-gray-200 bg-white" bind:open>
@@ -71,6 +105,11 @@
 	</summary>
 
 	<div class="border-t border-gray-100 px-4 py-3">
+		{#if showFranceCalibrationDisclaimer}
+			<p class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950" role="status">
+				{m.gdd_france_calibration_disclaimer()}
+			</p>
+		{/if}
 		<AgriPanel
 			{approximate}
 			{offline}

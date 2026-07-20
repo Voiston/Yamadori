@@ -1,14 +1,38 @@
 import { getCurrentPosition as readCurrentPosition } from '$lib/utils/locationProvider';
 
+export const REGIONAL_API_COORD_DECIMALS = 2;
+
+/** Tronque les coords avant envoi à Open-Meteo / Nominatim (~1,1 km en latitude). */
+export function regionalApiCoordinates(
+	latitude: number,
+	longitude: number
+): { latitude: number; longitude: number } {
+	const factor = 10 ** REGIONAL_API_COORD_DECIMALS;
+	return {
+		latitude: Math.trunc(latitude * factor) / factor,
+		longitude: Math.trunc(longitude * factor) / factor
+	};
+}
+
 export const POOR_ACCURACY_THRESHOLD_M = 25;
 export const GPS_EXCELLENT_ACCURACY_THRESHOLD_M = 10;
 
-/** Fresh fix required for tree / parking capture — longer timeout for cold start (montagne, hors-ligne). */
-export const GPS_CAPTURE_OPTIONS: PositionOptions = {
+/** Fresh fix for save — no cached position. */
+export const GPS_CAPTURE_FIX_OPTIONS: PositionOptions = {
 	enableHighAccuracy: true,
 	timeout: 30_000,
 	maximumAge: 0
 };
+
+/** Live capture watch — allow a short OS cache while GNSS refines. */
+export const GPS_CAPTURE_WATCH_OPTIONS: PositionOptions = {
+	enableHighAccuracy: true,
+	timeout: 30_000,
+	maximumAge: 5_000
+};
+
+/** @deprecated Use GPS_CAPTURE_FIX_OPTIONS or GPS_CAPTURE_WATCH_OPTIONS */
+export const GPS_CAPTURE_OPTIONS = GPS_CAPTURE_FIX_OPTIONS;
 
 /** Continuous map / compass tracking — allow a short cache to reduce churn. */
 export const GPS_WATCH_OPTIONS: PositionOptions = {
@@ -29,8 +53,8 @@ export const GPS_PROXIMITY_OPTIONS: PositionOptions = {
 	maximumAge: 30_000
 };
 
-/** @deprecated Use GPS_CAPTURE_OPTIONS or GPS_WATCH_OPTIONS */
-export const GPS_HIGH_ACCURACY_OPTIONS = GPS_CAPTURE_OPTIONS;
+/** @deprecated Use GPS_CAPTURE_FIX_OPTIONS or GPS_CAPTURE_WATCH_OPTIONS */
+export const GPS_HIGH_ACCURACY_OPTIONS = GPS_CAPTURE_FIX_OPTIONS;
 
 export type GpsProfile = 'capture' | 'navigation' | 'watch' | 'proximity';
 
@@ -38,13 +62,20 @@ export type GpsProfile = 'capture' | 'navigation' | 'watch' | 'proximity';
 export type GpsPurpose = 'capture' | 'watch';
 
 const GPS_OPTIONS_BY_PROFILE: Record<GpsProfile, PositionOptions> = {
-	capture: GPS_CAPTURE_OPTIONS,
+	capture: GPS_CAPTURE_WATCH_OPTIONS,
 	navigation: GPS_NAVIGATION_OPTIONS,
 	watch: {
 		enableHighAccuracy: true,
 		timeout: 20_000,
 		maximumAge: 5_000
 	},
+	proximity: GPS_PROXIMITY_OPTIONS
+};
+
+const GPS_FIX_OPTIONS_BY_PROFILE: Record<GpsProfile, PositionOptions> = {
+	capture: GPS_CAPTURE_FIX_OPTIONS,
+	navigation: GPS_NAVIGATION_OPTIONS,
+	watch: GPS_WATCH_OPTIONS,
 	proximity: GPS_PROXIMITY_OPTIONS
 };
 
@@ -66,6 +97,10 @@ export function getGpsOptions(profile: GpsProfile = 'capture'): PositionOptions 
 	return GPS_OPTIONS_BY_PROFILE[profile];
 }
 
+export function getGpsFixOptions(profile: GpsProfile = 'capture'): PositionOptions {
+	return GPS_FIX_OPTIONS_BY_PROFILE[profile];
+}
+
 /** Android-only Capacitor fields — ignored on web/iOS. */
 export type CapacitorGpsOptions = PositionOptions & {
 	minimumUpdateInterval?: number;
@@ -75,6 +110,17 @@ export type CapacitorGpsOptions = PositionOptions & {
 
 export function getCapacitorGpsOptions(profile: GpsProfile = 'capture'): CapacitorGpsOptions {
 	const base = getGpsOptions(profile);
+	const intervals = CAPACITOR_INTERVALS_BY_PROFILE[profile];
+
+	return {
+		...base,
+		...intervals,
+		enableLocationFallback: true
+	};
+}
+
+export function getCapacitorGpsFixOptions(profile: GpsProfile = 'capture'): CapacitorGpsOptions {
+	const base = getGpsFixOptions(profile);
 	const intervals = CAPACITOR_INTERVALS_BY_PROFILE[profile];
 
 	return {

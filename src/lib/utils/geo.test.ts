@@ -1,68 +1,40 @@
 import { describe, expect, it } from 'vitest';
 import {
-	getCapacitorGpsOptions,
+	getGpsFixOptions,
 	getGpsOptions,
-	GPS_CAPTURE_OPTIONS,
-	GPS_PROXIMITY_OPTIONS,
-	type GpsProfile
+	GPS_CAPTURE_FIX_OPTIONS,
+	GPS_CAPTURE_WATCH_OPTIONS,
+	regionalApiCoordinates
 } from './geo';
 
-const profiles: GpsProfile[] = ['capture', 'navigation', 'watch', 'proximity'];
-
-describe('getGpsOptions', () => {
-	it('uses zero maximumAge and high accuracy for capture', () => {
-		expect(getGpsOptions('capture').maximumAge).toBe(0);
-		expect(getGpsOptions('capture').enableHighAccuracy).toBe(true);
+describe('regionalApiCoordinates', () => {
+	it('truncates positive coordinates to 2 decimal places', () => {
+		expect(regionalApiCoordinates(47.459, 2.349)).toEqual({
+			latitude: 47.45,
+			longitude: 2.34
+		});
 	});
 
-	it('allows short cache for navigation', () => {
-		expect(getGpsOptions('navigation').maximumAge).toBe(2_000);
-		expect(getGpsOptions('navigation').enableHighAccuracy).toBe(true);
+	it('truncates negative coordinates toward zero', () => {
+		expect(regionalApiCoordinates(47.269, -1.529)).toEqual({
+			latitude: 47.26,
+			longitude: -1.52
+		});
 	});
 
-	it('allows moderate cache for watch', () => {
-		expect(getGpsOptions('watch').maximumAge).toBe(5_000);
-		expect(getGpsOptions('watch').enableHighAccuracy).toBe(true);
-	});
-
-	it('uses coarse location and long cache for proximity', () => {
-		expect(getGpsOptions('proximity')).toEqual(GPS_PROXIMITY_OPTIONS);
-		expect(getGpsOptions('proximity').enableHighAccuracy).toBe(false);
-		expect(getGpsOptions('proximity').maximumAge).toBe(30_000);
-	});
-
-	it('defines options for every profile', () => {
-		for (const profile of profiles) {
-			expect(getGpsOptions(profile).timeout).toBeGreaterThan(0);
-		}
+	it('leaves already-aligned coordinates unchanged', () => {
+		expect(regionalApiCoordinates(48.85, 2.35)).toEqual({
+			latitude: 48.85,
+			longitude: 2.35
+		});
 	});
 });
 
-describe('getCapacitorGpsOptions', () => {
-	it('requests fast updates for capture on Android', () => {
-		const options = getCapacitorGpsOptions('capture');
-		expect(options.minimumUpdateInterval).toBe(500);
-		expect(options.interval).toBe(1_000);
-		expect(options.enableLocationFallback).toBe(true);
-		expect(options.timeout).toBe(GPS_CAPTURE_OPTIONS.timeout);
-	});
-
-	it('uses navigation intervals', () => {
-		const options = getCapacitorGpsOptions('navigation');
-		expect(options.minimumUpdateInterval).toBe(1_000);
-		expect(options.interval).toBe(2_000);
-	});
-
-	it('uses lighter intervals for watch', () => {
-		const options = getCapacitorGpsOptions('watch');
-		expect(options.minimumUpdateInterval).toBe(2_000);
-		expect(options.interval).toBe(5_000);
-	});
-
-	it('uses low-power intervals for proximity', () => {
-		const options = getCapacitorGpsOptions('proximity');
-		expect(options.minimumUpdateInterval).toBe(5_000);
-		expect(options.interval).toBe(15_000);
-		expect(options.enableHighAccuracy).toBe(false);
+describe('capture gps options', () => {
+	it('uses a short cache for live watch but not for save fixes', () => {
+		expect(getGpsOptions('capture')).toEqual(GPS_CAPTURE_WATCH_OPTIONS);
+		expect(getGpsFixOptions('capture')).toEqual(GPS_CAPTURE_FIX_OPTIONS);
+		expect(GPS_CAPTURE_WATCH_OPTIONS.maximumAge).toBeGreaterThan(0);
+		expect(GPS_CAPTURE_FIX_OPTIONS.maximumAge).toBe(0);
 	});
 });

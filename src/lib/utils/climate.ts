@@ -4,45 +4,18 @@ import {
 	getCachedClimateHistory,
 	saveCachedClimateHistory
 } from '$lib/utils/climateCache';
+import { getApiDisabledError, isApiEnabled } from '$lib/utils/apiPolicy';
+import { regionalApiCoordinates } from '$lib/utils/geo';
+import { createInFlightMap } from '$lib/utils/inFlight';
+import {
+	fetchOpenMeteoArchiveDailyBundle,
+	getClimateDateRange,
+	parseOpenMeteoErrorResponse
+} from '$lib/utils/openMeteoArchive';
 
-const ARCHIVE_API_URL = 'https://archive-api.open-meteo.com/v1/archive';
-const FETCH_TIMEOUT_MS = 15_000;
-const CLIMATE_YEARS = 3;
-/** ERA5 reanalysis is published with ~5 days delay (Open-Meteo Archive API). */
-const ARCHIVE_DELAY_DAYS = 5;
+export { getClimateDateRange, parseOpenMeteoErrorResponse };
 
-type OpenMeteoDailyResponse = {
-	daily?: {
-		time?: string[];
-		temperature_2m_min?: (number | null)[];
-		precipitation_sum?: (number | null)[];
-	};
-};
-
-type OpenMeteoErrorResponse = {
-	error?: boolean;
-	reason?: string;
-};
-
-export function getClimateDateRange(referenceDate = new Date()): { startDate: string; endDate: string } {
-	const end = new Date(referenceDate);
-	end.setDate(end.getDate() - ARCHIVE_DELAY_DAYS);
-
-	const start = new Date(end);
-	start.setFullYear(start.getFullYear() - CLIMATE_YEARS);
-
-	return {
-		startDate: formatIsoDate(start),
-		endDate: formatIsoDate(end)
-	};
-}
-
-function formatIsoDate(date: Date): string {
-	const year = date.getFullYear();
-	const month = String(date.getMonth() + 1).padStart(2, '0');
-	const day = String(date.getDate()).padStart(2, '0');
-	return `${year}-${month}-${day}`;
-}
+const climateInFlight = createInFlightMap<ClimateHistory>();
 
 export function aggregateClimateData(
 	dates: string[],
@@ -106,80 +79,57 @@ export function aggregateClimateData(
 	};
 }
 
-export async function parseOpenMeteoErrorResponse(response: Response): Promise<string> {
-	try {
-		const body = (await response.json()) as OpenMeteoErrorResponse;
-		if (body.reason) {
-			return m.open_meteo_error({ status: String(response.status), reason: body.reason });
-		}
-	} catch {
-		// ignore JSON parse errors
-	}
-	return m.open_meteo_error({
-		status: String(response.status),
-		reason: m.climate_error_historical()
-	});
-}
-
 export async function fetchClimateHistory(
 	latitude: number,
-	longitude: number
+	longitude: number,
+	options?: { signal?: AbortSignal }
 ): Promise<ClimateHistory> {
-	const cached = await getCachedClimateHistory(latitude, longitude);
+	const { latitude: apiLat, longitude: apiLon } = regionalApiCoordinates(latitude, longitude);
+	const cached = await getCachedClimateHistory(apiLat, apiLon);
 	if (cached) {
 		return cached;
 	}
 
-	const range = getClimateDateRange();
-	const params = new URLSearchParams({
-		latitude: String(latitude),
-		longitude: String(longitude),
-		start_date: range.startDate,
-		end_date: range.endDate,
-		daily: 'temperature_2m_min,precipitation_sum',
-		timezone: 'auto'
-	});
-
-	const controller = new AbortController();
-	const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-	try {
-		const response = await fetch(`${ARCHIVE_API_URL}?${params}`, {
-			signal: controller.signal
-		});
-
-		if (!response.ok) {
-			throw new Error(await parseOpenMeteoErrorResponse(response));
-		}
-
-		const data = (await response.json()) as OpenMeteoDailyResponse;
-		const dates = data.daily?.time ?? [];
-		const minTemps = data.daily?.temperature_2m_min ?? [];
-		const precipitation = data.daily?.precipitation_sum ?? [];
-
-		if (dates.length === 0) {
-			throw new Error(m.climate_error_no_data());
-		}
-
-		const history = aggregateClimateData(
-			dates,
-			minTemps,
-			precipitation,
-			latitude,
-			longitude,
-			range
-		);
-		await saveCachedClimateHistory(latitude, longitude, history);
-		return history;
-	} catch (error) {
-		if (error instanceof DOMException && error.name === 'AbortError') {
-			throw new Error(m.agri_error_timeout());
-		}
-		if (error instanceof Error) {
-			throw error;
-		}
-		throw new Error(m.climate_error_fetch());
-	} finally {
-		clearTimeout(timeoutId);
+	if (!isApiEnabled('openMeteoArchive')) {
+		throw new Error(getApiDisabledError('openMeteoArchive'));
 	}
+
+	const range = getClimateDateRange();
+	const inflightKey = `${apiLat.toFixed(2)}_${apiLon.toFixed(2)}`;
+
+	return climateInFlight.run(inflightKey, async () => {
+		const cachedAgain = await getCachedClimateHistory(apiLat, apiLon);
+		if (cachedAgain) {
+			return cachedAgain;
+		}
+
+		try {
+			const bundle = await fetchOpenMeteoArchiveDailyBundle(
+				apiLat,
+				apiLon,
+				range.startDate,
+				range.endDate,
+				options
+			);
+
+			const history = aggregateClimateData(
+				bundle.time,
+				bundle.temperature_2m_min,
+				bundle.precipitation_sum,
+				apiLat,
+				apiLon,
+				range
+			);
+			await saveCachedClimateHistory(apiLat, apiLon, history);
+			return history;
+		} catch (error) {
+			if (error instanceof DOMException && error.name === 'AbortError') {
+				throw new Error(m.agri_error_timeout());
+			}
+			if (error instanceof Error) {
+				throw error;
+			}
+			throw new Error(m.climate_error_fetch());
+		}
+	});
 }

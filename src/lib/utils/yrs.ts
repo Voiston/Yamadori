@@ -84,18 +84,27 @@ function getEt0ClimatePoints(data: AgriData): YrsScoreBreakdownItem | null {
 	const { excellentMax } = YAMADORI_RISK_THRESHOLDS.et0Trend7dMeanMm;
 	if (et0Past <= excellentMax && et0Forecast <= excellentMax) {
 		return {
-			label: `ET₀ moy. ${et0Past} / ${et0Forecast} mm/j — stable`,
+			label: m.yrs_breakdown_et0_stable({
+				past: String(et0Past),
+				forecast: String(et0Forecast)
+			}),
 			points: 5
 		};
 	}
 	if (et0Past <= excellentMax * 2 || et0Forecast <= excellentMax * 2) {
 		return {
-			label: `ET₀ moy. ${et0Past} / ${et0Forecast} mm/j — modéré`,
+			label: m.yrs_breakdown_et0_moderate({
+				past: String(et0Past),
+				forecast: String(et0Forecast)
+			}),
 			points: 3
 		};
 	}
 	return {
-		label: `ET₀ moy. ${et0Past} / ${et0Forecast} mm/j — élevé`,
+		label: m.yrs_breakdown_et0_high({
+			past: String(et0Past),
+			forecast: String(et0Forecast)
+		}),
 		points: 0
 	};
 }
@@ -108,7 +117,10 @@ function getAirClimatePoints(data: AgriData): YrsScoreBreakdownItem {
 		data.windSpeedKmh < YAMADORI_RISK_THRESHOLDS.windSpeedKmh.passableMin
 	) {
 		return {
-			label: `Air ${data.airTemperatureC}°C, vent ${data.windSpeedKmh} km/h — doux`,
+			label: m.yrs_breakdown_air_mild({
+				temp: String(data.airTemperatureC),
+				wind: String(data.windSpeedKmh)
+			}),
 			points: 10
 		};
 	}
@@ -118,12 +130,18 @@ function getAirClimatePoints(data: AgriData): YrsScoreBreakdownItem {
 		data.windSpeedKmh < YAMADORI_RISK_THRESHOLDS.windSpeedKmh.dangerousMin
 	) {
 		return {
-			label: `Air ${data.airTemperatureC}°C, vent ${data.windSpeedKmh} km/h — acceptable`,
+			label: m.yrs_breakdown_air_acceptable({
+				temp: String(data.airTemperatureC),
+				wind: String(data.windSpeedKmh)
+			}),
 			points: 5
 		};
 	}
 	return {
-		label: `Air ${data.airTemperatureC}°C, vent ${data.windSpeedKmh} km/h — défavorable`,
+		label: m.yrs_breakdown_air_unfavorable({
+			temp: String(data.airTemperatureC),
+			wind: String(data.windSpeedKmh)
+		}),
 		points: 0
 	};
 }
@@ -152,47 +170,53 @@ export function computeClimateScore(data: AgriData): number {
 /** SoilScore (0–25) : zone 18 cm, activité 6 cm, stabilité. */
 export function getSoilScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 	const { excellentMin, excellentMax } = YAMADORI_RISK_THRESHOLDS.soil18cmTempC;
+	const temp = String(data.soilTemperature18cmC);
 	let soil18Points = 6;
-	let soil18Label = `Sol 18 cm ${data.soilTemperature18cmC}°C — zone haute`;
+	let soil18Label = m.yrs_breakdown_soil18_high({ temp });
 
 	if (data.soilTemperature18cmC >= excellentMin && data.soilTemperature18cmC <= excellentMax) {
 		soil18Points = 15;
-		soil18Label = `Sol 18 cm ${data.soilTemperature18cmC}°C — zone parfaite`;
+		soil18Label = m.yrs_breakdown_soil18_perfect({ temp });
 	} else if (data.soilTemperature18cmC >= excellentMin - 2) {
 		soil18Points = 8;
-		soil18Label = `Sol 18 cm ${data.soilTemperature18cmC}°C — limite basse`;
+		soil18Label = m.yrs_breakdown_soil18_low_limit({ temp });
 	} else if (data.soilTemperature18cmC < excellentMin) {
 		soil18Points = 2;
-		soil18Label = `Sol 18 cm ${data.soilTemperature18cmC}°C — trop froid`;
+		soil18Label = m.yrs_breakdown_soil18_too_cold({ temp });
 	}
 
 	const soil6Active =
 		data.soilTemperature6cmC >= YAMADORI_RISK_THRESHOLDS.soilStableTempC.min &&
 		data.soilTemperature6cmC <= YAMADORI_RISK_THRESHOLDS.soilStableTempC.max;
+	const soil6Temp = String(data.soilTemperature6cmC);
 
 	const items: YrsScoreBreakdownItem[] = [
 		{ label: soil18Label, points: soil18Points },
 		{
 			label: soil6Active
-				? `Sol 6 cm ${data.soilTemperature6cmC}°C — actif (8–15 °C)`
-				: `Sol 6 cm ${data.soilTemperature6cmC}°C — hors plage active`,
+				? m.yrs_breakdown_soil6_active({ temp: soil6Temp })
+				: m.yrs_breakdown_soil6_inactive({ temp: soil6Temp }),
 			points: soil6Active ? 5 : 0
 		}
 	];
 
+	const stableDaysLabel = m.yrs_breakdown_soil_stable_days({
+		days: String(data.soilConsecutiveStableDays)
+	});
+
 	if (data.soilConsecutiveStableDays >= YAMADORI_RISK_THRESHOLDS.soilStableDays.excellentMin) {
 		items.push({
-			label: `${data.soilConsecutiveStableDays} j stables à 8–15 °C`,
+			label: stableDaysLabel,
 			points: 5
 		});
 	} else if (data.soilConsecutiveStableDays >= YAMADORI_RISK_THRESHOLDS.soilStableDays.passableMin) {
 		items.push({
-			label: `${data.soilConsecutiveStableDays} j stables à 8–15 °C`,
+			label: stableDaysLabel,
 			points: 3
 		});
 	} else {
 		items.push({
-			label: `${data.soilConsecutiveStableDays} j stables à 8–15 °C`,
+			label: stableDaysLabel,
 			points: 0
 		});
 	}
@@ -253,9 +277,11 @@ export function getPhenologyScoreBreakdown(
 		items.push({ label: m.yrs_phenology_unavailable(), points: 10 });
 	} else {
 		const stagePoints = phenologyStagePoints(stage);
-		const source = inputs.observedPhenologyStage ? 'observé' : 'estimé (GDD)';
+		const stageLabel = phenologyStageLabel(stage);
 		items.push({
-			label: `Stade ${phenologyStageLabel(stage)} (${source})`,
+			label: inputs.observedPhenologyStage
+				? m.yrs_breakdown_stage_observed({ stage: stageLabel })
+				: m.yrs_breakdown_stage_estimated({ stage: stageLabel }),
 			points: stagePoints
 		});
 	}
@@ -263,7 +289,7 @@ export function getPhenologyScoreBreakdown(
 	const cernagePoints = cernageAdjustment(inputs.cernageStatus);
 	if (cernagePoints !== 0) {
 		items.push({
-			label: `Cernage : ${cernageLabel(inputs.cernageStatus)}`,
+			label: m.yrs_breakdown_cernage({ status: cernageLabel(inputs.cernageStatus) }),
 			points: cernagePoints
 		});
 	}
@@ -288,17 +314,23 @@ export function getHydricScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 		if (data.waterBalance7dMm !== null) {
 			if (data.waterBalance7dMm > 5) {
 				item = {
-					label: `Bilan hydrique ${data.waterBalance7dMm} mm — favorable`,
+					label: m.yrs_breakdown_water_balance_favorable({
+						balance: String(data.waterBalance7dMm)
+					}),
 					points: 15
 				};
 			} else if (data.waterBalance7dMm >= -5) {
 				item = {
-					label: `Bilan hydrique ${data.waterBalance7dMm} mm — neutre`,
+					label: m.yrs_breakdown_water_balance_neutral({
+						balance: String(data.waterBalance7dMm)
+					}),
 					points: 10
 				};
 			} else {
 				item = {
-					label: `Bilan hydrique ${data.waterBalance7dMm} mm — déficitaire`,
+					label: m.yrs_breakdown_water_balance_deficit({
+						balance: String(data.waterBalance7dMm)
+					}),
 					points: 4
 				};
 			}
@@ -306,13 +338,25 @@ export function getHydricScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 			item = { label: m.yrs_hydric_unavailable(), points: 8 };
 		}
 	} else if (data.wsi > 5) {
-		item = { label: `WSI ${data.wsi} mm — excellent`, points: 20 };
+		item = {
+			label: m.yrs_breakdown_wsi_excellent({ wsi: String(data.wsi) }),
+			points: 20
+		};
 	} else if (data.wsi >= -2) {
-		item = { label: `WSI ${data.wsi} mm — acceptable`, points: 10 };
+		item = {
+			label: m.yrs_breakdown_wsi_acceptable({ wsi: String(data.wsi) }),
+			points: 10
+		};
 	} else if (data.wsi >= -8) {
-		item = { label: `WSI ${data.wsi} mm — stress modéré`, points: 5 };
+		item = {
+			label: m.yrs_breakdown_wsi_moderate_stress({ wsi: String(data.wsi) }),
+			points: 5
+		};
 	} else {
-		item = { label: `WSI ${data.wsi} mm — stress fort`, points: 2 };
+		item = {
+			label: m.yrs_breakdown_wsi_strong_stress({ wsi: String(data.wsi) }),
+			points: 2
+		};
 	}
 
 	return { total: item.points, max: 20, items: [item] };
@@ -332,42 +376,53 @@ export function getStressPenaltyBreakdown(
 	if (data.frostEventsPast7d > 0 || data.frostRiskNext7d) {
 		const parts: string[] = [];
 		if (data.frostEventsPast7d > 0) {
-			parts.push(`${data.frostEventsPast7d} nuit(s) gel passé`);
+			parts.push(
+				m.yrs_breakdown_frost_past({ nights: String(data.frostEventsPast7d) })
+			);
 		}
 		if (data.frostRiskNext7d) {
-			parts.push('gel sévère prévu');
+			parts.push(m.yrs_breakdown_frost_forecast());
 		}
-		items.push({ label: `Gel : ${parts.join(', ')}`, points: 15 });
+		items.push({
+			label: m.yrs_breakdown_frost_label({ detail: parts.join(', ') }),
+			points: 15
+		});
 	}
 
 	const heatDays = data.heatStressDaysPast7d + data.heatStressDaysForecast7d;
 	if (heatDays >= 3) {
 		items.push({
-			label: `Canicule : ${heatDays} j > 30 °C`,
+			label: m.yrs_breakdown_heat({ days: String(heatDays) }),
 			points: 10
 		});
 	} else if (heatDays >= 1) {
 		items.push({
-			label: `Canicule : ${heatDays} j > 30 °C`,
+			label: m.yrs_breakdown_heat({ days: String(heatDays) }),
 			points: 5
 		});
 	}
 
 	if (data.windStressIndex >= 70) {
 		items.push({
-			label: `Stress vent sec : ${Math.round(data.windStressIndex)}/100`,
+			label: m.yrs_breakdown_wind_stress({
+				index: String(Math.round(data.windStressIndex))
+			}),
 			points: 10
 		});
 	} else if (data.windStressIndex >= 50) {
 		items.push({
-			label: `Stress vent sec : ${Math.round(data.windStressIndex)}/100`,
+			label: m.yrs_breakdown_wind_stress({
+				index: String(Math.round(data.windStressIndex))
+			}),
 			points: 5
 		});
 	}
 
 	if (data.radiationStressIndex >= 75) {
 		items.push({
-			label: `Stress rayonnement : ${Math.round(data.radiationStressIndex)}/100`,
+			label: m.yrs_breakdown_radiation_stress({
+				index: String(Math.round(data.radiationStressIndex))
+			}),
 			points: 5
 		});
 	}

@@ -6,16 +6,19 @@ import type {
 	ProtectedZonePresence
 } from '$lib/types/harvest-ethics';
 import { cadastreCacheKey, isInCadastreCoverage } from '$lib/utils/cadastre';
+import { getApiDisabledError, isApiEnabled } from '$lib/utils/apiPolicy';
 import {
 	getCachedProtectedAreaScan,
 	saveCachedProtectedAreaScan
 } from '$lib/utils/protectedAreasCache';
+import { createInFlightMap } from '$lib/utils/inFlight';
 
 const APICARTO_NATURE_URL = 'https://apicarto.ign.fr/api/nature';
 const APICARTO_PARCELLE_URL = 'https://apicarto.ign.fr/api/cadastre/parcelle';
 const FETCH_TIMEOUT_MS = 8_000;
 const MEMORY_CACHE_TTL_MS = 30 * 60_000;
 const NATURE_FETCH_CONCURRENCY = 4;
+const inFlight = createInFlightMap<ProtectedAreaScan>();
 
 type NatureLayer = {
 	id: string;
@@ -70,7 +73,22 @@ function emptyZoneStatus(): Record<ProtectedZoneCardId, ProtectedZonePresence> {
 		rnr_regional: 'clear',
 		natura2000: 'clear',
 		znieff: 'clear',
-		appb: 'clear'
+		appb: 'clear',
+		nps: 'clear',
+		wilderness: 'clear',
+		usfs: 'clear',
+		blm: 'clear',
+		state_park: 'clear',
+		tribal: 'clear',
+		parks_canada: 'clear',
+		provincial_park: 'clear',
+		nwa: 'clear',
+		ipca: 'clear',
+		crown_unverified: 'clear',
+		doc_national_park: 'clear',
+		doc_conservation: 'clear',
+		whenua_rahui: 'clear',
+		outside_pcl: 'clear'
 	};
 }
 
@@ -149,33 +167,36 @@ async function fetchParcelGeometry(
 	longitude: number,
 	latitude: number
 ): Promise<GeoJsonGeometry | null> {
-	const params = new URLSearchParams({
-		geom: geometryParam(pointGeometry(longitude, latitude)),
-		_limit: '1'
+	const { getOrFetchParcelGeometry } = await import('$lib/utils/parcelGeometryCache');
+	return getOrFetchParcelGeometry(latitude, longitude, async () => {
+		const params = new URLSearchParams({
+			geom: geometryParam(pointGeometry(longitude, latitude)),
+			_limit: '1'
+		});
+		const data = await fetchGeoJson(`${APICARTO_PARCELLE_URL}?${params}`);
+		return data?.features?.[0]?.geometry ?? null;
 	});
-	const data = await fetchGeoJson(`${APICARTO_PARCELLE_URL}?${params}`);
-	return data?.features?.[0]?.geometry ?? null;
 }
 
-async function scanLayerGroup(
+async function scanLayerGroupPointOnly(
 	layerIds: string[],
 	longitude: number,
-	latitude: number,
-	parcelGeometry: GeoJsonGeometry | null
+	latitude: number
 ): Promise<ProtectedZonePresence> {
 	const pointHit = await mapWithConcurrency(layerIds, NATURE_FETCH_CONCURRENCY, (layerId) =>
 		fetchNatureLayer(layerId, pointGeometry(longitude, latitude))
 	);
-	if (pointHit.some(Boolean)) return 'certain';
+	return pointHit.some(Boolean) ? 'certain' : 'clear';
+}
 
-	if (!parcelGeometry) return 'clear';
-
+async function scanLayerGroupParcelPotential(
+	layerIds: string[],
+	parcelGeometry: GeoJsonGeometry
+): Promise<ProtectedZonePresence> {
 	const parcelHit = await mapWithConcurrency(layerIds, NATURE_FETCH_CONCURRENCY, (layerId) =>
 		fetchNatureLayer(layerId, parcelGeometry)
 	);
-	if (parcelHit.some(Boolean)) return 'potential';
-
-	return 'clear';
+	return parcelHit.some(Boolean) ? 'potential' : 'clear';
 }
 
 function layersForCard(cardId: ProtectedZoneCardId): string[] {
@@ -206,15 +227,52 @@ async function scanProtectedAreasLive(
 	longitude: number
 ): Promise<ProtectedAreaScan> {
 	const zoneStatus = emptyZoneStatus();
-	const parcelGeometry = await fetchParcelGeometry(longitude, latitude);
 
+	// Veto cards first at the point — if certain, skip caution + parcelle wave.
 	await Promise.all(
-		SCANNABLE_CARD_IDS.map(async (cardId) => {
+		VETO_CARD_IDS.map(async (cardId) => {
 			const layerIds = layersForCard(cardId);
 			if (layerIds.length === 0) return;
-			zoneStatus[cardId] = await scanLayerGroup(layerIds, longitude, latitude, parcelGeometry);
+			zoneStatus[cardId] = await scanLayerGroupPointOnly(layerIds, longitude, latitude);
 		})
 	);
+
+	const certainVeto = VETO_CARD_IDS.some((cardId) => zoneStatus[cardId] === 'certain');
+	if (certainVeto) {
+		const hits = buildHits(zoneStatus);
+		return {
+			scannedAt: new Date().toISOString(),
+			hits,
+			veto: true,
+			zoneStatus,
+			fromCache: false
+		};
+	}
+
+	const cautionCards = SCANNABLE_CARD_IDS.filter(
+		(cardId) => !VETO_CARD_IDS.includes(cardId)
+	);
+	await Promise.all(
+		cautionCards.map(async (cardId) => {
+			const layerIds = layersForCard(cardId);
+			if (layerIds.length === 0) return;
+			zoneStatus[cardId] = await scanLayerGroupPointOnly(layerIds, longitude, latitude);
+		})
+	);
+
+	const clearCards = SCANNABLE_CARD_IDS.filter((cardId) => zoneStatus[cardId] === 'clear');
+	if (clearCards.length > 0) {
+		const parcelGeometry = await fetchParcelGeometry(longitude, latitude);
+		if (parcelGeometry) {
+			await Promise.all(
+				clearCards.map(async (cardId) => {
+					const layerIds = layersForCard(cardId);
+					if (layerIds.length === 0) return;
+					zoneStatus[cardId] = await scanLayerGroupParcelPotential(layerIds, parcelGeometry);
+				})
+			);
+		}
+	}
 
 	const hits = buildHits(zoneStatus);
 	const veto = VETO_CARD_IDS.some((cardId) => zoneStatus[cardId] !== 'clear');
@@ -256,6 +314,8 @@ export async function scanProtectedAreas(
 	options: { online?: boolean } = {}
 ): Promise<ProtectedAreaScan> {
 	const online = options.online ?? true;
+	const apiEnabled = isApiEnabled('ignProtectedAreas');
+	const canFetchLive = online && apiEnabled;
 	const key = cadastreCacheKey(latitude, longitude);
 	const empty = (): ProtectedAreaScan => ({
 		scannedAt: new Date().toISOString(),
@@ -273,31 +333,43 @@ export async function scanProtectedAreas(
 	if (cachedMemory) return cachedMemory;
 
 	const cachedPersistent = await getCachedProtectedAreaScan(key);
-	if (!online) {
-		if (cachedPersistent) {
-			writeMemoryCache(key, cachedPersistent);
-			return cachedPersistent;
+	if (cachedPersistent) {
+		writeMemoryCache(key, cachedPersistent);
+		return cachedPersistent;
+	}
+
+	if (!canFetchLive) {
+		if (!apiEnabled) {
+			throw new Error(getApiDisabledError('ignProtectedAreas'));
 		}
 		throw new Error('protected_areas_offline_cache_miss');
 	}
 
-	try {
-		const result = await scanProtectedAreasLive(latitude, longitude);
-		writeMemoryCache(key, result);
-		await saveCachedProtectedAreaScan(key, result);
-		return result;
-	} catch {
-		if (cachedPersistent) {
-			writeMemoryCache(key, cachedPersistent);
-			return cachedPersistent;
+	return inFlight.run(key, async () => {
+		const cachedMemoryAgain = readMemoryCache(key);
+		if (cachedMemoryAgain) return cachedMemoryAgain;
+
+		const cachedPersistentAgain = await getCachedProtectedAreaScan(key);
+		if (cachedPersistentAgain) {
+			writeMemoryCache(key, cachedPersistentAgain);
+			return cachedPersistentAgain;
 		}
-		throw new Error('protected_areas_scan_failed');
-	}
+
+		try {
+			const result = await scanProtectedAreasLive(latitude, longitude);
+			writeMemoryCache(key, result);
+			await saveCachedProtectedAreaScan(key, result);
+			return result;
+		} catch {
+			throw new Error('protected_areas_scan_failed');
+		}
+	});
 }
 
 /** Vide le cache mémoire (session / tests). */
 export function clearProtectedAreasMemoryCache(): void {
 	memoryCache.clear();
+	inFlight.clear();
 }
 
 export { clearProtectedAreasPersistentCache } from '$lib/utils/protectedAreasCache';

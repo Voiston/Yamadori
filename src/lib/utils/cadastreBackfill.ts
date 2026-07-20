@@ -1,5 +1,6 @@
-import { lookupCadastre } from '$lib/utils/cadastre';
-import { treesMissingCadastre, updateCadastre } from '$lib/stores/trees.svelte';
+import { lookupCadastreForCoords } from '$lib/geo/providers/cadastre/dispatch';
+import { canUseApi } from '$lib/utils/apiPolicy';
+import { treesMissingCadastre, updateCadastre, runPersistBatch } from '$lib/stores/trees.svelte';
 
 const DEBOUNCE_MS = 1_500;
 
@@ -16,27 +17,29 @@ export function scheduleCadastreBackfill(): void {
 }
 
 export async function runCadastreBackfill(): Promise<void> {
-	if (running || !navigator.onLine) return;
+	if (running || !canUseApi('ignCadastre')) return;
 
 	running = true;
 	try {
 		const pending = treesMissingCadastre().filter((tree) => !attemptedIds.has(tree.id));
 
-		for (const tree of pending) {
-			if (!navigator.onLine) break;
-			if (tree.latitude === null || tree.longitude === null) continue;
+		await runPersistBatch(async () => {
+			for (const tree of pending) {
+				if (!canUseApi('ignCadastre')) break;
+				if (tree.latitude === null || tree.longitude === null) continue;
 
-			attemptedIds.add(tree.id);
+				attemptedIds.add(tree.id);
 
-			try {
-				const result = await lookupCadastre(tree.latitude, tree.longitude);
-				if (result) {
-					await updateCadastre(tree.id, result);
+				try {
+					const result = await lookupCadastreForCoords(tree.latitude, tree.longitude);
+					if (result) {
+						await updateCadastre(tree.id, result);
+					}
+				} catch {
+					// Rattrapage silencieux — réessai possible à la prochaine session
 				}
-			} catch {
-				// Rattrapage silencieux — réessai possible à la prochaine session
 			}
-		}
+		});
 	} finally {
 		running = false;
 	}

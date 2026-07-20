@@ -13,25 +13,13 @@ import type {
 	PhenologyStageId
 } from '$lib/types/gdd';
 import { dailyMeanForDate } from '$lib/utils/agri';
-import { parseOpenMeteoErrorResponse } from '$lib/utils/climate';
 import {
-	getCachedGddArchiveDailyMeans,
-	saveCachedGddArchiveDailyMeans
-} from '$lib/utils/gddArchiveCache';
-
-const ARCHIVE_API_URL = 'https://archive-api.open-meteo.com/v1/archive';
-const FETCH_TIMEOUT_MS = 15_000;
-/** ERA5 reanalysis is published with ~5 days delay (Open-Meteo Archive API). */
-const ARCHIVE_DELAY_DAYS = 5;
+	fetchGddArchiveDailyMeans,
+	getArchiveEndDate,
+	getJan1Date
+} from '$lib/utils/openMeteoArchive';
 
 type DailyMeanTemp = { date: string; meanTempC: number | null };
-
-type OpenMeteoArchiveDailyResponse = {
-	daily?: {
-		time?: string[];
-		temperature_2m_mean?: (number | null)[];
-	};
-};
 
 type ForecastHourlyBody = {
 	hourly?: {
@@ -53,16 +41,6 @@ function round1(value: number): number {
 
 export function computeDailyGdd(meanTempC: number, baseTempC: number): number {
 	return round1(Math.max(0, meanTempC - baseTempC));
-}
-
-function getJan1Date(referenceDate: Date): string {
-	return `${referenceDate.getFullYear()}-01-01`;
-}
-
-function getArchiveEndDate(referenceDate: Date): string {
-	const end = new Date(referenceDate);
-	end.setDate(end.getDate() - ARCHIVE_DELAY_DAYS);
-	return formatIsoDate(end);
 }
 
 export function buildGddDailySeries(
@@ -222,56 +200,11 @@ export function extractForecastDailyMeans(
 async function fetchArchiveDailyMeans(
 	latitude: number,
 	longitude: number,
-	startDate: string,
-	endDate: string
+	_startDate: string,
+	_endDate: string,
+	referenceDate = new Date()
 ): Promise<DailyMeanTemp[]> {
-	const cached = await getCachedGddArchiveDailyMeans(latitude, longitude, startDate, endDate);
-	if (cached) {
-		return cached;
-	}
-
-	const params = new URLSearchParams({
-		latitude: String(latitude),
-		longitude: String(longitude),
-		start_date: startDate,
-		end_date: endDate,
-		daily: 'temperature_2m_mean',
-		timezone: 'auto'
-	});
-
-	const controller = new AbortController();
-	const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-	try {
-		const response = await fetch(`${ARCHIVE_API_URL}?${params}`, {
-			signal: controller.signal
-		});
-
-		if (!response.ok) {
-			throw new Error(await parseOpenMeteoErrorResponse(response));
-		}
-
-		const data = (await response.json()) as OpenMeteoArchiveDailyResponse;
-		const dates = data.daily?.time ?? [];
-		const means = data.daily?.temperature_2m_mean ?? [];
-
-		const dailyMeans = dates.map((date, index) => ({
-			date,
-			meanTempC: means[index] ?? null
-		}));
-
-		await saveCachedGddArchiveDailyMeans(
-			latitude,
-			longitude,
-			startDate,
-			endDate,
-			dailyMeans
-		);
-
-		return dailyMeans;
-	} finally {
-		clearTimeout(timeoutId);
-	}
+	return fetchGddArchiveDailyMeans(latitude, longitude, referenceDate);
 }
 
 export async function fetchDailyMeanTempsSinceJan1(
@@ -288,7 +221,13 @@ export async function fetchDailyMeanTempsSinceJan1(
 		return forecastMeans;
 	}
 
-	const archiveMeans = await fetchArchiveDailyMeans(latitude, longitude, jan1, archiveEnd);
+	const archiveMeans = await fetchArchiveDailyMeans(
+		latitude,
+		longitude,
+		jan1,
+		archiveEnd,
+		referenceDate
+	);
 	return mergeDailyMeanTemps(archiveMeans, forecastMeans);
 }
 

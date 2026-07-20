@@ -17,6 +17,7 @@ import type { YrsPlantInputs } from '$lib/types/yrs';
 import { YAMADORI_RISK_THRESHOLDS, SOIL_NIGHT_DROP_RISK_WEIGHT } from '$lib/constants/agri-thresholds';
 import { parseOpenMeteoErrorResponse } from '$lib/utils/climate';
 import { computeGddSnapshot } from '$lib/utils/gdd';
+import { regionalApiCoordinates } from '$lib/utils/geo';
 import {
 	computeFutureStressRisk,
 	computeRadiationStressIndex,
@@ -702,7 +703,7 @@ function primaryRiskReason(
 		return m.agri_verdict_et0_forecast({ et0: String(data.et0Trend7dMeanMm) });
 	}
 	if (risks.rain5d === 'Passable' && data.rainPast5dMm <= 0) {
-		return 'Sol trop sec (0 mm sur 5 jours)';
+		return m.agri_verdict_soil_dry_5d();
 	}
 	if (risks.rain3d === 'Passable') {
 		return m.agri_verdict_rain_limits({ rain: String(data.rainPast3dMm) });
@@ -715,7 +716,7 @@ function primaryRiskReason(
 			data.soilTemperature18cmC > YAMADORI_RISK_THRESHOLDS.soil18cmTempC.excellentMax &&
 			data.soilTemperature18cmC < YAMADORI_RISK_THRESHOLDS.soil18cmTempC.stressMin
 		) {
-			return `Sol 18 cm en zone haute exploitable (${data.soilTemperature18cmC}°C)`;
+			return m.agri_verdict_soil_high_exploitable({ temp: String(data.soilTemperature18cmC) });
 		}
 		if (
 			isSoilNightDropPenalized(data, inputs, SOIL_NIGHT_DROP_RISK_WEIGHT.passableMin)
@@ -729,9 +730,13 @@ function primaryRiskReason(
 	}
 	if (risks.et0Past === 'Passable' || risks.et0Forecast === 'Passable') {
 		const past =
-			data.et0Past7dMeanMm !== null ? `${data.et0Past7dMeanMm} mm/j (7 j passés)` : null;
+			data.et0Past7dMeanMm !== null
+				? m.agri_verdict_et0_past_detail({ et0: String(data.et0Past7dMeanMm) })
+				: null;
 		const forecast =
-			data.et0Trend7dMeanMm !== null ? `${data.et0Trend7dMeanMm} mm/j (7 j prévus)` : null;
+			data.et0Trend7dMeanMm !== null
+				? m.agri_verdict_et0_forecast_detail({ et0: String(data.et0Trend7dMeanMm) })
+				: null;
 		const detail = [past, forecast].filter(Boolean).join(' · ');
 		return m.agri_verdict_hydric_stress({ detail });
 	}
@@ -1204,9 +1209,10 @@ export async function fetchAgriDataBase(
 	longitude: number,
 	options: FetchAgriDataOptions = {}
 ): Promise<FetchAgriDataBaseResult> {
+	const { latitude: apiLat, longitude: apiLon } = regionalApiCoordinates(latitude, longitude);
 	const params = new URLSearchParams({
-		latitude: String(latitude),
-		longitude: String(longitude),
+		latitude: String(apiLat),
+		longitude: String(apiLon),
 		hourly:
 			'temperature_2m,relative_humidity_2m,wind_speed_10m,soil_temperature_6cm,soil_temperature_18cm,soil_moisture_0_to_7cm,et0_fao_evapotranspiration,shortwave_radiation',
 		daily: 'precipitation_sum,temperature_2m_min,temperature_2m_max,et0_fao_evapotranspiration',
@@ -1233,8 +1239,8 @@ export async function fetchAgriDataBase(
 		let gdd: AgriData['gdd'] = null;
 		try {
 			gdd = await computeGddSnapshot(
-				latitude,
-				longitude,
+				apiLat,
+				apiLon,
 				body,
 				options.species ?? '',
 				referenceDate
@@ -1246,7 +1252,7 @@ export async function fetchAgriDataBase(
 		const weeklyViability = null;
 
 		const baseData: AgriData = {
-			...parseAgriForecastResponse(body, latitude, longitude, referenceDate),
+			...parseAgriForecastResponse(body, apiLat, apiLon, referenceDate),
 			weeklyViability,
 			gdd,
 			yrs: null

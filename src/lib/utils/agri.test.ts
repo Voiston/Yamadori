@@ -720,18 +720,20 @@ describe('fetchAgriDataBase', () => {
 	});
 
 	it('throws parsed Open-Meteo error on HTTP 400', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue(
-				new Response(
-					JSON.stringify({ error: true, reason: 'Latitude must be between -90 and 90' }),
-					{ status: 400 }
-				)
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(
+				JSON.stringify({ error: true, reason: 'Latitude must be between -90 and 90' }),
+				{ status: 400 }
 			)
 		);
+		vi.stubGlobal('fetch', fetchMock);
 
-		await expect(fetchAgriDataBase(47.26, -1.52)).rejects.toThrow(
+		await expect(fetchAgriDataBase(47.269, -1.529)).rejects.toThrow(
 			'Open-Meteo (400) : Latitude must be between -90 and 90'
 		);
+
+		const calledUrl = String(fetchMock.mock.calls[0]?.[0]);
+		expect(calledUrl).toContain('latitude=47.26');
+		expect(calledUrl).toContain('longitude=-1.52');
 	});
 });

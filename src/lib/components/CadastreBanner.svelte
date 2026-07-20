@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { CadastreInfo } from '$lib/types/cadastre';
 	import { getCadastreAccentClasses, getCadastreSummary } from '$lib/utils/cadastre';
+	import { effectiveCollectStatus } from '$lib/utils/cadastreRefs';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let {
@@ -27,6 +28,22 @@
 
 	const accent = $derived(info ? getCadastreAccentClasses(info.zoneType) : null);
 	const summary = $derived(info ? getCadastreSummary(info) : '');
+	const collectStatus = $derived(info ? effectiveCollectStatus(info) : null);
+
+	function collectStatusLabel(status: NonNullable<CadastreInfo['collectStatus']>): string {
+		switch (status) {
+			case 'forbidden':
+				return m.collect_status_forbidden();
+			case 'permit_required':
+				return m.collect_status_permit_required();
+			case 'forbidden_or_agency':
+				return m.collect_status_forbidden_or_agency();
+			case 'owner_permission':
+				return m.collect_status_owner_permission();
+			default:
+				return m.collect_status_unknown();
+		}
+	}
 
 	function handleMainClick() {
 		if (!info) return;
@@ -41,6 +58,7 @@
 
 {#if loading}
 	<div
+		data-capture-tutorial="cadastre"
 		class="rounded-xl border border-gray-200 bg-white/95 px-3 py-2 text-xs text-muted shadow-lg backdrop-blur-md {floating
 			? 'ring-1 ring-black/5'
 			: 'shadow-sm'}"
@@ -51,6 +69,7 @@
 	</div>
 {:else if info && accent}
 	<div
+		data-capture-tutorial="cadastre"
 		class="relative overflow-hidden rounded-xl border bg-white/95 text-left shadow-lg backdrop-blur-md {accent.border} {floating
 			? 'ring-1 ring-black/5'
 			: 'shadow-sm'} {compact ? 'px-3 py-2' : 'px-3 py-2.5'}"
@@ -68,6 +87,11 @@
 				onclick={handleMainClick}
 			>
 				<p class="text-xs leading-snug text-forest-900">{summary}</p>
+				{#if collectStatus}
+					<p class="mt-0.5 text-[10px] font-medium text-forest-800">
+						{collectStatusLabel(collectStatus)}
+					</p>
+				{/if}
 				{#if !minimal || checklistOpen}
 					<p class="mt-0.5 text-[10px] text-muted">
 						{checklistOpen ? m.veto_close_checklist() : m.veto_open_checklist()}

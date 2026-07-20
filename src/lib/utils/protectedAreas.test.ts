@@ -20,6 +20,7 @@ import {
 	getProtectedZoneStatusMessage,
 	scanProtectedAreas
 } from '$lib/utils/protectedAreas';
+import { apiSettingsState } from '$lib/stores/apiSettings.svelte';
 
 describe('getProtectedZoneCardClasses', () => {
 	it('returns gray for clear status', () => {
@@ -51,6 +52,8 @@ describe('scanProtectedAreas', () => {
 		memoryStore.clear();
 		clearProtectedAreasMemoryCache();
 		await clearProtectedAreasPersistentCache();
+		apiSettingsState.loaded = true;
+		apiSettingsState.ignProtectedAreas = true;
 	});
 
 	afterEach(() => {
@@ -137,6 +140,26 @@ describe('scanProtectedAreas', () => {
 
 		const result = await scanProtectedAreas(48.85, 2.35);
 		expect(result.zoneStatus.znieff).toBe('potential');
+	});
+
+	it('skips parcelle and caution layers after certain PN veto', async () => {
+		const fetchMock = vi.fn(async (url: string) => {
+			if (url.includes('/nature/pn') && url.includes('Point')) {
+				return { ok: true, json: async () => ({ features: [{ type: 'Feature' }] }) };
+			}
+			return { ok: true, json: async () => ({ features: [] }) };
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const result = await scanProtectedAreas(48.85, 2.35);
+		expect(result.veto).toBe(true);
+		expect(result.zoneStatus.pn).toBe('certain');
+		expect(result.zoneStatus.znieff).toBe('clear');
+
+		const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+		expect(urls.some((u) => u.includes('/cadastre/parcelle'))).toBe(false);
+		expect(urls.some((u) => u.includes('/nature/znieff'))).toBe(false);
+		expect(urls.some((u) => u.includes('/nature/pnr'))).toBe(false);
 	});
 
 	it('serves cached scan when offline', async () => {

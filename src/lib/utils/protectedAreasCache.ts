@@ -44,3 +44,17 @@ export async function clearProtectedAreasPersistentCache(): Promise<void> {
 	const allKeys = await keys(protectedAreasStore);
 	await Promise.all(allKeys.map((key) => del(key, protectedAreasStore)));
 }
+
+export async function getProtectedAreasCacheStats(): Promise<{ count: number }> {
+	const allKeys = await keys(protectedAreasStore);
+	let count = 0;
+	for (const key of allKeys) {
+		const entry = await get<CachedProtectedAreaScanEntry>(key, protectedAreasStore);
+		if (!entry || !isProtectedAreasCacheEntryValid(entry.fetchedAt)) {
+			await del(key, protectedAreasStore);
+			continue;
+		}
+		count += 1;
+	}
+	return { count };
+}
