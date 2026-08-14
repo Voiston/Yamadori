@@ -61,18 +61,9 @@ Configurez la signature dans `android/app/build.gradle` (bloc `signingConfigs`) 
 
 **Ne commitez jamais** le keystore ni son mot de passe. Stockez-les dans un gestionnaire de secrets.
 
-### Variables CI (GitHub Actions)
+### Signature locale (Play)
 
-Pour les releases signées via GitHub Actions, définissez ces secrets :
-
-| Secret | Description |
-|--------|-------------|
-| `ANDROID_KEYSTORE_BASE64` | Keystore encodé en base64 |
-| `ANDROID_KEYSTORE_PASSWORD` | Mot de passe du keystore |
-| `ANDROID_KEY_ALIAS` | Alias de la clé (ex. `yamadori`) |
-| `ANDROID_KEY_PASSWORD` | Mot de passe de la clé |
-
-Sans ces secrets, le workflow CI produit un APK **debug** utilisable pour les tests.
+L’AAB / APK release se construit en local (`npm run release:play-internal`), pas via GitHub Actions. Ne commitez jamais le keystore. Variables d’environnement : `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 
 ## Dépannage Gradle
 
