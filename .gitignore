@@ -16,6 +16,9 @@ android/local.properties
 *.jks
 *.keystore
 
+# IDE
+.idea/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -32,3 +35,8 @@ vite.config.ts.timestamp-*
 
 # Paraglide (generated at build)
 src/lib/paraglide
+
+# Local scratch / KSJ build cache (generated assets)
+.tmp/
+static/jp-ksj-a10/natural-parks.geojson
+static/jp-ksj-a10/natural-parks.geojson.gz
