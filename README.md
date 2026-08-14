@@ -2,6 +2,8 @@
 
 Application Android de repérage d'arbres en forêt, construite avec SvelteKit et empaquetée via [Capacitor](https://capacitorjs.com/).
 
+Le code source est visible. Tous droits réservés — ce n’est pas une licence d’utilisation, de modification ou de redistribution.
+
 ## Développement
 
 ```sh
