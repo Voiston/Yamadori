@@ -24,8 +24,8 @@
 		"i18n:compile": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy localStorage preferredLanguage baseLocale",
 		"check": "svelte-kit sync && npm run i18n:check && npm run i18n:compile && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"test": "vitest run",
-		"test:watch": "vitest"
+		"test": "npm run i18n:compile && vitest run",
+		"test:watch": "npm run i18n:compile && vitest"
 	},
 	"devDependencies": {
 		"@capacitor/android": "^8.4.1",
