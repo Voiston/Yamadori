@@ -28,7 +28,17 @@ export type ProtectedZoneCardId =
 	| 'doc_national_park'
 	| 'doc_conservation'
 	| 'whenua_rahui'
-	| 'outside_pcl';
+	| 'outside_pcl'
+	/** Australia CAPAD cards */
+	| 'capad_national_park'
+	| 'capad_conservation'
+	| 'capad_ipa'
+	| 'outside_capad'
+	/** Japan KSJ A10 (自然公園地域) cards */
+	| 'ksj_national_park'
+	| 'ksj_special_zone'
+	| 'ksj_prefectural_park'
+	| 'outside_ksj';
 
 export interface ProtectedZoneHit {
 	id: string;

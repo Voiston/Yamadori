@@ -20,6 +20,7 @@ import {
 	lookupMairieContact,
 	parseMairieRecord,
 	resolveMairieInseeCandidates,
+	sanitizeHttpUrl,
 	toTelHref
 } from './mairieContact';
 
@@ -70,12 +71,37 @@ describe('parseMairieRecord', () => {
 			name: 'Mairie - Bordeaux',
 			phoneDisplay: '05 56 10 20 30',
 			phoneTel: 'tel:+33556102030',
-			website: 'https://www.bordeaux.fr'
+			website: 'https://www.bordeaux.fr/'
 		});
 	});
 
 	it('returns null when phone is missing', () => {
 		expect(parseMairieRecord({ nom: 'Mairie - Test' })).toBeNull();
+	});
+
+	it('drops javascript and data website URLs', () => {
+		expect(
+			parseMairieRecord({
+				...bordeauxRecord,
+				site_internet: '[{"valeur":"javascript:alert(1)"}]'
+			})?.website
+		).toBeUndefined();
+		expect(
+			parseMairieRecord({
+				...bordeauxRecord,
+				site_internet: '[{"valeur":"data:text/html,hi"}]'
+			})?.website
+		).toBeUndefined();
+	});
+});
+
+describe('sanitizeHttpUrl', () => {
+	it('allows http and https only', () => {
+		expect(sanitizeHttpUrl('https://example.com/path')).toBe('https://example.com/path');
+		expect(sanitizeHttpUrl('http://example.com')).toBe('http://example.com/');
+		expect(sanitizeHttpUrl('javascript:alert(1)')).toBeUndefined();
+		expect(sanitizeHttpUrl('data:text/html,x')).toBeUndefined();
+		expect(sanitizeHttpUrl('not a url')).toBeUndefined();
 	});
 });
 

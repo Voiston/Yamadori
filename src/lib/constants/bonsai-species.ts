@@ -89,12 +89,37 @@ export const BONSAI_SPECIES_PT = [
 	'Carvalho-português'
 ] as const;
 
+/** Australian favourites — after PT list. */
+export const BONSAI_SPECIES_AU = [
+	'Banksia',
+	'Waratah',
+	'Bottlebrush',
+	'Sheoak',
+	'Moreton Bay fig',
+	'Huon pine',
+	'Celery-top pine'
+] as const;
+
+/** Japanese favourites — aligned with jpHarvestCalendar / GDD catalog. */
+export const BONSAI_SPECIES_JP = [
+	'Japanese black pine',
+	'Japanese red pine',
+	'Japanese white pine',
+	'Zelkova',
+	'Japanese maple',
+	'Japanese juniper',
+	'Japanese beech',
+	'Konara oak'
+] as const;
+
 export const BONSAI_SPECIES_PRIORITY = [
 	...BONSAI_SPECIES_EUROPE,
 	...BONSAI_SPECIES_US,
 	...BONSAI_SPECIES_CA,
 	...BONSAI_SPECIES_NZ,
-	...BONSAI_SPECIES_PT
+	...BONSAI_SPECIES_PT,
+	...BONSAI_SPECIES_AU,
+	...BONSAI_SPECIES_JP
 ] as const;
 
 const priorityIndex = new Map<string, number>(

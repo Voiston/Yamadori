@@ -30,6 +30,7 @@
 	bind:this={panelRef}
 	class="mx-auto w-full max-w-md rounded-2xl bg-white p-4 shadow-xl md:p-6 {panelClass}"
 >
+	<div class="sheet-grabber sm:hidden" aria-hidden="true"></div>
 	<p class="text-xs font-medium uppercase tracking-wide text-muted">{progress}</p>
 	{#if title}
 		<h2 id={titleId} class="mt-2 font-semibold text-forest-900 {titleClass}">{title}</h2>

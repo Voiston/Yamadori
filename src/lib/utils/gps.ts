@@ -7,7 +7,13 @@ const INTL_LOCALE: Record<string, string> = {
 	en: 'en-GB',
 	de: 'de-DE',
 	it: 'it-IT',
-	es: 'es-ES'
+	es: 'es-ES',
+	nl: 'nl-NL',
+	sv: 'sv-SE',
+	nb: 'nb-NO',
+	pt: 'pt-PT',
+	da: 'da-DK',
+	fi: 'fi-FI'
 };
 
 export type GpsSignalQuality = 'excellent' | 'fair' | 'poor' | 'unknown';
@@ -40,7 +46,7 @@ export function formatAltitude(meters: number | null): string | null {
 		return null;
 	}
 	const locale = INTL_LOCALE[getLocale()] ?? 'fr-FR';
-	return `${Math.round(meters).toLocaleString(locale)} m`;
+	return m.format_distance_m({ n: Math.round(meters).toLocaleString(locale) });
 }
 
 export function isPoorAccuracy(meters: number | null): boolean {

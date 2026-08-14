@@ -1,6 +1,6 @@
 import type { YrsStoredSnapshot } from '$lib/types/yrs';
 
-export const TREE_STORAGE_VERSION = 1;
+export const TREE_STORAGE_VERSION = 2;
 
 export const STORAGE_KEY_LEGACY = 'yamadori-trees';
 export const STORAGE_KEY_VERSION = 'yamadori-trees-storage-version';
@@ -39,14 +39,39 @@ export type StoredTreeVisit = {
 	id: string;
 	visitedAt: string;
 	note: string;
-	photoFullId: string;
-	photoThumbId: string;
+	photoFullIds: string[];
+	photoThumbIds: string[];
+	/** @deprecated Legacy single-photo fields; read via normalizeStoredVisitPhotoIds. */
+	photoFullId?: string;
+	/** @deprecated Legacy single-photo fields; read via normalizeStoredVisitPhotoIds. */
+	photoThumbId?: string;
 	voiceNote?: StoredVoiceNoteRef | null;
 	yrsSnapshot?: YrsStoredSnapshot | null;
 };
 
+export function normalizeStoredVisitPhotoIds(visit: StoredTreeVisit): {
+	photoFullIds: string[];
+	photoThumbIds: string[];
+} {
+	if (visit.photoFullIds && visit.photoFullIds.length > 0) {
+		const photoFullIds = visit.photoFullIds.filter(Boolean);
+		const photoThumbIds =
+			visit.photoThumbIds && visit.photoThumbIds.length > 0
+				? visit.photoThumbIds.filter(Boolean)
+				: photoFullIds;
+		return { photoFullIds, photoThumbIds };
+	}
+
+	const fullId = visit.photoFullId ?? '';
+	const thumbId = visit.photoThumbId ?? fullId;
+	return {
+		photoFullIds: fullId ? [fullId] : [],
+		photoThumbIds: thumbId ? [thumbId] : []
+	};
+}
+
 export type StoredTreeRecord = {
-	version: typeof TREE_STORAGE_VERSION;
+	version: number;
 	id: string;
 	species: string;
 	notes: string;

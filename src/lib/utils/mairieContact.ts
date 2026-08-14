@@ -80,6 +80,20 @@ export function toTelHref(display: string): string | null {
 	return `tel:${trimmed.replace(/\s/g, '')}`;
 }
 
+/** Allow only http(s) URLs — blocks javascript:/data: XSS via href. */
+export function sanitizeHttpUrl(raw: string | undefined): string | undefined {
+	if (!raw) return undefined;
+	const trimmed = raw.trim();
+	if (!trimmed) return undefined;
+	try {
+		const u = new URL(trimmed);
+		if (u.protocol !== 'https:' && u.protocol !== 'http:') return undefined;
+		return u.href;
+	} catch {
+		return undefined;
+	}
+}
+
 export function resolveMairieInseeCandidates(codeInsee: string): string[] {
 	const code = codeInsee.trim();
 	if (!code) return [];
@@ -111,7 +125,7 @@ export function parseMairieRecord(record: AnnuaireRecord): MairieContact | null 
 	if (!phoneTel) return null;
 
 	const websites = parseJsonArray<WebsiteEntry>(record.site_internet);
-	const website = websites[0]?.valeur?.trim() || undefined;
+	const website = sanitizeHttpUrl(websites[0]?.valeur);
 
 	return {
 		name,

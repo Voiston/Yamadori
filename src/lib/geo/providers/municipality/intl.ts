@@ -28,6 +28,6 @@ export async function lookupMunicipalityIntl(
 		longitude,
 		roleForCountry(country),
 		fallbackName,
-		{ ...options, cantonLabel }
+		{ ...options, cantonLabel, country }
 	);
 }

@@ -13,7 +13,12 @@ export type CountryCode =
 	| 'US'
 	| 'CA'
 	| 'NZ'
-	| 'PT';
+	| 'PT'
+	| 'IE'
+	| 'AU'
+	| 'DK'
+	| 'FI'
+	| 'JP';
 
 export const COUNTRY_CODES: CountryCode[] = [
 	'FR',
@@ -30,7 +35,12 @@ export const COUNTRY_CODES: CountryCode[] = [
 	'US',
 	'CA',
 	'NZ',
-	'PT'
+	'PT',
+	'IE',
+	'AU',
+	'DK',
+	'FI',
+	'JP'
 ];
 
 export type BoundingBox = {
@@ -56,7 +66,10 @@ export const COUNTRY_BBOXES: Record<CountryCode, BoundingBox> = {
 	IT: { minLat: 35, maxLat: 47.5, minLon: 6.5, maxLon: 19 },
 	/** Allemagne (hors enclaves). */
 	DE: { minLat: 47, maxLat: 55.5, minLon: 5.5, maxLon: 15.5 },
-	/** Grande-Bretagne (Angleterre, Pays de Galles, Écosse) — Irlande du Nord exclue. */
+	/**
+	 * Grande-Bretagne (Angleterre, Pays de Galles, Écosse) + Hebrides.
+	 * Irlande du Nord via COUNTRY_EXTRA_BBOXES. Overlap ROI géré dans resolveCountry.
+	 */
 	GB: { minLat: 49.8, maxLat: 61, minLon: -8.7, maxLon: 2 },
 	/**
 	 * Suisse — bbox serrée pour gagner face à FR/DE/IT via centeredness
@@ -101,7 +114,33 @@ export const COUNTRY_BBOXES: Record<CountryCode, BoundingBox> = {
 	 * Portugal continental. Madère / Açores via COUNTRY_EXTRA_BBOXES.
 	 * Overlap ES (Galice / Extremadure / Andalousie) géré dans resolveCountry.
 	 */
-	PT: { minLat: 36.9, maxLat: 42.2, minLon: -9.6, maxLon: -6.1 }
+	PT: { minLat: 36.9, maxLat: 42.2, minLon: -9.6, maxLon: -6.1 },
+	/**
+	 * Irlande (île entière, ROI + NI). Overlap GB / NI géré dans resolveCountry
+	 * (Belfast / Derry → GB ; Dublin / Donegal → IE).
+	 */
+	IE: { minLat: 51.35, maxLat: 55.45, minLon: -10.7, maxLon: -5.85 },
+	/**
+	 * Australia — mainland + Tasmania. Lord Howe / Norfolk via EXTRA.
+	 * Ocean gap to NZ (minLon 166) — no land-border helper needed.
+	 */
+	AU: { minLat: -44.0, maxLat: -10.0, minLon: 112.5, maxLon: 154.0 },
+	/**
+	 * Denmark — Jutland + Zealand / Funen (maxLon before Malmö).
+	 * Bornholm via EXTRA. Overlap SE/DE géré dans resolveCountry.
+	 */
+	DK: { minLat: 54.5, maxLat: 57.8, minLon: 8.0, maxLon: 12.65 },
+	/**
+	 * Finland — mainland. Åland via EXTRA.
+	 * Overlap SE (Gulf of Bothnia) / NO (Lapland) géré dans resolveCountry.
+	 */
+	FI: { minLat: 59.5, maxLat: 70.1, minLon: 19.5, maxLon: 31.6 },
+	/**
+	 * Japan — Honshu / Hokkaido / Kyushu / Shikoku (main islands).
+	 * Okinawa / Ogasawara / remote islands via EXTRA.
+	 * Kept east of Korea / west of open Pacific; no land-border helper needed.
+	 */
+	JP: { minLat: 30.2, maxLat: 45.6, minLon: 128.5, maxLon: 146.0 }
 };
 
 /**
@@ -128,6 +167,35 @@ export const COUNTRY_EXTRA_BBOXES: Partial<Record<CountryCode, BoundingBox[]>> =
 		{ minLat: 32.4, maxLat: 33.2, minLon: -17.3, maxLon: -16.2 },
 		/** Açores (groupe principal). */
 		{ minLat: 36.9, maxLat: 39.8, minLon: -31.3, maxLon: -24.9 }
+	],
+	GB: [
+		/**
+		 * Irlande du Nord — explicite pour rester GB quand IE est aussi candidat.
+		 * Donegal (ROI) reste départagé dans resolveIrelandUkBorder.
+		 */
+		{ minLat: 54.0, maxLat: 55.35, minLon: -8.25, maxLon: -5.4 }
+	],
+	AU: [
+		/** Lord Howe Island. */
+		{ minLat: -31.8, maxLat: -31.4, minLon: 159.0, maxLon: 159.2 },
+		/** Norfolk Island (well west of NZ minLon 166). */
+		{ minLat: -29.2, maxLat: -28.9, minLon: 167.8, maxLon: 168.1 }
+	],
+	DK: [
+		/** Bornholm (east of Øresund / main DK maxLon). */
+		{ minLat: 54.95, maxLat: 55.35, minLon: 14.65, maxLon: 15.25 }
+	],
+	FI: [
+		/** Åland (west of mainland minLon 19.5). */
+		{ minLat: 59.7, maxLat: 60.6, minLon: 19.3, maxLon: 21.4 }
+	],
+	JP: [
+		/** Okinawa main island + nearby. */
+		{ minLat: 24.0, maxLat: 27.2, minLon: 122.8, maxLon: 131.5 },
+		/** Ogasawara (Bonin) — Chichijima area. */
+		{ minLat: 26.5, maxLat: 27.2, minLon: 142.0, maxLon: 142.3 },
+		/** Amami / northern Ryukyu gap north of Okinawa bbox. */
+		{ minLat: 27.2, maxLat: 28.6, minLon: 128.0, maxLon: 130.5 }
 	]
 };
 
@@ -159,10 +227,15 @@ const CADASTRE_PROVIDER_COUNTRIES: ReadonlySet<CountryCode> = new Set([
 	'US',
 	'CA',
 	'NZ',
-	'PT'
+	'PT',
+	'IE',
+	'AU',
+	'DK',
+	'FI',
+	'JP'
 ]);
 
-/** DE/GB/CH/AT/SE/US/CA/NZ/PT are partial. BE/NL/NO are full. US/CA/NZ = public tenure, not parcels. */
+/** DE/GB/CH/AT/SE/US/CA/NZ/PT/IE/AU/DK/FI/JP are partial. BE/NL/NO are full. US/CA/NZ/AU = public tenure, not parcels. */
 export function hasCadastreProvider(country: CountryCode | null): boolean {
 	return country != null && CADASTRE_PROVIDER_COUNTRIES.has(country);
 }
@@ -189,7 +262,12 @@ export function getCadastreCoverageLevel(country: CountryCode | null): CadastreC
 		country === 'US' ||
 		country === 'CA' ||
 		country === 'NZ' ||
-		country === 'PT'
+		country === 'PT' ||
+		country === 'IE' ||
+		country === 'AU' ||
+		country === 'DK' ||
+		country === 'FI' ||
+		country === 'JP'
 	) {
 		return 'partial';
 	}

@@ -8,6 +8,10 @@ export interface EnvironmentExposureCoefficients {
 	/** Amortissement de l'écart sol ↔ air (1 = brut API, <1 = microclimat tamponné). */
 	soil: number;
 	gdd: number;
+	/**
+	 * Final YRS multiplier. Kept at 1.0 for all exposures — stress attenuation is applied
+	 * upstream via et0/wind/radiation/soil/gdd coeffs in `applyEnvironmentExposure`.
+	 */
 	microclimateFactor: number;
 }
 
@@ -16,14 +20,14 @@ export const ENVIRONMENT_EXPOSURE_COEFFICIENTS: Record<
 	EnvironmentExposureCoefficients
 > = {
 	OPEN: { et0: 1.0, wind: 1.0, radiation: 1.0, soil: 1.0, gdd: 1.0, microclimateFactor: 1.0 },
-	EDGE: { et0: 0.7, wind: 0.5, radiation: 0.7, soil: 0.8, gdd: 0.85, microclimateFactor: 1.1 },
+	EDGE: { et0: 0.7, wind: 0.5, radiation: 0.7, soil: 0.8, gdd: 0.85, microclimateFactor: 1.0 },
 	FOREST_DENSE: {
 		et0: 0.4,
 		wind: 0.1,
 		radiation: 0.3,
 		soil: 0.65,
 		gdd: 0.7,
-		microclimateFactor: 1.2
+		microclimateFactor: 1.0
 	}
 };
 

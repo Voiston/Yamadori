@@ -2,6 +2,8 @@
 
 	import '../app.css';
 
+	import AppBootSplash from '$lib/components/AppBootSplash.svelte';
+
 	import AppToast from '$lib/components/AppToast.svelte';
 
 	import BottomNav from '$lib/components/BottomNav.svelte';
@@ -42,6 +44,8 @@
 
 	import { isNativeApp } from '$lib/utils/platform';
 
+	import { MOTION_MS, prefersReducedMotion } from '$lib/utils/motion';
+
 	import {
 
 		dismissBackupReminderForSession,
@@ -59,6 +63,8 @@
 	import type { OnboardingPhase } from '$lib/utils/onboarding';
 
 	import { onMount, tick, untrack, type Component } from 'svelte';
+
+	import { fade } from 'svelte/transition';
 
 
 
@@ -94,6 +100,8 @@
 		}> | null
 	>(null);
 
+	let LegalDisclaimerGate = $state<Component | null>(null);
+
 
 
 	let routeId = $derived(page.route.id);
@@ -107,6 +115,17 @@
 	let showBack = $derived(backNavigation.showBack);
 
 	let canRenderChildren = $derived(canRenderRouteContent(routeId));
+
+	let bootMinElapsed = $state(false);
+
+	let bootDismissed = $state(false);
+
+	$effect(() => {
+		if (bootDismissed) return;
+		if (canRenderChildren && bootMinElapsed) {
+			bootDismissed = true;
+		}
+	});
 
 
 
@@ -165,7 +184,17 @@
 	);
 
 	let showProtectionModal = $derived(
-		nativeApp && onboardingState.loaded && onboardingState.phase === 'protection'
+		nativeApp &&
+			onboardingState.loaded &&
+			onboardingState.phase === 'protection' &&
+			onboardingState.legalDisclaimerAccepted
+	);
+
+	let showLegalDisclaimerGate = $derived(
+		nativeApp &&
+			onboardingState.loaded &&
+			!onboardingState.legalDisclaimerAccepted &&
+			onboardingState.phase !== 'permissions'
 	);
 
 	function ensureOnboardingComponentsLoaded(): void {
@@ -182,6 +211,16 @@
 		});
 	}
 
+	function ensureLegalDisclaimerGateLoaded(): void {
+		if (!nativeApp || LegalDisclaimerGate) {
+			return;
+		}
+
+		void import('$lib/components/LegalDisclaimerGate.svelte').then((mod) => {
+			LegalDisclaimerGate = mod.default;
+		});
+	}
+
 	$effect(() => {
 		if (
 			!nativeApp ||
@@ -192,6 +231,13 @@
 		}
 
 		ensureOnboardingComponentsLoaded();
+	});
+
+	$effect(() => {
+		if (!showLegalDisclaimerGate) {
+			return;
+		}
+		ensureLegalDisclaimerGateLoaded();
 	});
 
 	$effect(() => {
@@ -360,7 +406,11 @@
 
 
 
-		return runAppBoot({
+		const bootTimer = setTimeout(() => {
+			bootMinElapsed = true;
+		}, MOTION_MS.bootMin);
+
+		const cleanupBoot = runAppBoot({
 
 			base,
 
@@ -373,6 +423,11 @@
 			onOnboardingReady: () => {}
 
 		});
+
+		return () => {
+			clearTimeout(bootTimer);
+			cleanupBoot();
+		};
 
 	});
 
@@ -446,6 +501,14 @@
 
 	);
 
+	let appMetaDescription = $derived.by(() => {
+
+		void appearanceSettingsState.locale;
+
+		return m.app_meta_description();
+
+	});
+
 </script>
 
 
@@ -454,25 +517,20 @@
 
 	<title>Yamadori Scouting</title>
 
+	<meta name="description" content={appMetaDescription} />
+
 	<link rel="icon" href="{base}/icons/icon-192.png" type="image/png" />
 
 </svelte:head>
 
 
 
-<div data-app-shell class="flex h-dvh min-h-0 w-full flex-col overflow-hidden px-safe">
+<div data-app-shell class="relative flex h-dvh min-h-0 w-full flex-col overflow-hidden px-safe">
 
 	<header
-
-		class="{isMap
-
-			? 'absolute inset-x-0 top-0 z-40 bg-white/90 pt-safe shadow-sm backdrop-blur-sm'
-
-			: 'sticky top-0 z-40 border-b border-gray-100 bg-surface/95 backdrop-blur-sm pt-safe'}"
-
+		class="sticky top-0 z-40 border-b border-gray-100 bg-surface/95 backdrop-blur-sm pt-safe"
 	>
-
-		<div class="flex {isMap ? 'h-10 gap-2 px-3' : 'h-14 gap-3 px-4 narrow:gap-2 narrow:px-3'} items-center">
+		<div class="flex h-14 gap-3 px-4 narrow:gap-2 narrow:px-3 items-center">
 
 			{#if showBack}
 
@@ -518,7 +576,7 @@
 
 			<div class="min-w-0 flex-1">
 
-				<h1 class="truncate {isMap ? 'text-base' : 'text-lg narrow:text-base'} font-semibold text-forest-900">
+				<h1 class="truncate text-lg narrow:text-base font-semibold text-forest-900">
 
 					{headerTitle}
 
@@ -652,8 +710,6 @@
 
 	</header>
 
-
-
 	{#if initError}
 
 		<div
@@ -719,45 +775,9 @@
 
 		{#key page.url.pathname}
 
-			{#if canRenderChildren}
+			{#if canRenderChildren && bootDismissed}
 
 				{@render children()}
-
-			{:else}
-
-				<div class="flex items-center justify-center py-20">
-
-					<svg
-
-						class="h-8 w-8 animate-spin text-forest-800"
-
-						xmlns="http://www.w3.org/2000/svg"
-
-						fill="none"
-
-						viewBox="0 0 24 24"
-
-						aria-label={m.climate_loading()}
-
-					>
-
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-
-						></circle>
-
-						<path
-
-							class="opacity-75"
-
-							fill="currentColor"
-
-							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-
-						></path>
-
-					</svg>
-
-				</div>
 
 			{/if}
 
@@ -781,6 +801,15 @@
 
 	{/if}
 
+	{#if !bootDismissed}
+		<div
+			class="absolute inset-0 z-[110]"
+			out:fade={{ duration: prefersReducedMotion() ? 0 : MOTION_MS.sheet }}
+		>
+			<AppBootSplash label={m.climate_loading()} />
+		</div>
+	{/if}
+
 </div>
 
 
@@ -788,6 +817,14 @@
 {#if nativeApp && showPermissionsModal && OnboardingPermissions}
 
 	<OnboardingPermissions onphasecomplete={() => void handlePermissionsPhaseComplete()} />
+
+{/if}
+
+
+
+{#if nativeApp && showLegalDisclaimerGate && LegalDisclaimerGate}
+
+	<LegalDisclaimerGate />
 
 {/if}
 
@@ -804,13 +841,13 @@
 
 
 
-{#if LocalEncryptionMigrationOverlay}
+{#if bootDismissed && LocalEncryptionMigrationOverlay}
 
 	<LocalEncryptionMigrationOverlay />
 
 {/if}
 
-{#if TreeStorageMigrationOverlay}
+{#if bootDismissed && TreeStorageMigrationOverlay}
 
 	<TreeStorageMigrationOverlay />
 

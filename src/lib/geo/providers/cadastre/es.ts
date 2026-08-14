@@ -1,5 +1,5 @@
 import type { CadastreInfo } from '$lib/types/cadastre';
-import { COUNTRY_BBOXES, pointInBbox } from '$lib/geo/countries';
+import { pointInCountryBboxes } from '$lib/geo/countries';
 import { createTimedAbortSignal, isAbortError, throwIfAborted } from '$lib/utils/abortSignal';
 
 /**
@@ -15,8 +15,9 @@ const CATASTRO_URLS = [
 
 const FETCH_TIMEOUT_MS = 8_000;
 
+/** Peninsula, Balears, and Canarias (EXTRA bbox). */
 export function isInSpainCadastreCoverage(latitude: number, longitude: number): boolean {
-	return pointInBbox(latitude, longitude, COUNTRY_BBOXES.ES);
+	return pointInCountryBboxes(latitude, longitude, 'ES');
 }
 
 type CatastroCoord = {

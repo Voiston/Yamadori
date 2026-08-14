@@ -69,6 +69,7 @@ function buildAgriData(latitude: number, longitude: number): AgriData {
 		heatStressDaysForecast7d: 0,
 		frostEventsPast7d: 0,
 		soilBufferScore: 70,
+		hydricStressKs: 1,
 		wsi: 31.4,
 		futureStressRiskMm: 5.6,
 		weeklyViability: null,
@@ -83,7 +84,10 @@ function buildAgriData(latitude: number, longitude: number): AgriData {
 				hydric: 14,
 				stressPenalty: 0
 			},
-			summary: 'Conditions acceptables.'
+			summary: 'Conditions acceptables.',
+			confidence: 'medium',
+			climateProfile: 'temperate_oceanic',
+			localization: 'local'
 		}
 	};
 }

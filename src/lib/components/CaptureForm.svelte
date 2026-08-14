@@ -37,7 +37,7 @@
 	import { loadMagneticDeclinationDeg } from '$lib/utils/magneticDeclination';
 	import GpsAccuracyBadge from './GpsAccuracyBadge.svelte';
 	import GpsStatusCompact from './GpsStatusCompact.svelte';
-	import { shouldConfirmGpsBeforeSave } from '$lib/utils/capture-gps-confirm';
+	import { needsLocationPromptBeforePhoto, shouldConfirmGpsBeforeSave, type LocationPromptBeforePhotoReason } from '$lib/utils/capture-gps-confirm';
 	import { formatAccuracy, isBetterAccuracy, isPoorAccuracy } from '$lib/utils/gps';
 	import {
 		getAndroidVolumeButtonHint,
@@ -54,7 +54,12 @@
 		getSmoothedAltitudeMeters,
 		userPositionState
 	} from '$lib/utils/userPosition.svelte';
-	import { photoFileToStorageWithThumb, type PhotoEncoding } from '$lib/utils/photo';
+	import {
+		getLocationPermissionStatus,
+		requestLocationPermissions
+	} from '$lib/utils/locationProvider';
+	import { openAppSettings, openLocationSettings } from '$lib/utils/openAppSettings';
+	import { photoFileToStorageWithThumb } from '$lib/utils/photo';
 	import {
 		CAPTURE_AGRI_REFETCH_DISTANCE_M,
 		CAPTURE_ENRICHMENT_DEBOUNCE_MS,
@@ -82,18 +87,20 @@
 	import { isAndroidApp, isNativeApp } from '$lib/utils/platform';
 	import { App } from '@capacitor/app';
 	import { showAppToast } from '$lib/stores/appToast.svelte';
-	import { hapticError } from '$lib/utils/haptics';
+	import { hapticError, hapticSuccess } from '$lib/utils/haptics';
 	import { toYrsStoredSnapshot } from '$lib/utils/yrs';
 	import { startVolumeButtonWatch, stopVolumeButtonWatch } from '$lib/utils/volumeButtons';
 	import SpeciesAutocomplete from './SpeciesAutocomplete.svelte';
 	import CaptureAssessmentSection from './capture/CaptureAssessmentSection.svelte';
 	import ConfirmDialog from './ConfirmDialog.svelte';
-	import PhotoPreview from './PhotoPreview.svelte';
+	import LocationPermissionPrompt from './LocationPermissionPrompt.svelte';
+	import MultiPhotoPreview, { type MultiPhotoSlot } from './MultiPhotoPreview.svelte';
 	import VoiceNoteRecorderLazy from './VoiceNoteRecorderLazy.svelte';
 	import YrsScoreBanner from './YrsScoreBanner.svelte';
 	import { canAddTree } from '$lib/utils/featurePolicy';
 	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import CadastreBanner from './CadastreBanner.svelte';
+	import { effectiveCollectStatus } from '$lib/utils/cadastreRefs';
 	import VetoLegalChecklist from './VetoLegalChecklist.svelte';
 	import GeoCapabilityBanner from './GeoCapabilityBanner.svelte';
 	import { resolveCountry } from '$lib/geo/resolveCountry';
@@ -112,9 +119,7 @@
 	let notes = $state('');
 	let environmentExposure = $state<EnvironmentExposure>(DEFAULT_ENVIRONMENT_EXPOSURE);
 	let voiceNote = $state<VoiceNote | null>(null);
-	let photoFile = $state<File | null>(null);
-	let photoPreviewUrl = $state('');
-	let photoEncoding = $state<PhotoEncoding | null>(null);
+	let photoSlots = $state<MultiPhotoSlot[]>([]);
 	let photoProcessingBusy = $state(false);
 	let submitting = $state(false);
 	let gpsChecking = $state(false);
@@ -200,10 +205,17 @@
 	let climateFetchInFlight = false;
 	let showGpsConfirm = $state(false);
 	let gpsConfirmMessage = $state('');
+	let gpsAutoSavePending = $state(false);
+	let showLocationPrompt = $state(false);
+	let locationPromptReason = $state<LocationPromptBeforePhotoReason | null>(null);
+	let locationPromptBusy = $state(false);
+	let awaitingLocationSettingsReturn = $state(false);
+	let openCameraAfterLocationSettings = $state(false);
+	let showSettingsHint = $state(false);
 	let saveSuccessPulse = $state(false);
 
 	let quickAssessment = $state<TreeAssessment>({ ...DEFAULT_ASSESSMENT });
-	let photoPreviewRef = $state<PhotoPreview | undefined>();
+	let photoPreviewRef = $state<MultiPhotoPreview | undefined>();
 	let voiceRecorderRef = $state<VoiceRecorderHandle | undefined>();
 	let voiceSessionActive = $state(false);
 
@@ -580,7 +592,14 @@
 		climateLocked = false;
 		climateFetchedApproximate = false;
 		void loadClimateForPosition(position.latitude, position.longitude, true);
-		void loadAgriData(position.latitude, position.longitude, true, { species, environmentExposure });
+		void loadAgriData(position.latitude, position.longitude, true, {
+			species,
+			environmentExposure,
+			observedPhenologyStage: quickAssessment.observedPhenologyStage,
+			cernageStatus: quickAssessment.cernageStatus,
+			aoutementStatus: quickAssessment.aoutementStatus,
+			leafFallPct: quickAssessment.leafFallPct
+		});
 	}
 
 	function clearClimateState(): void {
@@ -711,6 +730,10 @@
 		const online = onlineState.online;
 		const currentSpecies = species;
 		const currentExposure = environmentExposure;
+		const currentObservedPhenologyStage = quickAssessment.observedPhenologyStage;
+		const currentCernageStatus = quickAssessment.cernageStatus;
+		const currentAoutementStatus = quickAssessment.aoutementStatus;
+		const currentLeafFallPct = quickAssessment.leafFallPct;
 		void photoProcessingBusy;
 
 		if (!position) {
@@ -723,6 +746,15 @@
 		if (shouldDeferCaptureEnrichment()) {
 			return;
 		}
+
+		const agriInputsKey = [
+			currentSpecies,
+			currentExposure,
+			currentObservedPhenologyStage ?? '',
+			currentCernageStatus ?? '',
+			currentAoutementStatus ?? '',
+			currentLeafFallPct ?? ''
+		].join('|');
 
 		const needsClimate = !mode && shouldRefetchClimate(position);
 		const needsLocation =
@@ -739,8 +771,7 @@
 			);
 		const needsAgri =
 			!mode &&
-			(shouldRefetchAgri(position) ||
-				`${currentSpecies}|${currentExposure}` !== lastAgriInputsKey);
+			(shouldRefetchAgri(position) || agriInputsKey !== lastAgriInputsKey);
 		const needsCadastreRetry =
 			online &&
 			!cadastreInfo &&
@@ -760,6 +791,10 @@
 				online,
 				species: currentSpecies,
 				environmentExposure: currentExposure,
+				observedPhenologyStage: currentObservedPhenologyStage,
+				cernageStatus: currentCernageStatus,
+				aoutementStatus: currentAoutementStatus,
+				leafFallPct: currentLeafFallPct,
 				signal: controller.signal,
 				shouldRefetchClimate,
 				shouldRefetchLocation,
@@ -839,7 +874,7 @@
 	}
 
 	async function handleVolumeUpSave(): Promise<void> {
-		if (voiceSessionActive || submitting || gpsChecking || isPhotoPicking()) {
+		if (voiceSessionActive || submitting || gpsChecking || isPhotoPicking() || locationPromptBusy) {
 			return;
 		}
 
@@ -848,12 +883,19 @@
 			return;
 		}
 
+		if (showLocationPrompt) {
+			return;
+		}
+
 		if (voiceRecorderRef?.isVoiceRecording()) {
 			await voiceRecorderRef.toggleVolumeRecording();
 		}
 
-		if (!photoFile) {
+		if (photoSlots.length === 0) {
 			await photoPreviewRef?.openCamera();
+			if (showLocationPrompt || photoSlots.length === 0) {
+				return;
+			}
 		}
 
 		await handleSubmit();
@@ -900,9 +942,7 @@
 		}
 		return {
 			...DEFAULT_ASSESSMENT,
-			potentialScore: quickAssessment.potentialScore,
-			caliber: quickAssessment.caliber,
-			nebari: quickAssessment.nebari
+			...quickAssessment
 		};
 	}
 
@@ -947,16 +987,19 @@
 				gpsSuccess = m.gps_saved({ accuracy: formatAccuracy(accuracyMeters) });
 			}
 
-			let photos: string[] = [];
-			let photoThumbs: string[] | undefined;
-			if (photoFile) {
-				if (photoEncoding?.full) {
-					photos = [photoEncoding.full];
-					photoThumbs = [photoEncoding.thumb];
-				} else {
-					const encoded = await photoFileToStorageWithThumb(photoFile);
-					photos = [encoded.full];
-					photoThumbs = [encoded.thumb];
+			const photos: string[] = [];
+			const photoThumbs: string[] = [];
+			for (const slot of photoSlots) {
+				if (slot.encoding?.full) {
+					photos.push(slot.encoding.full);
+					photoThumbs.push(slot.encoding.thumb);
+				} else if (slot.existingFull) {
+					photos.push(slot.existingFull);
+					photoThumbs.push(slot.existingThumb ?? slot.existingFull);
+				} else if (slot.file) {
+					const encoded = await photoFileToStorageWithThumb(slot.file);
+					photos.push(encoded.full);
+					photoThumbs.push(encoded.thumb);
 				}
 			}
 
@@ -970,7 +1013,7 @@
 				species: trimmedSpecies,
 				notes: simplified ? '' : notes.trim(),
 				photos,
-				photoThumbs,
+				photoThumbs: photoThumbs.length > 0 ? photoThumbs : undefined,
 				voiceNote,
 				latitude,
 				longitude,
@@ -994,6 +1037,7 @@
 			gpsChecking = false;
 
 			saveSuccessPulse = true;
+			void hapticSuccess();
 			showAppToast('ok', m.capture_tree_saved());
 			await handlePostCaptureSaveNavigation({
 				phase: onboardingState.phase,
@@ -1048,11 +1092,244 @@
 		submitLock = false;
 	}
 
-	function handlePhoto(file: File, previewUrl: string, encoding: PhotoEncoding) {
-		photoFile = file;
-		photoPreviewUrl = previewUrl;
-		photoEncoding = encoding;
-		frontHeadingDegrees = currentHeading;
+	function hasLegalRiskSignal(info: CadastreInfo | null): boolean {
+		if (!info) return false;
+		const status = effectiveCollectStatus(info);
+		return (
+			status === 'forbidden' ||
+			status === 'permit_required' ||
+			status === 'forbidden_or_agency'
+		);
+	}
+
+	let showLegalReviewChip = $derived(
+		hasLegalRiskSignal(cadastreInfo) && !vetoChecklistOpen && !cadastreLoading
+	);
+
+	$effect(() => {
+		if (!showGpsConfirm || gpsAutoSavePending) return;
+		void appearanceSettingsState.locale;
+		const position = bestCapturePosition ?? capturePosition;
+		if (!position) {
+			gpsConfirmMessage = m.gps_confirm_no_position();
+			return;
+		}
+		gpsConfirmMessage = m.gps_confirm_poor({
+			accuracy: formatAccuracy(position.accuracyMeters)
+		});
+		if (!shouldConfirmGpsBeforeSave(position)) {
+			gpsAutoSavePending = true;
+			showGpsConfirm = false;
+			submitLock = true;
+			void saveTree().finally(() => {
+				gpsAutoSavePending = false;
+			});
+		}
+	});
+
+	const locationPromptMessage = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (locationPromptReason === 'coarse-only') {
+			return m.gps_enable_before_photo_precise();
+		}
+		if (locationPromptReason === 'unsupported') {
+			return m.location_unsupported();
+		}
+		return m.gps_enable_before_photo_body();
+	});
+
+	async function evaluateLocationGate(): Promise<LocationPromptBeforePhotoReason | null> {
+		const permissionStatus = await getLocationPermissionStatus();
+		return needsLocationPromptBeforePhoto({
+			permissionStatus,
+			hasPosition: Boolean(userPositionState.position),
+			locationError: userPositionState.error
+		});
+	}
+
+	async function shouldShowSettingsTutorial(
+		reason: LocationPromptBeforePhotoReason
+	): Promise<boolean> {
+		if (reason === 'denied') {
+			return true;
+		}
+		if (reason === 'unavailable') {
+			const status = await getLocationPermissionStatus();
+			return status === 'granted' || status === 'denied';
+		}
+		return false;
+	}
+
+	async function handleBeforePhotoOpen(): Promise<boolean> {
+		if (locationPromptBusy) {
+			return false;
+		}
+		const reason = await evaluateLocationGate();
+		if (!reason) {
+			return true;
+		}
+		locationPromptReason = reason;
+		showSettingsHint = await shouldShowSettingsTutorial(reason);
+		showLocationPrompt = true;
+		return false;
+	}
+
+	async function openSettingsForLocationReason(
+		reason: LocationPromptBeforePhotoReason
+	): Promise<boolean> {
+		if (reason === 'denied') {
+			await openAppSettings();
+			return true;
+		}
+		if (reason === 'unavailable') {
+			const status = await getLocationPermissionStatus();
+			if (status === 'granted') {
+				await openLocationSettings();
+				return true;
+			}
+			if (status === 'denied') {
+				await openAppSettings();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	async function retryLocationAccess(options?: {
+		openCameraOnSuccess?: boolean;
+	}): Promise<boolean> {
+		locationPromptBusy = true;
+		gpsLoading = true;
+		try {
+			await requestLocationPermissions();
+			await requestCurrentPosition('capture');
+			const reason = await evaluateLocationGate();
+			locationPromptReason = reason;
+			if (reason === null) {
+				awaitingLocationSettingsReturn = false;
+				openCameraAfterLocationSettings = false;
+				showSettingsHint = false;
+				return true;
+			}
+
+			const needsSettings = await shouldShowSettingsTutorial(reason);
+			if (needsSettings) {
+				showSettingsHint = true;
+				await tick();
+			}
+
+			const openedSettings = await openSettingsForLocationReason(reason);
+			if (openedSettings) {
+				awaitingLocationSettingsReturn = true;
+				openCameraAfterLocationSettings = options?.openCameraOnSuccess ?? false;
+				showSettingsHint = true;
+			} else {
+				awaitingLocationSettingsReturn = false;
+				openCameraAfterLocationSettings = false;
+				if (!needsSettings) {
+					showSettingsHint = false;
+				}
+			}
+			return false;
+		} finally {
+			locationPromptBusy = false;
+			if (userPositionState.position || userPositionState.error) {
+				gpsLoading = false;
+			}
+		}
+	}
+
+	async function handleLocationSettingsReturn(): Promise<void> {
+		if (!awaitingLocationSettingsReturn || locationPromptBusy) {
+			return;
+		}
+		locationPromptBusy = true;
+		gpsLoading = true;
+		try {
+			await requestCurrentPosition('capture');
+			const reason = await evaluateLocationGate();
+			locationPromptReason = reason;
+			if (reason !== null) {
+				return;
+			}
+			awaitingLocationSettingsReturn = false;
+			showSettingsHint = false;
+			showLocationPrompt = false;
+			const shouldOpenCamera = openCameraAfterLocationSettings;
+			openCameraAfterLocationSettings = false;
+			if (shouldOpenCamera) {
+				await photoPreviewRef?.openCamera({ bypassBeforeOpen: true });
+			}
+		} finally {
+			locationPromptBusy = false;
+			if (userPositionState.position || userPositionState.error) {
+				gpsLoading = false;
+			}
+		}
+	}
+
+	async function confirmLocationPrompt(): Promise<void> {
+		const ok = await retryLocationAccess({ openCameraOnSuccess: true });
+		if (ok) {
+			showLocationPrompt = false;
+			locationPromptReason = null;
+			await photoPreviewRef?.openCamera({ bypassBeforeOpen: true });
+			return;
+		}
+		showLocationPrompt = true;
+	}
+
+	function continueWithoutLocation(): void {
+		showLocationPrompt = false;
+		locationPromptReason = null;
+		awaitingLocationSettingsReturn = false;
+		openCameraAfterLocationSettings = false;
+		showSettingsHint = false;
+		void photoPreviewRef?.openCamera({ bypassBeforeOpen: true });
+	}
+
+	async function retryLocationFromBanner(): Promise<void> {
+		const ok = await retryLocationAccess({ openCameraOnSuccess: false });
+		if (ok) {
+			showLocationPrompt = false;
+			locationPromptReason = null;
+		}
+	}
+
+	$effect(() => {
+		if (!isNativeApp()) {
+			return;
+		}
+
+		let cancelled = false;
+		let removeListener: (() => void) | undefined;
+
+		void App.addListener('appStateChange', ({ isActive }) => {
+			if (!isActive || cancelled) {
+				return;
+			}
+			void handleLocationSettingsReturn();
+		}).then((handle) => {
+			if (cancelled) {
+				void handle.remove();
+				return;
+			}
+			removeListener = () => {
+				void handle.remove();
+			};
+		});
+
+		return () => {
+			cancelled = true;
+			removeListener?.();
+		};
+	});
+
+	function handlePhotoSlotsChange(next: MultiPhotoSlot[]) {
+		photoSlots = next;
+		if (next.length > 0) {
+			frontHeadingDegrees = currentHeading;
+		}
 	}
 
 	function handlePhotoProcessingChange(busy: boolean) {
@@ -1094,18 +1371,20 @@
 			<YrsScoreBanner
 				gpsReady={savedPosition !== null}
 				locationError={savedPosition ? '' : userPositionState.error}
+				potentialScore={quickAssessment.potentialScore}
+				{species}
 			/>
 		</div>
 	{/if}
 
 	<div class="order-1 flex flex-col gap-4">
-		<PhotoPreview
+		<MultiPhotoPreview
 			bind:this={photoPreviewRef}
-			previewUrl={photoPreviewUrl}
-			{photoFile}
+			bind:slots={photoSlots}
 			{frontLabel}
-			onfile={handlePhoto}
+			onchange={handlePhotoSlotsChange}
 			onprocessingchange={handlePhotoProcessingChange}
+			onbeforeopen={handleBeforePhotoOpen}
 		/>
 
 		{#if error}
@@ -1143,7 +1422,7 @@
 
 	<div class="order-2 flex flex-col gap-6">
 		<div class="flex flex-col gap-2">
-			<label for="species" class="text-sm font-medium text-forest-900">{m.capture_species_optional()}</label>
+			<p class="text-sm font-medium text-forest-900">{m.capture_position_label()}</p>
 
 			{#if simplified}
 				<div data-capture-tutorial="gps">
@@ -1226,13 +1505,23 @@
 			{/if}
 
 			{#if userPositionState.error}
-				<p class="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">
-					{userPositionState.error}
-				</p>
+				<div class="flex flex-col gap-2">
+					<p class="app-card-muted px-3 py-2 text-sm text-amber-900" role="alert">
+						{userPositionState.error}
+					</p>
+					<button
+						type="button"
+						disabled={locationPromptBusy || submitting}
+						class="btn-secondary"
+						onclick={() => void retryLocationFromBanner()}
+					>
+						{m.action_retry()}
+					</button>
+				</div>
 			{/if}
 
 			{#if !simplified}
-			<details class="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-muted">
+			<details class="app-card-muted px-3 py-2 text-sm text-muted">
 				<summary class="cursor-pointer font-medium text-forest-800">{m.gps_forest_tips_title()}</summary>
 				<ul class="mt-2 list-disc space-y-1 pl-5">
 					{#each gpsCaptureTips as tip (tip)}
@@ -1241,6 +1530,10 @@
 				</ul>
 			</details>
 			{/if}
+		</div>
+
+		<div class="flex flex-col gap-2">
+			<label for="species" class="text-sm font-medium text-forest-900">{m.capture_species_optional()}</label>
 
 			{#if !gpsLoading && savedPosition && displayedSpecies.length > 0}
 				<div
@@ -1286,6 +1579,7 @@
 		{#if !simplified || tutorialActive}
 			<CaptureAssessmentSection
 				bind:assessment={quickAssessment}
+				species={species}
 				{submitting}
 				{caliberOptions}
 				{nebariOptions}
@@ -1319,6 +1613,10 @@
 				approximate={climateApproximate}
 				offline={!onlineState.online}
 				{species}
+				observedPhenologyStage={quickAssessment.observedPhenologyStage}
+				cernageStatus={quickAssessment.cernageStatus}
+				aoutementStatus={quickAssessment.aoutementStatus}
+				leafFallPct={quickAssessment.leafFallPct}
 				environmentExposure={environmentExposure}
 				latitude={savedPosition?.latitude ?? null}
 				longitude={savedPosition?.longitude ?? null}
@@ -1329,15 +1627,22 @@
 </div>
 	</div>
 
-	<footer class="capture-screen__footer">
+	<footer class="capture-screen__footer flex flex-col gap-2">
+		{#if showLegalReviewChip}
+			<button
+				type="button"
+				class="w-full rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm font-medium text-amber-900 transition active:scale-[0.99]"
+				onclick={() => (vetoChecklistOpen = true)}
+			>
+				{m.capture_legal_review_chip()}
+			</button>
+		{/if}
 		<button
 			type="button"
 			data-capture-tutorial="save"
 			data-capture-action="submit"
 			disabled={submitting || gpsChecking || submitLock}
-			class="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.99] disabled:opacity-50 {saveSuccessPulse
-				? 'save-success-pulse'
-				: ''}"
+			class="btn-primary !h-14 gap-2 {saveSuccessPulse ? 'save-success-pulse' : ''}"
 			onclick={(event) => void handleSubmit(event)}
 		>
 			{#if submitting || gpsChecking}
@@ -1373,4 +1678,14 @@
 		onconfirm={confirmGpsSave}
 		oncancel={cancelGpsSave}
 	/>
+
+	{#if showLocationPrompt}
+		<LocationPermissionPrompt
+			message={locationPromptMessage}
+			showTutorial={showSettingsHint}
+			busy={locationPromptBusy}
+			onenable={() => void confirmLocationPrompt()}
+			oncontinue={continueWithoutLocation}
+		/>
+	{/if}
 </div>

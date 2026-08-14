@@ -42,6 +42,7 @@ function buildBaseAgriData(): AgriData {
 		heatStressDaysForecast7d: 0,
 		frostEventsPast7d: 0,
 		soilBufferScore: 70,
+		hydricStressKs: 1,
 		wsi: 2,
 		futureStressRiskMm: 35,
 		weeklyViability: null,

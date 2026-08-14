@@ -1,12 +1,11 @@
 import type { LegalContentPack } from '$lib/geo/legal/types';
 
 const ECOS_SEARCH_BASE = 'https://ecos.fws.gov/ecp/report/species';
-const GBIF_SPECIES_SEARCH_BASE = 'https://www.gbif.org/species/search';
 
 function buildSpeciesSearchUrl(species: string): string {
 	const query = species.trim();
-	if (!query) return GBIF_SPECIES_SEARCH_BASE;
-	return `${GBIF_SPECIES_SEARCH_BASE}?${new URLSearchParams({ q: query })}`;
+	if (!query) return ECOS_SEARCH_BASE;
+	return `${ECOS_SEARCH_BASE}?${new URLSearchParams({ status: 'Listed', q: query })}`;
 }
 
 /**
@@ -15,8 +14,8 @@ function buildSpeciesSearchUrl(species: string): string {
  */
 export const usLegalPack: LegalContentPack = {
 	country: 'US',
-	sourceName: 'USDA Forest Service / BLM / FWS',
-	speciesSourceName: 'GBIF / ECOS FWS',
+	sourceName: 'USDA Forest Service / BLM / FWS / NPS',
+	speciesSourceName: 'ECOS FWS',
 	articles: [
 		{
 			id: 'us_private_property',
@@ -37,18 +36,18 @@ export const usLegalPack: LegalContentPack = {
 		{
 			id: 'us_blm_plants',
 			group: 'forest',
-			url: 'https://www.blm.gov/programs/natural-resources/forests-and-woodlands',
-			title: 'BLM plant materials',
+			url: 'https://www.blm.gov/programs/natural-resources/forests-and-woodlands/forest-product-permits',
+			title: 'BLM forest product permits',
 			summary:
-				'On BLM public lands, collecting living plants or transplanting trees may require authorization. Check the local BLM field office before collecting.'
+				'On BLM public lands, collecting living plants or transplanting trees may require authorization. Use the forest product permit process and contact the local BLM field office before collecting.'
 		},
 		{
 			id: 'us_nps_prohibited',
 			group: 'environment',
-			url: 'https://www.nps.gov/subjects/policy/laws.htm',
-			title: 'National Parks — plant removal prohibited',
+			url: 'https://www.ecfr.gov/current/title-36/chapter-I/part-2/section-2.1',
+			title: '36 CFR 2.1 — plant removal prohibited',
 			summary:
-				'Removing, digging, or damaging plants in National Parks and most wilderness areas is prohibited.'
+				'Removing, digging, or damaging plants in National Parks and most wilderness areas is prohibited under NPS regulations (36 CFR 2.1), except limited berry/nut gathering where a superintendent authorizes it.'
 		},
 		{
 			id: 'us_esa_plants',
@@ -56,9 +55,9 @@ export const usLegalPack: LegalContentPack = {
 			url: ECOS_SEARCH_BASE,
 			title: 'Endangered Species Act — plants',
 			summary:
-				'Federally listed threatened or endangered plants are protected. State lists may add further restrictions. Always verify the species before collecting.'
+				'Federally listed threatened or endangered plants are protected (e.g. Florida torreya Endangered; whitebark pine Threatened with a 4(d) rule). State lists may add further restrictions. Always verify the species before collecting.'
 		}
 	],
-	speciesSearchBase: GBIF_SPECIES_SEARCH_BASE,
+	speciesSearchBase: ECOS_SEARCH_BASE,
 	buildSpeciesSearchUrl
 };

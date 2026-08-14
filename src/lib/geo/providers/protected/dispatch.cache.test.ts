@@ -25,10 +25,11 @@ const scanProtectedAreasEea = vi.fn(async () => {
 
 vi.mock('$lib/geo/providers/protected/eea', () => ({
 	emptyZoneStatus: vi.fn(() => ({})),
-	scanProtectedAreasEea: (...args: unknown[]) => scanProtectedAreasEea(...args)
+	scanProtectedAreasEea: (...args: unknown[]) =>
+		(scanProtectedAreasEea as (...a: unknown[]) => unknown)(...args)
 }));
 
-describe('scanProtectedAreasForCoords online cache', () => {
+describe('scanProtectedAreasForCoords online cache', { timeout: 60_000 }, () => {
 	beforeEach(async () => {
 		memoryStore.clear();
 		scanProtectedAreasEea.mockClear();

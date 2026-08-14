@@ -24,17 +24,15 @@
 </script>
 
 {#if offer.phase === 'promo'}
-	<div
-		class="rounded-xl border border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 px-4 py-3"
-		role="status"
-	>
-		<p class="text-sm font-semibold text-amber-950">
-			<span aria-hidden="true">⏳ </span>{m.pro_promo_title()}
-		</p>
-		<p class="mt-1 text-sm text-amber-900">
+	<div class="pro-promo" role="status">
+		<div class="flex items-center gap-2">
+			<span class="pro-badge pro-badge--on-light">{m.pro_badge_short()}</span>
+			<p class="text-sm font-semibold text-forest-900">{m.pro_promo_title()}</p>
+		</div>
+		<p class="mt-1 text-sm text-forest-800">
 			{m.pro_promo_body({ promoPrice, fullPrice })}
 		</p>
-		<p class="mt-2 text-xs font-medium tabular-nums text-amber-800">
+		<p class="mt-2 text-xs font-medium tabular-nums text-forest-700">
 			{m.pro_promo_countdown({ time: countdown })}
 		</p>
 	</div>

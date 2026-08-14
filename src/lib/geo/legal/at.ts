@@ -7,10 +7,10 @@ import {
 /**
  * RIS (Rechtsinformationssystem des Bundes) — official Austrian law.
  * - ABGB § 422: neighbour / fruit rules (Überhang / wild fruits context).
- * - ForstG § 33: public access to forests for recreation.
- * - Species / nature protection is largely Land-level; federal RIS points to
- *   general nature conservation framework — we link ABGB + ForstG + a RIS
- *   nature search for protected plants.
+ * - ForstG § 33: public access to forests for recreation (≠ collection right).
+ * - ForstG § 85: felling subject to authority approval (Kahlhieb / equivalent).
+ * - Species / nature protection is Land-level; Wiener Naturschutzgesetz is an
+ *   exemplar — each Bundesland has its own NSchG / Artenschutzverordnung.
  */
 export const atLegalPack: LegalContentPack = {
 	country: 'AT',
@@ -31,15 +31,23 @@ export const atLegalPack: LegalContentPack = {
 			url: 'https://www.ris.bka.gv.at/NormDokument.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10010371&Artikel=&Paragraf=33',
 			title: 'ForstG § 33 — Betreten des Waldes',
 			summary:
-				'Das Betreten des Waldes zu Erholungszwecken ist grundsätzlich gestattet; Einschränkungen sind möglich (Schutz, Forstbetrieb, Verbot).'
+				'Das Betreten des Waldes zu Erholungszwecken ist grundsätzlich gestattet; Einschränkungen sind möglich (Schutz, Forstbetrieb, Verbot). Entnahme von Pflanzen bleibt an Eigentum und Naturschutz gebunden.'
 		},
 		{
-			id: 'at_nature_species',
-			group: 'environment',
-			url: 'https://www.ris.bka.gv.at/Ergebnis.wxe?Abfrage=Bundesnormen&Titel=Naturschutz&VonSucheNachRechtDokument=True',
-			title: 'Naturschutz — geschützte Arten (Bund / Länder)',
+			id: 'at_forstg_85',
+			group: 'forest',
+			url: 'https://www.ris.bka.gv.at/NormDokument.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10010371&Artikel=&Paragraf=85',
+			title: 'ForstG § 85 — Bewilligungspflichtige Fällungen',
 			summary:
-				'Der Artenschutz ist in Österreich stark landesrechtlich geregelt. Entnahme wild lebender Pflanzen kann in Schutzgebieten und für geschützte Arten verboten sein — Landes-Naturschutzgesetze prüfen.'
+				'Kahlhiebe und diesen gleichzuhaltende Einzelstammentnahmen bedürfen unter den gesetzlichen Voraussetzungen einer behördlichen Bewilligung. Yamadori / Ausgraben ist kein freies Betretungsrecht.'
+		},
+		{
+			id: 'at_wiener_nschg',
+			group: 'environment',
+			url: 'https://www.ris.bka.gv.at/GeltendeFassung.wxe?Abfrage=LrW&Gesetzesnummer=20000454',
+			title: 'Wiener Naturschutzgesetz (Exemplar Land)',
+			summary:
+				'Artenschutz ist in Österreich landesrechtlich geregelt. Das Wiener Naturschutzgesetz illustriert Verbote zu Pflücken/Ausgraben geschützter Arten; die anderen acht Länder haben eigene Naturschutzgesetze und Artenschutzverordnungen — immer das zuständige Land prüfen.'
 		}
 	],
 	speciesSearchBase: SPECIES_SEARCH_BASE.biodiversityAtlasAt,

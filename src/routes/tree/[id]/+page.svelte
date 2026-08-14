@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { base } from '$app/paths';
+	import { base, resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import AddVisitForm from '$lib/components/AddVisitForm.svelte';
 	import ClimateDataSectionLazy from '$lib/components/ClimateDataSectionLazy.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import EnvironmentExposureField from '$lib/components/EnvironmentExposureField.svelte';
 	import PhotoGallery from '$lib/components/PhotoGallery.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import TreeAssessmentPanel from '$lib/components/TreeAssessmentPanel.svelte';
 	import TreeDetailActions from '$lib/components/TreeDetailActions.svelte';
 	import VisitTimeline from '$lib/components/VisitTimeline.svelte';
@@ -36,6 +37,7 @@
 	import { isTreeAccessible } from '$lib/utils/featurePolicy';
 	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import { speciesDisplayName } from '$lib/constants/species-i18n';
+	import { getCombinedYamadoriVerdict } from '$lib/utils/yrs';
 	import * as m from '$lib/paraglide/messages.js';
 	import { goHome } from '$lib/utils/app-navigation';
 	import { formatDate } from '$lib/utils/date';
@@ -49,6 +51,7 @@
 	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
 	import { showDetailFeedback } from '$lib/stores/appToast.svelte';
 	import { hapticSelection, hapticWarning } from '$lib/utils/haptics';
+	import { MOTION_MS } from '$lib/utils/motion';
 	import { onlineState } from '$lib/utils/online.svelte';
 	import { scheduleCadastreBackfill } from '$lib/utils/cadastreBackfill';
 	import type { EnvironmentExposure } from '$lib/types/environment';
@@ -77,6 +80,8 @@
 	let editing = $state(false);
 	let deleting = $state(false);
 	let saving = $state(false);
+	let favoritePulse = $state(false);
+	let favoritePulseTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	let editSpecies = $state('');
 	let editNotes = $state('');
@@ -95,6 +100,11 @@
 	const locationLabel = $derived(tree ? formatLocationLabel(tree) : null);
 	const altitudeLabel = $derived(tree ? formatAltitudeLabel(tree.altitudeMeters) : null);
 	const frontHeadingLabel = $derived(tree ? formatFrontLabel(tree.frontHeadingDegrees) : null);
+	const combinedYamadoriVerdict = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (!tree?.yrsAtCapture) return null;
+		return getCombinedYamadoriVerdict(tree.assessment.potentialScore, tree.yrsAtCapture);
+	});
 
 	function needsLocationEnrichment(currentTree: Tree): boolean {
 		if (!currentTree.locationLabel) {
@@ -247,6 +257,8 @@
 				species: currentTree.species,
 				observedPhenologyStage: currentTree.assessment.observedPhenologyStage,
 				cernageStatus: currentTree.assessment.cernageStatus,
+				aoutementStatus: currentTree.assessment.aoutementStatus,
+				leafFallPct: currentTree.assessment.leafFallPct,
 				environmentExposure: exposure
 			});
 		}
@@ -263,6 +275,8 @@
 			species: currentTree.species,
 			observedPhenologyStage: currentTree.assessment.observedPhenologyStage,
 			cernageStatus: currentTree.assessment.cernageStatus,
+			aoutementStatus: currentTree.assessment.aoutementStatus,
+			leafFallPct: currentTree.assessment.leafFallPct,
 			environmentExposure: currentTree.environmentExposure
 		});
 		void (async () => {
@@ -311,8 +325,17 @@
 
 	async function handleToggleFavorite() {
 		if (!tree) return;
+		const willFavorite = !tree.isFavorite;
 		await toggleFavorite(tree.id);
 		void hapticSelection();
+		if (willFavorite) {
+			if (favoritePulseTimeout) clearTimeout(favoritePulseTimeout);
+			favoritePulse = true;
+			favoritePulseTimeout = setTimeout(() => {
+				favoritePulse = false;
+				favoritePulseTimeout = undefined;
+			}, MOTION_MS.pulse);
+		}
 	}
 
 	async function handleSaveVoiceNote() {
@@ -355,13 +378,13 @@
 		<p class="max-w-sm text-muted">{m.pro_modal_reason_tree_locked()}</p>
 		<button
 			type="button"
-			class="inline-flex h-12 items-center justify-center rounded-xl bg-forest-800 px-6 text-base font-semibold text-white transition active:scale-[0.98]"
+			class="btn-primary btn-primary--inline"
 			onclick={() => openProPaywall('tree_locked')}
 		>
 			{m.pro_upgrade_cta()}
 		</button>
 		<a
-			href="{base}/"
+			href={resolve('/')}
 			class="text-sm font-medium text-forest-700 underline-offset-2 hover:underline"
 		>
 			{m.layout_back()}
@@ -369,21 +392,7 @@
 	</div>
 {:else if deleting}
 	<div class="flex items-center justify-center py-20">
-		<svg
-			class="h-8 w-8 animate-spin text-forest-800"
-			xmlns="http://www.w3.org/2000/svg"
-			fill="none"
-			viewBox="0 0 24 24"
-			aria-label={m.climate_loading()}
-		>
-			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-			></circle>
-			<path
-				class="opacity-75"
-				fill="currentColor"
-				d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-			></path>
-		</svg>
+		<Skeleton class="h-10 w-10 rounded-full" label={m.climate_loading()} />
 	</div>
 {:else if tree}
 	<div
@@ -422,7 +431,9 @@
 				<button
 					type="button"
 					onclick={handleToggleFavorite}
-					class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white transition active:scale-95"
+					class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white transition active:scale-95 {favoritePulse
+						? 'save-success-pulse'
+						: ''}"
 					aria-label={tree.isFavorite ? m.tree_favorite() : m.filter_favorites()}
 					aria-pressed={tree.isFavorite}
 				>
@@ -461,7 +472,7 @@
 							type="button"
 							onclick={cancelEditing}
 							disabled={saving}
-							class="flex h-12 flex-1 items-center justify-center rounded-xl border border-gray-200 text-base font-medium text-forest-900 transition active:scale-[0.98] disabled:opacity-50"
+							class="btn-secondary flex-1"
 						>
 							{m.action_cancel()}
 						</button>
@@ -469,7 +480,7 @@
 							type="button"
 							onclick={saveEditing}
 							disabled={saving}
-							class="flex h-12 flex-1 items-center justify-center rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+							class="btn-primary flex-1"
 						>
 							{saving ? m.action_saving() : m.action_save()}
 						</button>
@@ -477,14 +488,14 @@
 				</div>
 			{:else}
 				{#if !simpleMode && tree.notes.trim()}
-					<section class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+					<section class="app-card-muted p-4">
 						<h3 class="text-sm font-medium text-forest-900">{m.capture_notes()}</h3>
 						<p class="mt-2 whitespace-pre-wrap text-base text-forest-900/90">{tree.notes}</p>
 					</section>
 				{/if}
 
 				{#if editingVoiceNote}
-					<section class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+					<section class="app-card-muted p-4">
 						<h3 class="text-sm font-medium text-forest-900">{m.voice_note()}</h3>
 						<div class="mt-3">
 							<VoiceNoteRecorderLazy bind:value={voiceNoteDraft} disabled={savingVoiceNote} compact />
@@ -494,7 +505,7 @@
 								type="button"
 								onclick={() => (editingVoiceNote = false)}
 								disabled={savingVoiceNote}
-								class="flex h-10 flex-1 items-center justify-center rounded-xl border border-gray-200 text-sm font-medium text-forest-900"
+								class="btn-secondary !h-10 flex-1 text-sm"
 							>
 								{m.action_cancel()}
 							</button>
@@ -502,14 +513,14 @@
 								type="button"
 								onclick={() => void handleSaveVoiceNote()}
 								disabled={savingVoiceNote}
-								class="flex h-10 flex-1 items-center justify-center rounded-xl bg-forest-800 text-sm font-semibold text-white disabled:opacity-50"
+								class="btn-primary !h-10 flex-1 text-sm"
 							>
 								{savingVoiceNote ? m.action_saving() : m.action_save()}
 							</button>
 						</div>
 					</section>
 				{:else if tree.voiceNote}
-					<section class="simple-surface rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+					<section class="simple-surface app-card-muted p-4">
 						<div class="flex items-center justify-between gap-3">
 							<h3 class="text-sm font-medium text-forest-900">{m.voice_note()}</h3>
 							{#if !simpleMode}
@@ -544,7 +555,7 @@
 						{m.voice_note_optional()}
 					</button>
 				{:else}
-					<section class="rounded-xl border border-dashed border-gray-200 bg-white p-4 shadow-sm">
+					<section class="app-card-muted border-dashed p-4">
 						<h3 class="text-sm font-medium text-forest-900">{m.voice_note()}</h3>
 						<button
 							type="button"
@@ -556,7 +567,7 @@
 					</section>
 				{/if}
 
-				<section class="simple-surface rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+				<section class="simple-surface app-card-muted p-4">
 					{#if simpleMode && tree.latitude !== null && tree.longitude !== null}
 						<GpsStatusCompact
 							accuracyMeters={tree.accuracyMeters}
@@ -684,7 +695,7 @@
 				</section>
 
 				{#if hasGps && !simpleMode}
-					<div class="rounded-xl border border-gray-100 bg-white px-3 py-2.5 shadow-sm">
+					<div class="app-card-muted px-3 py-2.5">
 						<EnvironmentExposureField
 							value={tree.environmentExposure}
 							onchange={(exposure) => void updateEnvironmentExposure(exposure)}
@@ -700,6 +711,8 @@
 						species={tree.species}
 						observedPhenologyStage={tree.assessment.observedPhenologyStage}
 						cernageStatus={tree.assessment.cernageStatus}
+						aoutementStatus={tree.assessment.aoutementStatus}
+						leafFallPct={tree.assessment.leafFallPct}
 						environmentExposure={tree.environmentExposure}
 						latitude={tree.latitude}
 						longitude={tree.longitude}
@@ -710,21 +723,26 @@
 
 			{#if !editing && !simpleMode}
 				{#if tree.yrsAtCapture}
-					<p
+					<div
 						class="rounded-lg border border-forest-100 bg-forest-50/80 px-3 py-2 text-xs text-forest-900"
 						role="status"
 					>
-						{m.yrs_at_capture_label({
-							score: String(tree.yrsAtCapture.score),
-							decision: tree.yrsAtCapture.decision
-						})}
-					</p>
+						<p>
+							{m.yrs_at_capture_label({
+								score: String(tree.yrsAtCapture.score),
+								decision: tree.yrsAtCapture.decision
+							})}
+						</p>
+						{#if combinedYamadoriVerdict}
+							<p class="mt-1 font-medium text-forest-800">{combinedYamadoriVerdict}</p>
+						{/if}
+					</div>
 				{/if}
 				<TreeAssessmentPanel {tree} />
 
-				<section class="flex flex-col gap-4">
+				<section class="app-card-muted flex flex-col gap-4 p-4">
 					<h3 class="text-sm font-medium text-forest-900">{m.yrs_history()}</h3>
-					<VisitTimeline visits={tree.visits} />
+					<VisitTimeline treeId={tree.id} visits={tree.visits} />
 					<AddVisitForm treeId={tree.id} />
 				</section>
 			{/if}
@@ -734,7 +752,7 @@
 					type="button"
 					onclick={() => (showDeleteDialog = true)}
 					disabled={deleting}
-					class="flex h-12 w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 text-base font-medium text-red-700 transition active:scale-[0.98] disabled:opacity-50"
+					class="btn-danger"
 				>
 					{m.action_delete()}
 				</button>
@@ -753,8 +771,8 @@
 	<div class="flex flex-col items-center py-16 text-center">
 		<h2 class="text-xl font-semibold text-forest-900">{m.tree_not_found()}</h2>
 		<a
-			href="{base}/"
-			class="mt-6 flex h-12 items-center justify-center rounded-xl bg-forest-800 px-6 text-base font-semibold text-white transition active:scale-[0.98]"
+			href={resolve('/')}
+			class="btn-primary btn-primary--inline mt-6"
 		>
 			{m.layout_back()}
 		</a>

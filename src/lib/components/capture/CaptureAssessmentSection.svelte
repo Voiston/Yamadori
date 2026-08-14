@@ -1,10 +1,14 @@
 <script lang="ts">
-	import type { TreeAssessment } from '$lib/types/tree';
+	import type { DeadwoodFeature, TreeAssessment } from '$lib/types/tree';
 	import { getAssessmentSummary } from '$lib/constants/assessment';
+	import AssessmentFieldHelp from '$lib/components/AssessmentFieldHelp.svelte';
+	import PhenologyChecklist from '$lib/components/PhenologyChecklist.svelte';
+	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let {
 		assessment = $bindable({} as TreeAssessment),
+		species = '',
 		submitting = false,
 		caliberOptions,
 		nebariOptions,
@@ -13,11 +17,12 @@
 		sizeOptions = []
 	}: {
 		assessment?: TreeAssessment;
+		species?: string;
 		submitting?: boolean;
 		caliberOptions: Array<{ value: TreeAssessment['caliber']; label: string }>;
 		nebariOptions: Array<{ value: TreeAssessment['nebari']; label: string }>;
 		barkOptions?: Array<{ value: TreeAssessment['bark']; label: string }>;
-		deadwoodOptions?: Array<{ value: TreeAssessment['deadwood']; label: string }>;
+		deadwoodOptions?: Array<{ value: DeadwoodFeature; label: string }>;
 		sizeOptions?: Array<{ value: TreeAssessment['sizeClass']; label: string }>;
 	} = $props();
 
@@ -26,15 +31,28 @@
 
 	let assessmentSummary = $derived(getAssessmentSummary(assessment));
 
+	const potentialLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return `${m.assessment_potential()} (1–10) : ${assessment.potentialScore ?? '—'}/10`;
+	});
+
 	function toggleChip<K extends keyof TreeAssessment>(key: K, value: TreeAssessment[K]) {
 		assessment = {
 			...assessment,
-			[key]: assessment[key] === value ? null : value
+			[key]: (assessment[key] === value ? null : value) as TreeAssessment[K]
 		};
+	}
+
+	function toggleDeadwood(feature: DeadwoodFeature) {
+		const current = assessment.deadwood ?? [];
+		const next = current.includes(feature)
+			? current.filter((entry) => entry !== feature)
+			: [...current, feature];
+		assessment = { ...assessment, deadwood: next };
 	}
 </script>
 
-<section class="rounded-xl border border-gray-100 bg-white shadow-sm" data-capture-tutorial="assessment">
+<section class="app-card" data-capture-tutorial="assessment">
 	<button
 		type="button"
 		class="flex w-full items-center justify-between gap-3 p-4 text-left"
@@ -62,10 +80,9 @@
 
 	{#if open}
 		<div class="flex flex-col gap-4 border-t border-gray-100 p-4">
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">
-					{m.assessment_potential()} (1–10) : {assessment.potentialScore ?? '—'}/10
-				</span>
+			<PhenologyChecklist bind:assessment {species} disabled={submitting} />
+
+			<AssessmentFieldHelp label={potentialLabel} helpText={m.assessment_help_potential()}>
 				<div class="grid grid-cols-5 gap-2 narrow:gap-1">
 					{#each Array.from({ length: 10 }, (_, index) => index + 1) as score (score)}
 						<button
@@ -81,10 +98,9 @@
 						</button>
 					{/each}
 				</div>
-			</div>
+			</AssessmentFieldHelp>
 
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">{m.assessment_caliber()}</span>
+			<AssessmentFieldHelp label={m.assessment_caliber()} helpText={m.assessment_help_caliber()}>
 				<div class="flex flex-wrap gap-2">
 					{#each caliberOptions as option (option.value)}
 						<button
@@ -100,10 +116,9 @@
 						</button>
 					{/each}
 				</div>
-			</div>
+			</AssessmentFieldHelp>
 
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">{m.assessment_nebari()}</span>
+			<AssessmentFieldHelp label={m.assessment_nebari()} helpText={m.assessment_help_nebari()}>
 				<div class="flex flex-wrap gap-2">
 					{#each nebariOptions as option (option.value)}
 						<button
@@ -119,7 +134,7 @@
 						</button>
 					{/each}
 				</div>
-			</div>
+			</AssessmentFieldHelp>
 
 			<details bind:open={moreOpen} class="rounded-lg border border-gray-100 bg-gray-50/80">
 				<summary class="cursor-pointer px-3 py-2.5 text-sm font-medium text-forest-900">
@@ -127,8 +142,7 @@
 				</summary>
 				<div class="flex flex-col gap-4 border-t border-gray-100 p-3">
 					{#if sizeOptions.length > 0}
-						<div class="flex flex-col gap-2">
-							<span class="text-sm font-medium text-forest-900">{m.assessment_size()}</span>
+						<AssessmentFieldHelp label={m.assessment_size()} helpText={m.assessment_help_size()}>
 							<div class="flex flex-wrap gap-2">
 								{#each sizeOptions as option (option.value)}
 									<button
@@ -144,13 +158,13 @@
 									</button>
 								{/each}
 							</div>
-						</div>
+						</AssessmentFieldHelp>
 					{/if}
 
-					<div class="flex flex-col gap-2">
-						<label for="capture-trunk-diameter" class="text-sm font-medium text-forest-900">
-							{m.assessment_trunk_diameter()}
-						</label>
+					<AssessmentFieldHelp
+						label={m.assessment_trunk_diameter()}
+						helpText={m.assessment_help_trunk_diameter()}
+					>
 						<input
 							id="capture-trunk-diameter"
 							type="number"
@@ -167,11 +181,10 @@
 							}}
 							class="h-11 w-full rounded-xl border border-gray-200 bg-white px-4 text-base text-forest-900 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50"
 						/>
-					</div>
+					</AssessmentFieldHelp>
 
 					{#if barkOptions.length > 0}
-						<div class="flex flex-col gap-2">
-							<span class="text-sm font-medium text-forest-900">{m.assessment_bark()}</span>
+						<AssessmentFieldHelp label={m.assessment_bark()} helpText={m.assessment_help_bark()}>
 							<div class="flex flex-wrap gap-2">
 								{#each barkOptions as option (option.value)}
 									<button
@@ -187,20 +200,23 @@
 									</button>
 								{/each}
 							</div>
-						</div>
+						</AssessmentFieldHelp>
 					{/if}
 
 					{#if deadwoodOptions.length > 0}
-						<div class="flex flex-col gap-2">
-							<span class="text-sm font-medium text-forest-900">{m.assessment_deadwood()}</span>
+						<AssessmentFieldHelp
+							label={m.assessment_deadwood()}
+							helpText={m.assessment_help_deadwood()}
+						>
 							<div class="flex flex-wrap gap-2">
 								{#each deadwoodOptions as option (option.value)}
 									<button
 										type="button"
 										disabled={submitting}
-										onclick={() => toggleChip('deadwood', option.value)}
-										class="rounded-full px-3 py-2 text-sm transition active:scale-[0.98] disabled:opacity-50 {assessment.deadwood ===
-										option.value
+										onclick={() => toggleDeadwood(option.value)}
+										class="rounded-full px-3 py-2 text-sm transition active:scale-[0.98] disabled:opacity-50 {(assessment.deadwood ?? []).includes(
+											option.value
+										)
 											? 'bg-forest-800 text-white'
 											: 'border border-gray-200 bg-white text-forest-900'}"
 									>
@@ -208,7 +224,7 @@
 									</button>
 								{/each}
 							</div>
-						</div>
+						</AssessmentFieldHelp>
 					{/if}
 				</div>
 			</details>

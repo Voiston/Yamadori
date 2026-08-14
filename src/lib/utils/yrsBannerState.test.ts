@@ -45,7 +45,10 @@ describe('resolveYrsBannerDisplayState', () => {
 						hydric: 20,
 						stressPenalty: 0
 					},
-					summary: 'ok'
+					summary: 'ok',
+					confidence: 'high',
+					climateProfile: 'temperate_oceanic',
+					localization: 'local'
 				}
 			})
 		).toBe('score');

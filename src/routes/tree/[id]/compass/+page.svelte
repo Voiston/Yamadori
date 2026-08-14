@@ -35,6 +35,7 @@
 			longitude: tree.longitude
 		}}
 		focusTreeId={treeId}
+		trackedTree={tree}
 	/>
 {:else}
 	<div class="flex flex-col items-center py-16 text-center">

@@ -2,7 +2,11 @@ import { getCurrentPosition as readCurrentPosition } from '$lib/utils/locationPr
 
 export const REGIONAL_API_COORD_DECIMALS = 2;
 
-/** Tronque les coords avant envoi à Open-Meteo / Nominatim (~1,1 km en latitude). */
+/**
+ * Truncate coordinates before sending to Open-Meteo / Nominatim (~1.1 km at equator).
+ * Privacy: enough precision for weather/geocoding without revealing the exact tree spot.
+ * Do NOT use for cadastre, protected-area WFS, or map tiles — those need full GPS precision.
+ */
 export function regionalApiCoordinates(
 	latitude: number,
 	longitude: number

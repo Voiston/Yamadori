@@ -36,6 +36,7 @@ export function classifyDocPclHit(hit: DocPclHit): CadastreZoneType {
 		blob.includes('NATURE_RESERVE') ||
 		blob.includes('SCIENTIFIC_RESERVE') ||
 		blob.includes('SANCTUARY') ||
+		blob.includes('SCENIC') ||
 		section.includes('S20_') ||
 		section.includes('S22_')
 	) {

@@ -15,6 +15,11 @@ const SOURCE_AGREEMENT_THRESHOLD = 30;
 const ABSOLUTE_STALE_MS = 500;
 export const ORIENTATION_THROTTLE_MS = 66;
 
+/** Sudden jump threshold for magnetometer instability detection. */
+export const HEADING_UNSTABLE_JUMP_DEG = 35;
+/** Consecutive jumps before the heading is considered unstable. */
+export const HEADING_UNSTABLE_JUMP_COUNT = 3;
+
 const DEG_TO_RAD = Math.PI / 180;
 
 export type HeadingFusionContext = {
@@ -43,13 +48,50 @@ export type DeviceHeadingReading = {
 	reference: 'true' | 'magnetic';
 };
 
-type ReadingSource = {
+export type ReadingSource = {
 	reading: DeviceHeadingReading;
 	updatedAt: number;
 };
 
+export type HeadingStabilityState = {
+	lastHeading: number | null;
+	jumpStreak: number;
+	unstable: boolean;
+};
+
 export function createHeadingFilterState(): HeadingFilterState {
 	return { smoothed: null, consecutiveRejects: 0 };
+}
+
+export function createHeadingStabilityState(): HeadingStabilityState {
+	return { lastHeading: null, jumpStreak: 0, unstable: false };
+}
+
+/**
+ * Tracks large consecutive heading jumps (typical of soft-iron interference
+ * or an uncalibrated magnetometer). Returns whether the signal is unstable.
+ */
+export function updateHeadingStability(
+	state: HeadingStabilityState,
+	heading: number
+): boolean {
+	if (state.lastHeading !== null) {
+		const delta = Math.abs(normalizeAngle(heading - state.lastHeading));
+		if (delta >= HEADING_UNSTABLE_JUMP_DEG) {
+			state.jumpStreak += 1;
+		} else {
+			state.jumpStreak = Math.max(0, state.jumpStreak - 1);
+		}
+		state.unstable = state.jumpStreak >= HEADING_UNSTABLE_JUMP_COUNT;
+	}
+	state.lastHeading = normalizeHeading360(heading);
+	return state.unstable;
+}
+
+export function resetHeadingStabilityState(state: HeadingStabilityState): void {
+	state.lastHeading = null;
+	state.jumpStreak = 0;
+	state.unstable = false;
 }
 
 /** W3C Device Orientation: compass heading from tilted device (portrait use). */
@@ -82,6 +124,9 @@ export function compassHeadingFromTilt(
 }
 
 function getScreenOrientationAngle(): number {
+	if (typeof screen === 'undefined') {
+		return 0;
+	}
 	return screen.orientation?.angle ?? 0;
 }
 
@@ -140,7 +185,21 @@ export function pickActiveReading(
 	return absolute.reading;
 }
 
-export function getDeviceHeadingReading(event: DeviceOrientationEvent): DeviceHeadingReading | null {
+export type DeviceHeadingReadingOptions = {
+	/** Force absolute/true-north tagging (e.g. deviceorientationabsolute listener). */
+	absolute?: boolean;
+};
+
+/**
+ * Extract a compass reading from a DeviceOrientationEvent.
+ * - webkitCompassHeading → true north (iOS Safari)
+ * - absolute events / event.absolute → true north
+ * - otherwise → magnetic
+ */
+export function getDeviceHeadingReading(
+	event: DeviceOrientationEvent,
+	options?: DeviceHeadingReadingOptions
+): DeviceHeadingReading | null {
 	const webkitHeading = (event as DeviceOrientationEvent & { webkitCompassHeading?: number })
 		.webkitCompassHeading;
 	if (typeof webkitHeading === 'number') {
@@ -151,6 +210,10 @@ export function getDeviceHeadingReading(event: DeviceOrientationEvent): DeviceHe
 		return null;
 	}
 
+	const isAbsolute =
+		options?.absolute === true ||
+		(options?.absolute !== false && event.absolute === true);
+
 	return {
 		heading: compassHeadingFromTilt(
 			event.alpha,
@@ -158,7 +221,7 @@ export function getDeviceHeadingReading(event: DeviceOrientationEvent): DeviceHe
 			event.gamma,
 			getScreenOrientationAngle()
 		),
-		reference: 'magnetic'
+		reference: isAbsolute ? 'true' : 'magnetic'
 	};
 }
 
@@ -180,18 +243,16 @@ export function getDeviceHeading(event: DeviceOrientationEvent): number | null {
 	return reading?.heading ?? null;
 }
 
-function processOrientationReading(
+function emitFilteredReading(
 	reading: DeviceHeadingReading,
-	handler: (heading: number) => void,
-	filterState: HeadingFilterState,
-	getContext: () => HeadingFusionContext
+	handler: (reading: DeviceHeadingReading) => void,
+	filterState: HeadingFilterState
 ): void {
-	const trueHeading = refineTrueHeading(reading, getContext());
-	const smoothed = processHeadingSample(filterState, trueHeading);
+	const smoothed = processHeadingSample(filterState, reading.heading);
 	if (smoothed !== null) {
-		handler(smoothed);
+		handler({ heading: smoothed, reference: reading.reference });
 	} else if (filterState.smoothed !== null) {
-		handler(filterState.smoothed);
+		handler({ heading: filterState.smoothed, reference: reading.reference });
 	}
 }
 
@@ -232,46 +293,76 @@ export function createThrottledCallback<T>(handler: (value: T) => void): (value:
 }
 
 export function createThrottledOrientationProcessor(
-	handler: (heading: number) => void,
-	filterState: HeadingFilterState,
-	getContext: () => HeadingFusionContext
+	handler: (reading: DeviceHeadingReading) => void,
+	filterState: HeadingFilterState
 ) {
-	let lastEmitted: number | null = null;
+	let lastEmittedKey: string | null = null;
 
-	const emit = (value: number) => {
-		if (lastEmitted === value) {
+	const emit = (value: DeviceHeadingReading) => {
+		const key = `${value.heading.toFixed(3)}:${value.reference}`;
+		if (lastEmittedKey === key) {
 			return;
 		}
-		lastEmitted = value;
+		lastEmittedKey = key;
 		handler(value);
 	};
 
 	return createThrottledCallback((reading: DeviceHeadingReading) => {
-		processOrientationReading(reading, emit, filterState, getContext);
+		emitFilteredReading(reading, emit, filterState);
 	});
 }
 
+/**
+ * Subscribe to device orientation. Prefers absolute events when available,
+ * arbitrates with relative via pickActiveReading, and preserves true/magnetic
+ * reference for downstream declination (applied in UI, not here).
+ */
 export function subscribeDeviceOrientation(
-	handler: (heading: number) => void,
-	getContext: () => HeadingFusionContext = () => EMPTY_HEADING_FUSION_CONTEXT
+	handler: (reading: DeviceHeadingReading) => void
 ): () => void {
 	const filterState = createHeadingFilterState();
 	const supportsAbsolute = 'ondeviceorientationabsolute' in window;
-	const eventName: 'deviceorientationabsolute' | 'deviceorientation' = supportsAbsolute
-		? 'deviceorientationabsolute'
-		: 'deviceorientation';
-	const processReading = createThrottledOrientationProcessor(handler, filterState, getContext);
+	const processReading = createThrottledOrientationProcessor(handler, filterState);
 
-	const listener = (event: DeviceOrientationEvent) => {
-		const reading = getDeviceHeadingReading(event);
+	let absoluteSource: ReadingSource | null = null;
+	let relativeSource: ReadingSource | null = null;
+
+	const emitActive = () => {
+		const active = pickActiveReading(absoluteSource, relativeSource);
+		if (active) {
+			processReading(active);
+		}
+	};
+
+	const onAbsolute = (event: DeviceOrientationEvent) => {
+		const reading = getDeviceHeadingReading(event, { absolute: true });
 		if (reading === null) {
 			return;
 		}
-		processReading(reading);
+		absoluteSource = { reading, updatedAt: Date.now() };
+		emitActive();
 	};
 
-	window.addEventListener(eventName, listener, true);
-	return () => window.removeEventListener(eventName, listener, true);
+	const onRelative = (event: DeviceOrientationEvent) => {
+		const reading = getDeviceHeadingReading(event, { absolute: false });
+		if (reading === null) {
+			return;
+		}
+		relativeSource = { reading, updatedAt: Date.now() };
+		emitActive();
+	};
+
+	if (supportsAbsolute) {
+		window.addEventListener('deviceorientationabsolute', onAbsolute, true);
+		window.addEventListener('deviceorientation', onRelative, true);
+		return () => {
+			window.removeEventListener('deviceorientationabsolute', onAbsolute, true);
+			window.removeEventListener('deviceorientation', onRelative, true);
+		};
+	}
+
+	window.addEventListener('deviceorientation', onRelative, true);
+	return () => window.removeEventListener('deviceorientation', onRelative, true);
 }
 
 export async function requestOrientationPermission(): Promise<boolean> {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import { onMount, tick } from 'svelte';
@@ -111,35 +111,39 @@
 	</div>
 
 	{#each sections as section, sectionIndex (sectionIndex)}
-		<div class="flex flex-col gap-3">
+		<section class="flex flex-col gap-3">
 			<h3 class="text-xs font-semibold uppercase tracking-wide text-muted">{section.title()}</h3>
-			{#each section.pillars as pillar, pillarIndex (`${sectionIndex}-${pillarIndex}`)}
-				<div class="rounded-xl border border-gray-200 bg-white px-4 py-3">
-					<h4 class="text-sm font-semibold text-forest-900">{pillar.title()}</h4>
-					<p class="mt-1.5 text-sm leading-relaxed text-muted">{pillar.body()}</p>
-				</div>
-			{/each}
-		</div>
+			<div class="app-section-list">
+				{#each section.pillars as pillar, pillarIndex (`${sectionIndex}-${pillarIndex}`)}
+					<div class="px-4 py-3">
+						<h4 class="text-sm font-semibold text-forest-900">{pillar.title()}</h4>
+						<p class="mt-1.5 text-sm leading-relaxed text-muted">{pillar.body()}</p>
+					</div>
+				{/each}
+			</div>
+		</section>
 	{/each}
 
-	<div class="flex flex-col gap-3">
+	<section class="flex flex-col gap-3">
 		<div>
 			<h3 class="text-sm font-semibold text-forest-900">{inventoryHeading}</h3>
 			<p class="mt-1 text-sm leading-relaxed text-muted">{inventoryIntro}</p>
 		</div>
-		{#each inventoryRows as row, index (index)}
-			<div class="rounded-xl border border-gray-200 bg-white px-4 py-3">
-				<h4 class="text-sm font-semibold text-forest-900">{row.label()}</h4>
-				<p class="mt-1.5 text-sm leading-relaxed text-muted">{row.body()}</p>
-			</div>
-		{/each}
-	</div>
+		<div class="app-section-list">
+			{#each inventoryRows as row, index (index)}
+				<div class="px-4 py-3">
+					<h4 class="text-sm font-semibold text-forest-900">{row.label()}</h4>
+					<p class="mt-1.5 text-sm leading-relaxed text-muted">{row.body()}</p>
+				</div>
+			{/each}
+		</div>
+	</section>
 
 	<p class="text-center text-xs text-muted">{outro}</p>
 
 	<a
-		href="{base}/settings"
-		class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-medium text-forest-800 transition active:scale-[0.98]"
+		href={resolve('/settings')}
+		class="app-card block px-4 py-3 text-center text-sm font-medium text-forest-800 transition active:scale-[0.98]"
 	>
 		{backLabel}
 	</a>

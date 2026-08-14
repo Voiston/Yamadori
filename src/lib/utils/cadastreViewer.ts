@@ -27,11 +27,12 @@ export function getCadastreViewerLink(
 
 	switch (country) {
 		case 'FR':
+			// Géoportail permalinks no longer centre; use cartes.gouv.fr (IGN successor).
 			return {
-				label: 'Géoportail',
+				label: 'cartes.gouv.fr',
 				url:
-					`https://www.geoportail.gouv.fr/carte?c=${lng},${lat}&z=18` +
-					`&l0=CADASTRALPARCELS.PARCELLAIRE_EXPRESS:100&permalink=yes`
+					`https://cartes.gouv.fr/explorer-les-cartes/?c=${lng},${lat}&z=18` +
+					`&l=CADASTRALPARCELS.PARCELLAIRE_EXPRESS:100(1;1;1;0)&permalink=yes`
 			};
 		case 'ES': {
 			const rc = info?.codeInsee?.trim();
@@ -107,22 +108,24 @@ export function getCadastreViewerLink(
 				url: `https://basemap.at/#map=17/${lat}/${lng}`
 			};
 		case 'GB': {
+			// Registry portals have no lat/lon deep-link; OSM centres the field point.
+			const osm = `https://www.openstreetmap.org/#map=17/${lat}/${lng}`;
 			const nation = resolveGbNation(latitude, longitude);
 			if (nation === 'scotland') {
 				return {
-					label: 'ScotLIS (Registers of Scotland)',
-					url: 'https://scotlis.ros.gov.uk/'
+					label: 'ScotLIS (Registers of Scotland) (GPS position)',
+					url: osm
 				};
 			}
 			if (nation === 'ni') {
 				return {
-					label: 'nidirect — Land Registry (LPS)',
-					url: 'https://www.nidirect.gov.uk/articles/searching-land-registry'
+					label: 'nidirect — Land Registry (LPS) (GPS position)',
+					url: osm
 				};
 			}
 			return {
-				label: 'HM Land Registry',
-				url: 'https://www.gov.uk/search-property-information-land-registry'
+				label: 'HM Land Registry (GPS position)',
+				url: osm
 			};
 		}
 		case 'PT':
@@ -131,20 +134,51 @@ export function getCadastreViewerLink(
 				label: 'Mapa — posição GPS (DGT Cadastro via pesquisa local)',
 				url: `https://www.openstreetmap.org/#map=17/${lat}/${lng}`
 			};
-		case 'US':
+		case 'IE':
+			// Tailte Éireann / landdirect often require account; OSM centres the field point.
 			return {
-				label: 'USGS PAD-US Map Viewer',
-				url: `https://maps.usgs.gov/padus/#/?lat=${lat}&lon=${lng}&z=12`
+				label: 'Tailte Éireann — land registry (GPS position)',
+				url: `https://www.openstreetmap.org/#map=17/${lat}/${lng}`
+			};
+		case 'DK':
+			// Matriklen (Datafordeler) needs API key; OSM + Dataforsyning landing for hand-off.
+			return {
+				label: 'Dataforsyning / Matriklen (GPS position)',
+				url: `https://www.openstreetmap.org/#map=17/${lat}/${lng}`
+			};
+		case 'FI':
+			// MML kiinteistö APIs need API key; OSM / Karttapaikka hand-off.
+			return {
+				label: 'Karttapaikka / kiinteistöt (GPS position)',
+				url: `https://www.openstreetmap.org/#map=17/${lat}/${lng}`
+			};
+		case 'US':
+			// PAD-US explorer has no lat/lon deep-link; OSM centres the field point.
+			return {
+				label: 'USGS PAD-US (GPS position)',
+				url: `https://www.openstreetmap.org/#map=17/${lat}/${lng}`
 			};
 		case 'CA':
+			// Geo.ca map browser has no lat/lon deep-link; OSM centres the field point.
 			return {
-				label: 'CPCAD — Open Maps',
-				url: `https://search.open.canada.ca/openmap/6c343726-1e92-451a-876a-76e17d398a1c`
+				label: 'CPCAD — Geo.ca (GPS position)',
+				url: `https://www.openstreetmap.org/#map=17/${lat}/${lng}`
 			};
 		case 'NZ':
 			return {
 				label: 'DOC Maps',
 				url: `https://www.doc.govt.nz/map/index.html?lat=${lat}&lon=${lng}`
+			};
+		case 'AU':
+			// CAPAD info page has no lat/lon deep-link; OSM centres the field point.
+			return {
+				label: 'CAPAD — DCCEEW (GPS position)',
+				url: `https://www.openstreetmap.org/#map=17/${lat}/${lng}`
+			};
+		case 'JP':
+			return {
+				label: 'GSI Maps',
+				url: `https://maps.gsi.go.jp/#15/${lat}/${lng}/&base=std`
 			};
 		default:
 			return null;

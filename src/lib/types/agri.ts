@@ -78,11 +78,16 @@ export interface AgriData {
 	heatStressDaysPast7d: number;
 	/** Nombre de jours prévus avec Tmax > 30 °C (7 j). */
 	heatStressDaysForecast7d: number;
-	/** Nombre de nuits de gel passées Tmin < 0 °C (7 j). */
+	/** Nombre de nuits de gel passées Tmin ≤ frostDangerousC du profil (7 j). */
 	frostEventsPast7d: number;
 	/** Score tampon hydrique du sol 0–100. */
 	soilBufferScore: number;
-	/** Water Stress Index : bilan hydrique + tampon sol (mm équivalent). */
+	/** FAO-proxy water stress coefficient Ks (0–1); null if ΣET₀ unavailable. */
+	hydricStressKs: number | null;
+	/**
+	 * Compat hydric index (legacy WSI scale), mapped from Ks when available.
+	 * Prefer hydricStressKs for scoring.
+	 */
 	wsi: number | null;
 	/** Risque hydrique futur : cumul ET₀ prévu sur 7 j (mm). */
 	futureStressRiskMm: number | null;

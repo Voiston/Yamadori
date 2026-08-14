@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { ComponentProps } from 'svelte';
+	import * as m from '$lib/paraglide/messages.js';
+	import Skeleton from './Skeleton.svelte';
 	import type TopoMap from './TopoMap.svelte';
 
 	let props: ComponentProps<typeof TopoMap> = $props();
@@ -22,11 +24,7 @@
 {#if TopoMapComponent}
 	<TopoMapComponent {...props} />
 {:else}
-	<div
-		class="flex min-h-[12rem] flex-1 items-center justify-center bg-forest-50/80"
-		role="status"
-		aria-busy="true"
-	>
-		<div class="h-8 w-8 animate-spin rounded-full border-2 border-forest-300 border-t-forest-700"></div>
+	<div class="flex min-h-[12rem] flex-1 items-center justify-center bg-forest-50/80 p-4">
+		<Skeleton class="h-full min-h-[10rem] w-full rounded-[var(--radius-card)]" label={m.climate_loading()} />
 	</div>
 {/if}

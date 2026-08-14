@@ -60,9 +60,11 @@ describe('onboarding phases', () => {
 		await expect(isOnboardingComplete()).resolves.toBe(true);
 	});
 
-	it('reset clears both keys', async () => {
+	it('reset clears onboarding and legal disclaimer keys', async () => {
 		await resetOnboarding();
 		expect(mockPreferencesRemove).toHaveBeenCalledWith({ key: 'onboardingComplete' });
 		expect(mockPreferencesRemove).toHaveBeenCalledWith({ key: 'onboardingPhase' });
+		expect(mockPreferencesRemove).toHaveBeenCalledWith({ key: 'legalDisclaimerVersion' });
+		expect(mockPreferencesRemove).toHaveBeenCalledWith({ key: 'legalDisclaimerAcceptedAt' });
 	});
 });

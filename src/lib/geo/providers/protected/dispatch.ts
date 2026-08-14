@@ -6,6 +6,8 @@ import { scanProtectedAreasGb } from '$lib/geo/providers/protected/gb';
 import { scanProtectedAreasUs } from '$lib/geo/providers/protected/us';
 import { scanProtectedAreasCa } from '$lib/geo/providers/protected/ca';
 import { scanProtectedAreasNz } from '$lib/geo/providers/protected/nz';
+import { scanProtectedAreasAu } from '$lib/geo/providers/protected/au';
+import { scanProtectedAreasJp } from '$lib/geo/providers/protected/jp';
 import { scanProtectedAreas } from '$lib/utils/protectedAreas';
 import { cadastreCacheKey } from '$lib/utils/cadastre';
 import { getApiDisabledError, isApiEnabled } from '$lib/utils/apiPolicy';
@@ -146,6 +148,18 @@ export async function scanProtectedAreasForCoords(
 	if (country === 'NZ') {
 		return scanWithCache(`nz:${cadastreCacheKey(latitude, longitude)}`, online, () =>
 			scanProtectedAreasNz(latitude, longitude, { signal: options.signal })
+		);
+	}
+
+	if (country === 'AU') {
+		return scanWithCache(`au:${cadastreCacheKey(latitude, longitude)}`, online, () =>
+			scanProtectedAreasAu(latitude, longitude, { signal: options.signal })
+		);
+	}
+
+	if (country === 'JP') {
+		return scanWithCache(`jp:${cadastreCacheKey(latitude, longitude)}`, online, () =>
+			scanProtectedAreasJp(latitude, longitude, { signal: options.signal })
 		);
 	}
 

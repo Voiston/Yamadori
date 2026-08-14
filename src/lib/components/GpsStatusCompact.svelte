@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { formatAccuracy, getGpsSignalQuality, type GpsSignalQuality } from '$lib/utils/gps';
 	import * as m from '$lib/paraglide/messages.js';
 
@@ -58,10 +59,16 @@
 					best: formatAccuracy(bestAccuracyMeters)
 				})
 			: m.gps_accuracy_aria({ accuracy: formatAccuracy(accuracyMeters) })
-		: undefined}
+		: loading
+			? m.capture_location_identifying()
+			: undefined}
 >
 	{#if loading}
-		<span class="text-muted">{m.capture_location_identifying()}</span>
+		<span class="inline-flex items-center gap-1.5">
+			<Skeleton class="h-2 w-2 shrink-0 rounded-full" decorative />
+			<Skeleton class="h-3 w-16 rounded" decorative />
+			<span class="text-muted">{m.capture_location_identifying()}</span>
+		</span>
 	{:else if accuracyMeters !== null}
 		{#if dualMode && bestQuality !== null}
 			{@render compactBadge(m.gps_accuracy_current(), accuracyMeters, quality)}
@@ -78,7 +85,10 @@
 		{#if locationLabel}
 			<span class="min-w-0 truncate text-forest-800">· {locationLabel}</span>
 		{:else if locationLoading}
-			<span class="text-muted">· …</span>
+			<span class="inline-flex items-center gap-1 text-muted">
+				·
+				<Skeleton class="h-3 w-12 rounded" decorative />
+			</span>
 		{/if}
 	{/if}
 </p>

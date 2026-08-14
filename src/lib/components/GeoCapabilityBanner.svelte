@@ -36,6 +36,11 @@
 		if (caps.country === 'CA') return m.geo_capability_ca_partial();
 		if (caps.country === 'NZ') return m.geo_capability_nz_partial();
 		if (caps.country === 'PT') return m.geo_capability_pt_partial();
+		if (caps.country === 'IE') return m.geo_capability_ie_partial();
+		if (caps.country === 'DK') return m.geo_capability_dk_partial();
+		if (caps.country === 'FI') return m.geo_capability_fi_partial();
+		if (caps.country === 'AU') return m.geo_capability_au_partial();
+		if (caps.country === 'JP') return m.geo_capability_jp_partial();
 		if (caps.municipality === 'partial') return m.geo_capability_municipality_partial();
 		return m.geo_capability_partial_generic();
 	}

@@ -16,9 +16,7 @@
 	} = $props();
 </script>
 
-<label
-	class="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 transition-colors hover:border-forest-200"
->
+<label class="app-section-row transition-colors hover:bg-forest-50/50">
 	<input
 		type="checkbox"
 		class="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-forest-800 focus:ring-forest-600"

@@ -5,6 +5,11 @@ import { App } from '@capacitor/app';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
 import {
 	DEFAULT_ASSESSMENT,
+	clampVisitPhotos,
+	collectPhotosFromVisits,
+	collectThumbsFromVisits,
+	getTreeMediaHydration,
+	normalizeVisitPhotoFields,
 	type NewTree,
 	type Tree,
 	type TreeAssessment,
@@ -58,19 +63,54 @@ type LegacyTree = Partial<Tree> & {
 	id: string;
 	species: string;
 	capturedAt: string;
+	visits?: Array<
+		Partial<TreeVisit> & {
+			id?: string;
+			visitedAt?: string;
+			photoBase64?: string;
+			photoThumbBase64?: string;
+		}
+	>;
 };
 
+function normalizeVisit(
+	raw: Partial<TreeVisit> & {
+		id?: string;
+		visitedAt?: string;
+		photoBase64?: string;
+		photoThumbBase64?: string;
+	},
+	fallbackVisitedAt: string
+): TreeVisit {
+	const { photos, photoThumbs } = normalizeVisitPhotoFields(raw);
+	return {
+		id: raw.id ?? generateId(),
+		visitedAt: raw.visitedAt ?? fallbackVisitedAt,
+		note: raw.note ?? '',
+		photos,
+		photoThumbs,
+		voiceNote: raw.voiceNote ?? null,
+		yrsSnapshot: raw.yrsSnapshot ?? null
+	};
+}
+
 function createInitialVisit(
-	tree: Pick<Tree, 'capturedAt' | 'notes' | 'photos' | 'visits'>
+	tree: Pick<Tree, 'capturedAt' | 'notes' | 'photos' | 'photoThumbs' | 'visits'>
 ): TreeVisit {
 	const firstVisit = tree.visits[0];
-	const photo = tree.photos[0] ?? '';
+	const photos = clampVisitPhotos(
+		tree.photos.length > 0 ? tree.photos : (firstVisit?.photos ?? [])
+	);
+	const photoThumbs =
+		tree.photoThumbs && tree.photoThumbs.length > 0
+			? clampVisitPhotos(tree.photoThumbs)
+			: firstVisit?.photoThumbs;
 	return {
 		id: generateId(),
 		visitedAt: tree.capturedAt,
 		note: tree.notes.trim() || m.tree_initial_visit_note(),
-		photoBase64: photo,
-		photoThumbBase64: firstVisit?.photoThumbBase64
+		photos,
+		photoThumbs
 	};
 }
 
@@ -102,10 +142,12 @@ function normalizeTree(raw: LegacyTree): Tree {
 		harvestEthicsConfirmation: raw.harvestEthicsConfirmation ?? null,
 		environmentExposure: raw.environmentExposure ?? DEFAULT_ENVIRONMENT_EXPOSURE,
 		yrsAtCapture: raw.yrsAtCapture ?? null,
-		capturedAt: raw.capturedAt
+		capturedAt: raw.capturedAt,
+		mediaHydration: raw.mediaHydration
 	};
 
-	let visits = raw.visits ?? [];
+	let visits =
+		raw.visits?.map((visit) => normalizeVisit(visit, raw.capturedAt)) ?? [];
 	if (visits.length === 0 && (base.notes.trim() || photos.length > 0)) {
 		visits = [createInitialVisit({ ...base, photos, visits })];
 	}
@@ -127,27 +169,6 @@ function normalizeImportedTree(raw: LegacyTree): Tree {
 
 function updateTreeById(treeId: string, updater: (tree: Tree) => Tree): void {
 	treeStore.trees = treeStore.trees.map((tree) => (tree.id === treeId ? updater(tree) : tree));
-}
-
-function collectPhotosFromVisits(visits: TreeVisit[]): string[] {
-	const photos: string[] = [];
-	for (const visit of visits) {
-		if (visit.photoBase64 && !photos.includes(visit.photoBase64)) {
-			photos.push(visit.photoBase64);
-		}
-	}
-	return photos;
-}
-
-function collectThumbsFromVisits(visits: TreeVisit[]): string[] | undefined {
-	const thumbs: string[] = [];
-	for (const visit of visits) {
-		const thumb = visit.photoThumbBase64 ?? visit.photoBase64;
-		if (thumb && !thumbs.includes(thumb)) {
-			thumbs.push(thumb);
-		}
-	}
-	return thumbs.length > 0 ? thumbs : undefined;
 }
 
 function markTreeDirty(treeId: string): void {
@@ -202,15 +223,17 @@ const migrationProgressHandler: TreeStorageMigrationCallback = (progress) => {
 	treeStore.storageMigrationProgress = progress.percent;
 };
 
-function scheduleTreesBootPhaseB(): void {
-	const runPhaseB = () => {
-		void completeTreesBoot();
-	};
-	if (typeof requestIdleCallback === 'function') {
-		requestIdleCallback(runPhaseB, { timeout: 2_000 });
-		return;
-	}
-	setTimeout(runPhaseB, 0);
+function scheduleTreesBootPhaseB(): Promise<void> {
+	return new Promise((resolve) => {
+		const runPhaseB = () => {
+			void completeTreesBoot().finally(() => resolve());
+		};
+		if (typeof requestIdleCallback === 'function') {
+			requestIdleCallback(runPhaseB, { timeout: 2_000 });
+			return;
+		}
+		setTimeout(runPhaseB, 0);
+	});
 }
 
 async function completeTreesBoot(): Promise<void> {
@@ -255,7 +278,7 @@ export async function initTrees(): Promise<void> {
 		if (postMigrationVersion === 0) {
 			treeStore.loaded = true;
 		} else {
-			scheduleTreesBootPhaseB();
+			await scheduleTreesBootPhaseB();
 		}
 	} catch (error) {
 		console.error('initTrees failed:', error);
@@ -314,6 +337,11 @@ async function flushPersist(): Promise<void> {
 	}
 }
 
+/** Flush pending tree writes so backup export can read full media from storage. */
+export async function flushTreesPersist(): Promise<void> {
+	await flushPersist();
+}
+
 function registerPersistFlush(): void {
 	if (persistFlushRegistered || typeof window === 'undefined') {
 		return;
@@ -362,7 +390,7 @@ export async function ensureTreeHydrated(treeId: string): Promise<Tree | undefin
 		return undefined;
 	}
 
-	if (existing.photos.length > 0 && existing.photos[0]) {
+	if (existing.mediaHydration === 'full' || (existing.photos.length > 0 && existing.photos[0])) {
 		return existing;
 	}
 
@@ -376,9 +404,18 @@ export async function ensureTreeHydrated(treeId: string): Promise<Tree | undefin
 		if (!hydrated) {
 			return existing;
 		}
-		const normalized = normalizeTree(hydrated as LegacyTree);
-		updateTreeById(treeId, () => normalized);
-		return normalized;
+		const normalized = normalizeTree({
+			...(hydrated as LegacyTree),
+			mediaHydration: 'full'
+		});
+		const hasFullPhoto = normalized.photos.length > 0 && Boolean(normalized.photos[0]);
+		// Avoid store writes when media is still empty — re-writing would re-trigger
+		// detail-page / PhotoGallery $effects and freeze the UI.
+		if (!hasFullPhoto) {
+			return existing;
+		}
+		updateTreeById(treeId, () => ({ ...normalized, mediaHydration: 'full' }));
+		return getTreeById(treeId) ?? { ...normalized, mediaHydration: 'full' };
 	})();
 
 	hydrationPromises.set(treeId, promise);
@@ -395,14 +432,14 @@ export async function addTree(tree: NewTree): Promise<Tree> {
 	}
 
 	const capturedAt = new Date().toISOString();
-	const firstPhoto = tree.photos[0] ?? '';
-	const firstThumb = tree.photoThumbs?.[0];
+	const photos = clampVisitPhotos(tree.photos);
+	const photoThumbs = tree.photoThumbs ? clampVisitPhotos(tree.photoThumbs) : undefined;
 	const visit: TreeVisit = {
 		id: generateId(),
 		visitedAt: capturedAt,
 		note: tree.notes.trim() || m.tree_initial_visit_note(),
-		photoBase64: firstPhoto,
-		photoThumbBase64: firstThumb
+		photos,
+		photoThumbs
 	};
 
 	const entry: Tree = {
@@ -411,7 +448,8 @@ export async function addTree(tree: NewTree): Promise<Tree> {
 		capturedAt,
 		visits: [visit],
 		photos: collectPhotosFromVisits([visit]),
-		photoThumbs: collectThumbsFromVisits([visit])
+		photoThumbs: collectThumbsFromVisits([visit]),
+		mediaHydration: 'full'
 	};
 
 	treeStore.trees = [entry, ...treeStore.trees];
@@ -473,7 +511,21 @@ export async function updateClimate(id: string, climateHistory: ClimateHistory):
 
 export async function updateLocationLabel(id: string, locationLabel: string): Promise<void> {
 	updateTreeById(id, (tree) => ({ ...tree, locationLabel }));
-	schedulePersist(id);
+	// Thumbs/index: keep label in memory only; persist would be media-safe via merge but
+	// skipping avoids post-boot dirty storms after locale refresh.
+	const tree = getTreeById(id);
+	if (tree && getTreeMediaHydration(tree) === 'full') {
+		schedulePersist(id);
+	}
+}
+
+/**
+ * True when every in-memory tree is marked fully hydrated.
+ * Boot/thumbs stores must not dirtier-persist label clears (media wipe risk).
+ */
+export function isTreeStoreFullyMediaHydrated(): boolean {
+	if (treeStore.trees.length === 0) return true;
+	return treeStore.trees.every((tree) => getTreeMediaHydration(tree) === 'full');
 }
 
 /** Clear stored reverse-geocode labels (e.g. after place-language strategy change). */
@@ -482,7 +534,11 @@ export async function clearAllLocationLabels(): Promise<void> {
 		for (const tree of treeStore.trees) {
 			if (tree.locationLabel === null) continue;
 			updateTreeById(tree.id, (current) => ({ ...current, locationLabel: null }));
-			schedulePersist(tree.id);
+			// Never schedule persist for thumbs/index trees — even with mergePreservedMediaRefs,
+			// skipping dirty avoids orphan-path churn after boot.
+			if (getTreeMediaHydration(tree) === 'full') {
+				schedulePersist(tree.id);
+			}
 		}
 	});
 }
@@ -498,12 +554,30 @@ export type TreeEnrichmentPatch = {
 	cadastreInfo?: CadastreInfo | null;
 };
 
+function enrichmentPatchChangesTree(tree: Tree, patch: TreeEnrichmentPatch): boolean {
+	if (patch.climateHistory !== undefined && patch.climateHistory !== tree.climateHistory) {
+		return true;
+	}
+	if (patch.locationLabel !== undefined && patch.locationLabel !== tree.locationLabel) {
+		return true;
+	}
+	if (patch.cadastreInfo !== undefined && patch.cadastreInfo !== tree.cadastreInfo) {
+		return true;
+	}
+	return false;
+}
+
 export async function applyTreeEnrichment(id: string, patch: TreeEnrichmentPatch): Promise<void> {
 	if (
 		patch.climateHistory === undefined &&
 		patch.locationLabel === undefined &&
 		patch.cadastreInfo === undefined
 	) {
+		return;
+	}
+
+	const existing = getTreeById(id);
+	if (!existing || !enrichmentPatchChangesTree(existing, patch)) {
 		return;
 	}
 
@@ -536,27 +610,52 @@ async function ensureVisitThumb(photoBase64: string): Promise<string> {
 	}
 }
 
+async function ensureVisitThumbs(
+	photos: string[],
+	photoThumbs?: string[]
+): Promise<string[] | undefined> {
+	if (photos.length === 0) return undefined;
+	const thumbs: string[] = [];
+	for (let i = 0; i < photos.length; i += 1) {
+		const existing = photoThumbs?.[i];
+		thumbs.push(existing || (await ensureVisitThumb(photos[i]!)));
+	}
+	return thumbs;
+}
+
 export async function addVisit(
 	treeId: string,
 	data: {
 		note: string;
+		photos?: string[];
+		photoThumbs?: string[];
+		/** @deprecated Prefer photos[] */
 		photoBase64?: string;
+		/** @deprecated Prefer photoThumbs[] */
 		photoThumbBase64?: string;
 		visitedAt?: string;
 		voiceNote?: VoiceNote | null;
 		yrsSnapshot?: YrsStoredSnapshot | null;
 	}
 ): Promise<void> {
-	const photoBase64 = data.photoBase64 ?? '';
-	const photoThumbBase64 =
-		data.photoThumbBase64 ?? (photoBase64 ? await ensureVisitThumb(photoBase64) : '');
+	// Persist marks mediaHydration full — hydrate first so older visits keep their blobs.
+	await ensureTreeHydrated(treeId);
+
+	const { photos: normalizedPhotos, photoThumbs: normalizedThumbs } = normalizeVisitPhotoFields({
+		photos: data.photos,
+		photoThumbs: data.photoThumbs,
+		photoBase64: data.photoBase64,
+		photoThumbBase64: data.photoThumbBase64
+	});
+	const photos = clampVisitPhotos(normalizedPhotos);
+	const photoThumbs = await ensureVisitThumbs(photos, normalizedThumbs);
 
 	const visit: TreeVisit = {
 		id: generateId(),
 		visitedAt: data.visitedAt ?? new Date().toISOString(),
 		note: data.note.trim(),
-		photoBase64,
-		photoThumbBase64: photoThumbBase64 || undefined,
+		photos,
+		photoThumbs,
 		voiceNote: data.voiceNote ?? null,
 		yrsSnapshot: data.yrsSnapshot ?? null
 	};
@@ -567,7 +666,8 @@ export async function addVisit(
 			...tree,
 			visits,
 			photos: collectPhotosFromVisits(visits),
-			photoThumbs: collectThumbsFromVisits(visits)
+			photoThumbs: collectThumbsFromVisits(visits),
+			mediaHydration: 'full'
 		};
 	});
 	markTreeDirty(treeId);
@@ -577,39 +677,57 @@ export async function addVisit(
 export async function updateVisit(
 	treeId: string,
 	visitId: string,
-	data: Pick<TreeVisit, 'note' | 'visitedAt'>
+	data: Partial<Pick<TreeVisit, 'note' | 'visitedAt' | 'photos' | 'photoThumbs'>>
 ): Promise<void> {
+	let photos: string[] | undefined;
+	let photoThumbs: string[] | undefined;
+
+	if (data.photos !== undefined) {
+		await ensureTreeHydrated(treeId);
+		photos = clampVisitPhotos(data.photos);
+		photoThumbs = await ensureVisitThumbs(photos, data.photoThumbs);
+	}
+
 	updateTreeById(treeId, (tree) => {
-		const visits = tree.visits.map((visit) =>
-			visit.id === visitId
-				? { ...visit, note: data.note.trim(), visitedAt: data.visitedAt }
-				: visit
-		);
+		const visits = tree.visits.map((visit) => {
+			if (visit.id !== visitId) return visit;
+			return {
+				...visit,
+				...(data.note !== undefined ? { note: data.note.trim() } : {}),
+				...(data.visitedAt !== undefined ? { visitedAt: data.visitedAt } : {}),
+				...(photos !== undefined ? { photos, photoThumbs } : {})
+			};
+		});
 		return {
 			...tree,
 			visits,
 			photos: collectPhotosFromVisits(visits),
-			photoThumbs: collectThumbsFromVisits(visits)
+			photoThumbs: collectThumbsFromVisits(visits),
+			...(photos !== undefined ? { mediaHydration: 'full' as const } : {})
 		};
 	});
-	schedulePersist(treeId);
+	markTreeDirty(treeId);
+	await flushPersist();
 }
 
 export async function deleteVisit(treeId: string, visitId: string): Promise<void> {
+	await ensureTreeHydrated(treeId);
 	updateTreeById(treeId, (tree) => {
 		const visits = tree.visits.filter((visit) => visit.id !== visitId);
 		return {
 			...tree,
 			visits,
 			photos: collectPhotosFromVisits(visits),
-			photoThumbs: collectThumbsFromVisits(visits)
+			photoThumbs: collectThumbsFromVisits(visits),
+			mediaHydration: 'full'
 		};
 	});
 	schedulePersist(treeId);
 }
 
 export async function updateVoiceNote(id: string, voiceNote: VoiceNote | null): Promise<void> {
-	updateTreeById(id, (tree) => ({ ...tree, voiceNote }));
+	await ensureTreeHydrated(id);
+	updateTreeById(id, (tree) => ({ ...tree, voiceNote, mediaHydration: 'full' }));
 	schedulePersist(id);
 }
 

@@ -4,8 +4,12 @@ import type { NewTree, Tree } from '$lib/types/tree';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
 import {
 	addTree,
+	addVisit,
 	applyTreeEnrichment,
 	buildTreesPersistPayload,
+	clearAllLocationLabels,
+	ensureTreeHydrated,
+	isTreeStoreFullyMediaHydrated,
 	mergeTreesFromBackup,
 	runPersistBatch,
 	sortedTrees,
@@ -19,6 +23,7 @@ const mockPersistDirtyTrees = vi.fn();
 const mockReplaceAllTreesInStorage = vi.fn();
 const mockLoadTreesFromStorage = vi.fn();
 const mockEnsureTreeStorageMigrated = vi.fn();
+const mockHydrateTreeMedia = vi.fn();
 
 vi.mock('$lib/utils/tree-storage/repository', () => ({
 	getTreeStorageVersion: (...args: unknown[]) => mockGetTreeStorageVersion(...args),
@@ -27,7 +32,7 @@ vi.mock('$lib/utils/tree-storage/repository', () => ({
 	loadTreesFromStorage: (...args: unknown[]) => mockLoadTreesFromStorage(...args),
 	loadTreesBootPhaseA: (...args: unknown[]) => mockLoadTreesFromStorage(...args),
 	ensureTreeStorageMigrated: (...args: unknown[]) => mockEnsureTreeStorageMigrated(...args),
-	hydrateTreeMedia: vi.fn()
+	hydrateTreeMedia: (...args: unknown[]) => mockHydrateTreeMedia(...args)
 }));
 
 vi.mock('$lib/utils/secure-idb', () => ({
@@ -80,7 +85,7 @@ function createBackupTree(id: string, species: string): Tree {
 				id: `${id}-visit`,
 				visitedAt: capturedAt,
 				note: 'Initial',
-				photoBase64: ''
+				photos: []
 			}
 		]
 	};
@@ -99,6 +104,7 @@ describe('trees persist scheduling', () => {
 		mockGetTreeStorageVersion.mockResolvedValue(1);
 		mockPersistDirtyTrees.mockResolvedValue(undefined);
 		mockReplaceAllTreesInStorage.mockResolvedValue(undefined);
+		mockHydrateTreeMedia.mockResolvedValue(undefined);
 		vi.stubGlobal('requestIdleCallback', (callback: IdleRequestCallback) => {
 			callback({ didTimeout: false, timeRemaining: () => 50 } as IdleDeadline);
 			return 1;
@@ -122,6 +128,18 @@ describe('trees persist scheduling', () => {
 		expect(mockPersistDirtyTrees).toHaveBeenCalledTimes(1);
 		const [trees] = mockPersistDirtyTrees.mock.calls[0]!;
 		expect(trees[0]?.photos[0]).toBe(photo);
+		expect(trees[0]?.visits[0]?.photos).toEqual([photo]);
+	});
+
+	it('stores up to three photos on addTree initial visit', async () => {
+		const photos = [
+			'data:image/jpeg;base64,QQ==',
+			'data:image/jpeg;base64,Qg==',
+			'data:image/jpeg;base64,Qw=='
+		];
+		await addTree({ ...createNewTree(), photos, photoThumbs: photos });
+		expect(treeStore.trees[0]?.visits[0]?.photos).toEqual(photos);
+		expect(treeStore.trees[0]?.photos).toEqual(photos);
 	});
 
 	it('debounces lightweight tree edits', async () => {
@@ -171,7 +189,7 @@ describe('trees persist scheduling', () => {
 					id: 'visit-photo',
 					visitedAt: '2026-01-02T12:00:00.000Z',
 					note: 'Photo visit',
-					photoBase64: photo
+					photos: [photo]
 				}
 			]
 		};
@@ -179,7 +197,7 @@ describe('trees persist scheduling', () => {
 		const payload = buildTreesPersistPayload([tree]);
 
 		expect(payload[0].photos).toBeUndefined();
-		expect(payload[0].visits?.[0]?.photoBase64).toBe(photo);
+		expect(payload[0].visits?.[0]?.photos[0]).toBe(photo);
 	});
 
 	it('reuses sortedTrees cache when tree array reference is unchanged', async () => {
@@ -191,5 +209,165 @@ describe('trees persist scheduling', () => {
 		treeStore.trees = [...treeStore.trees];
 		const third = sortedTrees();
 		expect(third).not.toBe(first);
+	});
+});
+
+describe('trees hydrate and enrichment no-ops', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.clearAllMocks();
+		__resetTreesStoreForTests();
+		treeStore.loaded = true;
+		mockGetTreeStorageVersion.mockResolvedValue(1);
+		mockPersistDirtyTrees.mockResolvedValue(undefined);
+		mockHydrateTreeMedia.mockResolvedValue(undefined);
+	});
+
+	it('does not rewrite the store when hydrate finds no full photos', async () => {
+		const tree = createBackupTree('tree-empty', 'Maple');
+		tree.photoThumbs = ['data:image/jpeg;base64,thumb'];
+		treeStore.trees = [tree];
+		const before = treeStore.trees;
+
+		mockHydrateTreeMedia.mockResolvedValue({
+			...tree,
+			photos: [],
+			visits: [{ ...tree.visits[0]!, photos: [] }]
+		});
+
+		await ensureTreeHydrated('tree-empty');
+
+		expect(mockHydrateTreeMedia).toHaveBeenCalledTimes(1);
+		expect(treeStore.trees).toBe(before);
+		expect(treeStore.trees[0]?.photos).toEqual([]);
+	});
+
+	it('updates the store when hydrate loads full photos', async () => {
+		const tree = createBackupTree('tree-full', 'Oak');
+		treeStore.trees = [tree];
+		const photo = 'data:image/jpeg;base64,QUJD';
+
+		mockHydrateTreeMedia.mockResolvedValue({
+			...tree,
+			photos: [photo],
+			visits: [{ ...tree.visits[0]!, photos: [photo], photoThumbs: [photo] }]
+		});
+
+		await ensureTreeHydrated('tree-full');
+
+		expect(treeStore.trees[0]?.photos[0]).toBe(photo);
+	});
+
+	it('does not persist when enrichment patch is a no-op null cadastre', async () => {
+		const tree = createBackupTree('tree-1', 'Maple');
+		tree.cadastreInfo = null;
+		tree.locationLabel = 'Already labeled';
+		treeStore.trees = [tree];
+		const before = treeStore.trees;
+
+		await applyTreeEnrichment('tree-1', {
+			cadastreInfo: null,
+			locationLabel: 'Already labeled'
+		});
+
+		expect(treeStore.trees).toBe(before);
+		await flushDeferredPersist();
+		expect(mockPersistDirtyTrees).not.toHaveBeenCalled();
+	});
+
+	it('persists when enrichment patch changes location label', async () => {
+		treeStore.trees = [createBackupTree('tree-1', 'Maple')];
+
+		await applyTreeEnrichment('tree-1', {
+			locationLabel: 'New place'
+		});
+
+		expect(treeStore.trees[0]?.locationLabel).toBe('New place');
+		await flushDeferredPersist();
+		expect(mockPersistDirtyTrees).toHaveBeenCalledTimes(1);
+	});
+
+	it('hydrates before addVisit so prior visit photos are preserved', async () => {
+		const oldPhoto = 'data:image/jpeg;base64,OLD==';
+		const oldThumb = 'data:image/jpeg;base64,thumb';
+		const newPhoto = 'data:image/jpeg;base64,NEW==';
+		const tree = createBackupTree('tree-1', 'Oak');
+		tree.mediaHydration = 'thumbs';
+		tree.photos = [''];
+		tree.photoThumbs = [oldThumb];
+		tree.visits = [
+			{
+				id: 'v-old',
+				visitedAt: '2026-01-01T12:00:00.000Z',
+				note: 'old',
+				photos: [''],
+				photoThumbs: [oldThumb]
+			}
+		];
+		treeStore.trees = [tree];
+
+		mockHydrateTreeMedia.mockResolvedValue({
+			...tree,
+			photos: [oldPhoto],
+			photoThumbs: [oldThumb],
+			mediaHydration: 'full',
+			visits: [
+				{
+					id: 'v-old',
+					visitedAt: '2026-01-01T12:00:00.000Z',
+					note: 'old',
+					photos: [oldPhoto],
+					photoThumbs: [oldThumb]
+				}
+			]
+		});
+
+		await addVisit('tree-1', { note: 'new', photos: [newPhoto], photoThumbs: [newPhoto] });
+
+		expect(mockHydrateTreeMedia).toHaveBeenCalledWith('tree-1');
+		const updated = treeStore.trees[0]!;
+		expect(updated.visits).toHaveLength(2);
+		const oldVisit = updated.visits.find((v) => v.id === 'v-old');
+		expect(oldVisit?.photos[0]).toBe(oldPhoto);
+		expect(updated.mediaHydration).toBe('full');
+	});
+
+	it('clears location labels in memory on thumbs-only trees without scheduling persist', async () => {
+		const tree = createBackupTree('tree-thumbs', 'Pine');
+		tree.locationLabel = 'Old Town';
+		tree.mediaHydration = 'thumbs';
+		tree.photos = [''];
+		tree.photoThumbs = ['data:image/jpeg;base64,thumb'];
+		treeStore.trees = [tree];
+		expect(isTreeStoreFullyMediaHydrated()).toBe(false);
+
+		await clearAllLocationLabels();
+		await flushDeferredPersist();
+
+		expect(treeStore.trees[0]?.locationLabel).toBeNull();
+		expect(mockPersistDirtyTrees).not.toHaveBeenCalled();
+	});
+
+	it('persists location label clears only for fully hydrated trees', async () => {
+		const full = createBackupTree('tree-full', 'Oak');
+		full.locationLabel = 'Full Place';
+		full.mediaHydration = 'full';
+		full.photos = ['data:image/jpeg;base64,AAA'];
+
+		const thumbs = createBackupTree('tree-thumbs', 'Pine');
+		thumbs.locationLabel = 'Thumbs Place';
+		thumbs.mediaHydration = 'thumbs';
+		thumbs.photos = [''];
+		thumbs.photoThumbs = ['data:image/jpeg;base64,thumb'];
+
+		treeStore.trees = [full, thumbs];
+
+		await clearAllLocationLabels();
+		await flushDeferredPersist();
+
+		expect(treeStore.trees.map((t) => t.locationLabel)).toEqual([null, null]);
+		expect(mockPersistDirtyTrees).toHaveBeenCalledTimes(1);
+		const [, dirty] = mockPersistDirtyTrees.mock.calls[0]!;
+		expect(dirty).toEqual(new Set(['tree-full']));
 	});
 });

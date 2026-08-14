@@ -175,21 +175,32 @@ export async function setAppLocale(locale: AppLocale): Promise<void> {
 	);
 }
 
-export async function restoreAppearanceSettings(settings: {
-	outdoorMode: boolean;
-	darkMode?: boolean;
-	simpleMode?: boolean;
-	locale?: AppLocale;
-}): Promise<void> {
+export async function restoreAppearanceSettings(
+	settings: {
+		outdoorMode: boolean;
+		darkMode?: boolean;
+		simpleMode?: boolean;
+		locale?: AppLocale;
+	},
+	options?: {
+		/**
+		 * Skip Nominatim label wipe/refresh. Required on backup import: refresh races with
+		 * reloadLocalData() swapping the store to thumbs-only and can re-wipe media.
+		 */
+		skipLabelRefresh?: boolean;
+	}
+): Promise<void> {
 	appearanceSettingsState.outdoorMode = settings.outdoorMode;
 	appearanceSettingsState.darkMode = settings.darkMode ?? DEFAULT_SETTINGS.darkMode;
 	appearanceSettingsState.simpleMode = settings.simpleMode ?? DEFAULT_SETTINGS.simpleMode;
 	if (settings.locale && isValidLocale(settings.locale)) {
 		appearanceSettingsState.locale = settings.locale;
 		applyParaglideLocale(settings.locale);
-		void import('$lib/utils/refreshLocationLabels').then((mod) =>
-			mod.refreshLocationLabelsForUiLocale(settings.locale!)
-		);
+		if (!options?.skipLabelRefresh) {
+			void import('$lib/utils/refreshLocationLabels').then((mod) =>
+				mod.refreshLocationLabelsForUiLocale(settings.locale!)
+			);
+		}
 	}
 	if (appearanceSettingsState.outdoorMode && appearanceSettingsState.darkMode) {
 		appearanceSettingsState.darkMode = false;

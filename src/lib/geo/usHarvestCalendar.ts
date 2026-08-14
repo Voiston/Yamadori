@@ -1,4 +1,5 @@
 import type { MacroRegion } from '$lib/constants/regions';
+import { matchHarvestSpecies } from '$lib/geo/matchHarvestSpecies';
 
 /**
  * Indicative dormancy / collection windows for US yamadori species by macro-region.
@@ -6,6 +7,7 @@ import type { MacroRegion } from '$lib/constants/regions';
  */
 export type UsHarvestWindow = {
 	species: string;
+	aliases?: readonly string[];
 	macroRegion: MacroRegion;
 	/** Inclusive start month (1 = January). */
 	startMonth: number;
@@ -17,6 +19,7 @@ export type UsHarvestWindow = {
 export const US_HARVEST_CALENDAR: readonly UsHarvestWindow[] = [
 	{
 		species: 'Utah juniper',
+		aliases: ['Juniperus osteosperma'],
 		macroRegion: 'us_southwest',
 		startMonth: 11,
 		endMonth: 3,
@@ -24,6 +27,7 @@ export const US_HARVEST_CALENDAR: readonly UsHarvestWindow[] = [
 	},
 	{
 		species: 'Ponderosa pine',
+		aliases: ['Pinus ponderosa'],
 		macroRegion: 'us_rockies',
 		startMonth: 10,
 		endMonth: 4,
@@ -31,12 +35,14 @@ export const US_HARVEST_CALENDAR: readonly UsHarvestWindow[] = [
 	},
 	{
 		species: 'Ponderosa pine',
+		aliases: ['Pinus ponderosa'],
 		macroRegion: 'us_california',
 		startMonth: 11,
 		endMonth: 3
 	},
 	{
 		species: 'Bristlecone pine',
+		aliases: ['Pinus longaeva', 'Pinus aristata'],
 		macroRegion: 'us_rockies',
 		startMonth: 9,
 		endMonth: 5,
@@ -44,24 +50,28 @@ export const US_HARVEST_CALENDAR: readonly UsHarvestWindow[] = [
 	},
 	{
 		species: 'Rocky Mountain juniper',
+		aliases: ['Juniperus scopulorum'],
 		macroRegion: 'us_rockies',
 		startMonth: 10,
 		endMonth: 4
 	},
 	{
 		species: 'Douglas fir',
+		aliases: ['Pseudotsuga menziesii'],
 		macroRegion: 'us_pacific_northwest',
 		startMonth: 11,
 		endMonth: 3
 	},
 	{
 		species: 'Western larch',
+		aliases: ['Larix occidentalis'],
 		macroRegion: 'us_pacific_northwest',
 		startMonth: 10,
 		endMonth: 3
 	},
 	{
 		species: 'Eastern hemlock',
+		aliases: ['Tsuga canadensis'],
 		macroRegion: 'us_appalachians',
 		startMonth: 11,
 		endMonth: 3
@@ -97,10 +107,9 @@ export function findUsHarvestWindows(
 	species: string,
 	macroRegion?: MacroRegion | null
 ): UsHarvestWindow[] {
-	const normalized = species.trim().toLowerCase();
-	if (!normalized) return [];
+	if (!species.trim()) return [];
 	return US_HARVEST_CALENDAR.filter((entry) => {
-		if (entry.species.toLowerCase() !== normalized) return false;
+		if (!matchHarvestSpecies(species, entry.species, entry.aliases ?? [])) return false;
 		if (macroRegion && entry.macroRegion !== macroRegion) return false;
 		return true;
 	});

@@ -3,12 +3,23 @@
 	import { agriData, loadAgriData } from '$lib/stores/agriData.svelte';
 	import type { ClimateHistory } from '$lib/types/climate';
 	import type { PhenologyStageId } from '$lib/types/gdd';
-	import type { CernageStatus, YrsDecision } from '$lib/types/yrs';
+	import type { AoutementStatus, CernageStatus, LeafFallPct, YrsDecision } from '$lib/types/yrs';
 	import type { EnvironmentExposure } from '$lib/types/environment';
 	import AgriPanel from './AgriPanel.svelte';
 	import ClimatePanel from './ClimatePanel.svelte';
 	import { resolveCountry } from '$lib/geo/resolveCountry';
+	import type { CountryCode } from '$lib/geo/countries';
 	import * as m from '$lib/paraglide/messages.js';
+
+	/** Countries with dedicated YRS climate/harvest packs — skip FR-calibration disclaimer. */
+	const YRS_LOCAL_PACK_COUNTRIES: ReadonlySet<CountryCode> = new Set([
+		'JP',
+		'US',
+		'CA',
+		'AU',
+		'NZ',
+		'PT'
+	]);
 
 	interface Props {
 		climate: ClimateHistory | null;
@@ -19,6 +30,8 @@
 		species?: string;
 		observedPhenologyStage?: PhenologyStageId | null;
 		cernageStatus?: CernageStatus | null;
+		aoutementStatus?: AoutementStatus | null;
+		leafFallPct?: LeafFallPct | null;
 		environmentExposure?: EnvironmentExposure;
 		latitude?: number | null;
 		longitude?: number | null;
@@ -35,6 +48,8 @@
 		species = '',
 		observedPhenologyStage = null,
 		cernageStatus = null,
+		aoutementStatus = null,
+		leafFallPct = null,
 		environmentExposure = 'OPEN',
 		latitude = null,
 		longitude = null,
@@ -45,11 +60,13 @@
 	let climateFetchRequested = $state(false);
 
 	const yrs = $derived(agriData.data?.yrs ?? null);
-	const showFranceCalibrationDisclaimer = $derived(
-		latitude != null &&
-			longitude != null &&
-			resolveCountry(latitude, longitude) !== 'FR'
-	);
+	const showFranceCalibrationDisclaimer = $derived.by(() => {
+		if (latitude == null || longitude == null) return false;
+		const country = resolveCountry(latitude, longitude);
+		if (country === 'FR' || country === null) return false;
+		if (country && YRS_LOCAL_PACK_COUNTRIES.has(country)) return false;
+		return true;
+	});
 
 	const yrsDecisionLabels = $derived.by((): Record<YrsDecision, string> => {
 		void appearanceSettingsState.locale;
@@ -81,6 +98,8 @@
 			species,
 			observedPhenologyStage,
 			cernageStatus,
+			aoutementStatus,
+			leafFallPct,
 			environmentExposure
 		});
 
@@ -91,7 +110,7 @@
 	});
 </script>
 
-<details class="rounded-lg border border-gray-200 bg-white" bind:open>
+<details class="app-card" bind:open>
 	<summary class="cursor-pointer px-4 py-3 font-medium text-forest-900 select-none">
 		{m.climate_section_title()}
 		{#if yrs}
@@ -116,6 +135,8 @@
 			{species}
 			{observedPhenologyStage}
 			{cernageStatus}
+			{aoutementStatus}
+			{leafFallPct}
 			{environmentExposure}
 			{loading}
 			{onretry}

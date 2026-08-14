@@ -1,8 +1,16 @@
 import { secureIdbGet, secureIdbSet, secureIdbDel } from '$lib/utils/secure-idb';
 import { toStorable } from '$lib/utils/idb-store';
-import { DEFAULT_ASSESSMENT } from '$lib/types/tree';
-import type { Tree, TreeVisit } from '$lib/types/tree';
+import {
+	DEFAULT_ASSESSMENT,
+	clampVisitPhotos,
+	collectPhotosFromVisits,
+	collectThumbsFromVisits,
+	normalizeVisitPhotoFields,
+	type Tree,
+	type TreeVisit
+} from '$lib/types/tree';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
+import { normalizeDeadwood } from '$lib/constants/assessment';
 import { generateId } from '$lib/utils/id';
 import { compressImageToThumbDataUrl } from '$lib/utils/photo';
 import { persistTreeIndexFromTrees, persistTreeRecord } from './persist';
@@ -15,15 +23,45 @@ type LegacyTree = Partial<Tree> & {
 	id: string;
 	species: string;
 	capturedAt: string;
+	visits?: Array<
+		Partial<TreeVisit> & {
+			id?: string;
+			visitedAt?: string;
+			photoBase64?: string;
+			photoThumbBase64?: string;
+		}
+	>;
 };
 
-function createInitialVisit(tree: Pick<Tree, 'capturedAt' | 'notes' | 'photos'>): TreeVisit {
-	const photo = tree.photos[0] ?? '';
+function createInitialVisit(tree: Pick<Tree, 'capturedAt' | 'notes' | 'photos' | 'photoThumbs'>): TreeVisit {
+	const photos = clampVisitPhotos(tree.photos);
 	return {
 		id: generateId(),
 		visitedAt: tree.capturedAt,
 		note: tree.notes.trim() || 'Initial visit',
-		photoBase64: photo
+		photos,
+		photoThumbs: tree.photoThumbs ? clampVisitPhotos(tree.photoThumbs) : undefined
+	};
+}
+
+function normalizeLegacyVisit(
+	raw: Partial<TreeVisit> & {
+		id?: string;
+		visitedAt?: string;
+		photoBase64?: string;
+		photoThumbBase64?: string;
+	},
+	fallbackVisitedAt: string
+): TreeVisit {
+	const { photos, photoThumbs } = normalizeVisitPhotoFields(raw);
+	return {
+		id: raw.id ?? generateId(),
+		visitedAt: raw.visitedAt ?? fallbackVisitedAt,
+		note: raw.note ?? '',
+		photos,
+		photoThumbs,
+		voiceNote: raw.voiceNote ?? null,
+		yrsSnapshot: raw.yrsSnapshot ?? null
 	};
 }
 
@@ -40,7 +78,11 @@ function normalizeLegacyTree(raw: LegacyTree): Tree {
 		species: raw.species,
 		notes: raw.notes ?? '',
 		photos,
-		assessment: { ...DEFAULT_ASSESSMENT, ...(raw.assessment ?? {}) },
+		assessment: {
+			...DEFAULT_ASSESSMENT,
+			...(raw.assessment ?? {}),
+			deadwood: normalizeDeadwood(raw.assessment?.deadwood)
+		},
 		latitude: raw.latitude ?? null,
 		longitude: raw.longitude ?? null,
 		accuracyMeters: raw.accuracyMeters ?? null,
@@ -57,52 +99,52 @@ function normalizeLegacyTree(raw: LegacyTree): Tree {
 		capturedAt: raw.capturedAt
 	};
 
-	let visits = raw.visits ?? [];
+	let visits =
+		raw.visits?.map((visit) => normalizeLegacyVisit(visit, raw.capturedAt)) ?? [];
 	if (visits.length === 0 && (base.notes.trim() || photos.length > 0)) {
 		visits = [createInitialVisit({ ...base, photos })];
 	}
 
-	const derivedPhotos: string[] = [];
-	for (const visit of visits) {
-		if (visit.photoBase64 && !derivedPhotos.includes(visit.photoBase64)) {
-			derivedPhotos.push(visit.photoBase64);
-		}
-	}
+	const derivedPhotos = collectPhotosFromVisits(visits);
+	const derivedThumbs = collectThumbsFromVisits(visits);
 
 	return {
 		...base,
 		visits,
-		photos: derivedPhotos.length > 0 ? derivedPhotos : photos
+		photos: derivedPhotos.length > 0 ? derivedPhotos : photos,
+		photoThumbs: derivedThumbs
 	};
 }
 
 async function ensureVisitThumbs(tree: Tree): Promise<Tree> {
 	const visits = await Promise.all(
 		tree.visits.map(async (visit) => {
-			if (!visit.photoBase64 || visit.photoThumbBase64) {
-				return visit;
+			if (visit.photos.length === 0) return visit;
+			const photoThumbs = [...(visit.photoThumbs ?? [])];
+			let changed = false;
+			for (let i = 0; i < visit.photos.length; i += 1) {
+				if (photoThumbs[i]) continue;
+				const full = visit.photos[i]!;
+				try {
+					photoThumbs[i] = await compressImageToThumbDataUrl(full);
+					changed = true;
+				} catch {
+					photoThumbs[i] = full;
+					changed = true;
+				}
 			}
-			try {
-				const photoThumbBase64 = await compressImageToThumbDataUrl(visit.photoBase64);
-				return { ...visit, photoThumbBase64 };
-			} catch {
-				return visit;
-			}
+			if (!changed) return visit;
+			return {
+				...visit,
+				photoThumbs: photoThumbs.slice(0, visit.photos.length)
+			};
 		})
 	);
-
-	const photoThumbs: string[] = [];
-	for (const visit of visits) {
-		const thumb = visit.photoThumbBase64 ?? visit.photoBase64;
-		if (thumb && !photoThumbs.includes(thumb)) {
-			photoThumbs.push(thumb);
-		}
-	}
 
 	return {
 		...tree,
 		visits,
-		photoThumbs: photoThumbs.length > 0 ? photoThumbs : undefined
+		photoThumbs: collectThumbsFromVisits(visits)
 	};
 }
 

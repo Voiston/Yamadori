@@ -26,7 +26,12 @@ export type LocationWatchHandle = {
 	mode: 'web' | 'capacitor';
 };
 
-export type LocationPermissionStatus = 'granted' | 'coarse-only' | 'denied' | 'unsupported';
+export type LocationPermissionStatus =
+	| 'granted'
+	| 'coarse-only'
+	| 'prompt'
+	| 'denied'
+	| 'unsupported';
 
 const GEOLOCATION_PERMISSION_DENIED = 1;
 
@@ -47,6 +52,7 @@ export function locationPermissionErrorMessage(status: LocationPermissionStatus)
 	switch (status) {
 		case 'coarse-only':
 			return m.location_precise_required();
+		case 'prompt':
 		case 'denied':
 			return m.location_denied_yrs_required();
 		case 'unsupported':
@@ -72,6 +78,15 @@ export async function getLocationPermissionStatus(): Promise<LocationPermissionS
 		}
 		if (status.coarseLocation === 'granted') {
 			return 'coarse-only';
+		}
+		if (status.location === 'prompt' || status.location === 'prompt-with-rationale') {
+			return 'prompt';
+		}
+		if (
+			status.coarseLocation === 'prompt' ||
+			status.coarseLocation === 'prompt-with-rationale'
+		) {
+			return 'prompt';
 		}
 		return 'denied';
 	} catch {

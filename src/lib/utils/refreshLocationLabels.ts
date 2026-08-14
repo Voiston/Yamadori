@@ -19,10 +19,13 @@ let refreshInFlight: Promise<void> | null = null;
  * Labels are stored on trees at capture time; Nominatim names follow Accept-Language.
  * At most {@link MAX_LABEL_REFRESH_PER_SESSION} trees are refreshed per session;
  * others keep cleared labels until tree detail enrichment (shared Nominatim raw cache).
+ *
+ * `clearAllLocationLabels` only persists trees with `mediaHydration === 'full'`;
+ * thumbs/index trees are cleared in memory only (media-safe).
  */
 export async function refreshLocationLabelsForUiLocale(locale: AppLocale): Promise<void> {
 	if (typeof window === 'undefined') return;
-	if (!treeStore.indexReady) return;
+	if (!treeStore.indexReady || !treeStore.loaded) return;
 
 	const { value: stored } = await Preferences.get({ key: LABELS_LOCALE_KEY });
 	if (stored === locale) return;

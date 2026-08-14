@@ -1,7 +1,6 @@
 import type { SpeciesProtectionPack } from '$lib/geo/providers/species-protection/types';
 
-const NZTCS_SEARCH = 'https://nztcs.org.nz/';
-const DOC_NATIVE = 'https://www.doc.govt.nz/nature/native-plants/';
+const NZPCN_FLORA = 'https://www.nzpcn.org.nz/flora/';
 
 /**
  * Curated New Zealand pack — natives with collecting / disease / legal sensitivity.
@@ -10,11 +9,11 @@ const DOC_NATIVE = 'https://www.doc.govt.nz/nature/native-plants/';
 export const nzSpeciesProtectionPack: SpeciesProtectionPack = {
 	country: 'NZ',
 	coverage: 'partial',
-	sourceName: 'NZTCS / DOC',
+	sourceName: 'NZPCN / NZTCS / DOC',
 	buildSourceUrl: (species) => {
 		const q = species.trim();
-		if (!q) return DOC_NATIVE;
-		return `${NZTCS_SEARCH}?${new URLSearchParams({ search: q })}`;
+		if (!q) return NZPCN_FLORA;
+		return `${NZPCN_FLORA}?${new URLSearchParams({ SearchText: q })}`;
 	},
 	entries: [
 		{

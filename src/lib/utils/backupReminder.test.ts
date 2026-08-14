@@ -52,7 +52,7 @@ describe('computeTreeInventoryFingerprint', () => {
 					id: 'visit-1',
 					visitedAt: '2026-06-01T10:00:00.000Z',
 					note: 'Revisite',
-					photoBase64: ''
+					photos: []
 				}
 			])
 		]);
@@ -106,7 +106,7 @@ describe('evaluateBackupWarning', () => {
 						id: 'visit-1',
 						visitedAt: '2026-06-21T10:00:00.000Z',
 						note: 'Revisite',
-						photoBase64: ''
+						photos: []
 					}
 				])
 			],
@@ -152,7 +152,7 @@ describe('evaluateBackupWarning', () => {
 						id: 'visit-1',
 						visitedAt: '2026-06-21T10:00:00.000Z',
 						note: 'Revisite',
-						photoBase64: ''
+						photos: []
 					}
 				])
 			],

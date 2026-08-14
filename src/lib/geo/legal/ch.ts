@@ -38,6 +38,14 @@ export const chLegalPack: LegalContentPack = {
 			title: 'NHG Art. 18 — Protection of species',
 			summary:
 				'Animal and plant species that are rare or endangered are protected. Removal, damage or destruction of protected plants is prohibited except where authorised.'
+		},
+		{
+			id: 'ch_nhg_20',
+			group: 'environment',
+			url: 'https://www.fedlex.admin.ch/eli/cc/1966/1637_1694_1679/en#art_20',
+			title: 'NHG Art. 20 — Protection of biotopes',
+			summary:
+				'Biotopes that are worthy of protection (banks, fens, dry meadows, forest edges, etc.) must be preserved. Cantons designate and protect them.'
 		}
 	],
 	speciesSearchBase: SPECIES_SEARCH_BASE.infoFlora,

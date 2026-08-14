@@ -61,6 +61,6 @@ export async function lookupMunicipalityForCountry(
 		Number.NaN,
 		roleForCountry(country),
 		adminCode,
-		options
+		{ ...options, country }
 	);
 }

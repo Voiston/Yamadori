@@ -19,7 +19,12 @@ const PROTECTED_AREAS_ATTRIBUTIONS: Record<CountryCode, string | null> = {
 	US: '© USGS — Protected Areas Database of the United States (PAD-US)',
 	CA: '© ECCC — Canadian Protected and Conserved Areas Database (CPCAD)',
 	NZ: '© DOC — Public Conservation Areas (NaPALIS)',
-	PT: EEA_PROTECTED_AREAS_ATTRIBUTION
+	PT: EEA_PROTECTED_AREAS_ATTRIBUTION,
+	IE: EEA_PROTECTED_AREAS_ATTRIBUTION,
+	DK: EEA_PROTECTED_AREAS_ATTRIBUTION,
+	FI: EEA_PROTECTED_AREAS_ATTRIBUTION,
+	AU: '© DCCEEW — Collaborative Australian Protected Areas Database (CAPAD)',
+	JP: '© MOE — national park zones (政府標準利用規約); optional KSJ A10 © MLIT'
 };
 
 const CADASTRE_ATTRIBUTIONS: Record<CountryCode, string | null> = {
@@ -37,7 +42,12 @@ const CADASTRE_ATTRIBUTIONS: Record<CountryCode, string | null> = {
 	US: '© USGS — PAD-US Fee Managers (public land tenure; no private parcels)',
 	CA: '© ECCC — CPCAD (protected areas; Crown land not fully mapped nationally)',
 	NZ: '© DOC — Public Conservation Land (PCL); not all Crown / private land',
-	PT: '© DGT — Cadastro Predial / SNIC (coverage partial; CC BY 4.0)'
+	PT: '© DGT — Cadastro Predial / SNIC (coverage partial; CC BY 4.0)',
+	IE: '© Nominatim/OSM — locality / county (Tailte Éireann parcels not free without registration)',
+	DK: '© Nominatim/OSM — locality / kommune (Matriklen / Datafordeler needs API key)',
+	FI: '© Nominatim/OSM — locality / kunta (Maanmittauslaitos kiinteistö needs API key)',
+	AU: '© DCCEEW — CAPAD protected areas (public tenure; not private parcels)',
+	JP: '© Nominatim/OSM — locality / 市町村 (登記 / 地番 not free for field apps)'
 };
 
 /** Basemap ("plan") tile attribution, delegating to the map provider registry so tile URLs stay the single source of truth. */

@@ -19,6 +19,8 @@ export function buildAgriDisplayKey(
 		species: inputs.species?.trim() ?? '',
 		observedPhenologyStage: inputs.observedPhenologyStage ?? null,
 		cernageStatus: inputs.cernageStatus ?? null,
+		aoutementStatus: inputs.aoutementStatus ?? null,
+		leafFallPct: inputs.leafFallPct ?? null,
 		environmentExposure: inputs.environmentExposure ?? DEFAULT_ENVIRONMENT_EXPOSURE
 	})}`;
 }

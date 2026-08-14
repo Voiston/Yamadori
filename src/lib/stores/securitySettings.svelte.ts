@@ -1,6 +1,7 @@
 import { tick } from 'svelte';
 import { isNativeApp } from '$lib/utils/platform';
 import {
+	ensureLocalEncryptionDefaultForNewInstalls,
 	isLocalEncryptionEnabled,
 	migrateLocalEncryption,
 	refreshLocalEncryptionCache
@@ -55,8 +56,18 @@ export const securitySettingsState = $state({
 });
 
 export async function initSecuritySettings(): Promise<void> {
-	securitySettingsState.localEncryptionEnabled = await isLocalEncryptionEnabled();
-	securitySettingsState.loaded = true;
+	try {
+		await ensureLocalEncryptionDefaultForNewInstalls();
+	} catch (error) {
+		console.error('ensureLocalEncryptionDefaultForNewInstalls failed:', error);
+	}
+	try {
+		securitySettingsState.localEncryptionEnabled = await isLocalEncryptionEnabled();
+	} catch {
+		securitySettingsState.localEncryptionEnabled = false;
+	} finally {
+		securitySettingsState.loaded = true;
+	}
 }
 
 export function isLocalEncryptionAvailable(): boolean {

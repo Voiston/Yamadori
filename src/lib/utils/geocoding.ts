@@ -9,7 +9,7 @@ import { createInFlightMap } from '$lib/utils/inFlight';
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
 const FETCH_TIMEOUT_MS = 10_000;
-const USER_AGENT = 'Yamadori/0.6.4 (bonsai field app)';
+const USER_AGENT = 'Yamadori/0.7.8 (bonsai field app)';
 const MIN_REQUEST_INTERVAL_MS = 1_000;
 
 export type NominatimAddress = {

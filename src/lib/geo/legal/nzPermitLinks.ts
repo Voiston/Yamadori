@@ -12,6 +12,10 @@ export type NzPermitLink = {
 const DOC_COLLECTION =
 	'https://www.doc.govt.nz/get-involved/apply-for-permits/research-and-collection/';
 const DOC_MAPS = 'https://www.doc.govt.nz/map/index.html';
+const DOC_SECTION4 =
+	'https://www.doc.govt.nz/about-us/statutory-and-advisory-bodies/nz-conservation-authority/policies/section-4-of-the-conservation-act/';
+const LGNZ_COUNCILS =
+	'https://www.lgnz.co.nz/local-government-in-nz/council-websites-and-maps/';
 
 export function getNzPermitLinks(input: { zoneType: string }): NzPermitLink[] {
 	const links: NzPermitLink[] = [];
@@ -37,8 +41,8 @@ export function getNzPermitLinks(input: { zoneType: string }): NzPermitLink[] {
 		case 'ipca':
 			links.push({
 				id: 'whenua_rahui',
-				label: 'Whenua Rahui / iwi authority — seek governing consent',
-				url: 'https://www.doc.govt.nz/about-us/our-partners/tangata-whenua/'
+				label: 'Whenua Rahui / Treaty partners — seek governing consent',
+				url: DOC_SECTION4
 			});
 			links.push({
 				id: 'doc_collection',
@@ -50,14 +54,14 @@ export function getNzPermitLinks(input: { zoneType: string }): NzPermitLink[] {
 		case 'private':
 		default:
 			links.push({
+				id: 'lgnz_councils',
+				label: 'LGNZ — district & regional council websites',
+				url: LGNZ_COUNCILS
+			});
+			links.push({
 				id: 'doc_maps',
 				label: 'DOC maps — check if public conservation land',
 				url: DOC_MAPS
-			});
-			links.push({
-				id: 'doc_collection',
-				label: 'DOC — research & collection permits',
-				url: DOC_COLLECTION
 			});
 			break;
 	}

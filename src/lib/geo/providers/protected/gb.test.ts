@@ -36,6 +36,8 @@ describe('GB guide links and capabilities', () => {
 	it('exposes NatureScot, NRW and DAERA permit starting links', () => {
 		const links = getEuPermitLinks('GB', 'private');
 		const ids = links.map((l) => l.id);
+		expect(ids[0]).toBe('gb_local_council');
+		expect(ids).toContain('gb_hmlr');
 		expect(ids).toContain('gb_natural_england');
 		expect(ids).toContain('gb_naturescot');
 		expect(ids).toContain('gb_nrw');
@@ -57,10 +59,14 @@ describe('GB nation-aware overlays and viewers', () => {
 		expect(ni?.tiles[0]).not.toContain('sites-of-special-scientific-interest-units-england');
 	});
 
-	it('returns nation-honest cadastre viewer links', () => {
-		expect(getCadastreViewerLink('GB', 53.35, -1.8)?.label).toBe('HM Land Registry');
-		expect(getCadastreViewerLink('GB', 57.13, -3.72)?.url).toContain('scotlis.ros.gov.uk');
-		expect(getCadastreViewerLink('GB', 54.6, -5.93)?.url).toContain('nidirect.gov.uk');
+	it('returns nation-honest cadastre viewer links with OSM GPS hand-off', () => {
+		expect(getCadastreViewerLink('GB', 53.35, -1.8)?.label).toBe(
+			'HM Land Registry (GPS position)'
+		);
+		expect(getCadastreViewerLink('GB', 57.13, -3.72)?.label).toContain('ScotLIS');
+		expect(getCadastreViewerLink('GB', 57.13, -3.72)?.url).toContain('openstreetmap.org');
+		expect(getCadastreViewerLink('GB', 54.6, -5.93)?.label).toContain('nidirect');
+		expect(getCadastreViewerLink('GB', 54.6, -5.93)?.url).toContain('openstreetmap.org');
 	});
 
 	it('keeps HMLR parcel coverage England & Wales only', () => {

@@ -40,6 +40,7 @@ vi.mock('$lib/utils/platform', () => ({
 import {
 	__isEncryptedEnvelopeForTests,
 	__resetLocalEncryptionStateForTests,
+	ensureLocalEncryptionDefaultForNewInstalls,
 	migrateLocalEncryption,
 	secureIdbDel,
 	secureIdbGet,
@@ -238,5 +239,42 @@ describe('secure-idb', () => {
 		]);
 		const afterSecondSave = await secureIdbGet<{ id: string; species: string }[]>('yamadori-trees');
 		expect(afterSecondSave).toHaveLength(2);
+	});
+
+	it('defaults encryption on for empty native installs', async () => {
+		mockPreferencesGet.mockResolvedValue({ value: null });
+		mockGet.mockResolvedValue(undefined);
+		mockKeys.mockResolvedValue([]);
+
+		await ensureLocalEncryptionDefaultForNewInstalls();
+
+		expect(mockPreferencesSet).toHaveBeenCalledWith({
+			key: 'yamadori-local-encryption-enabled',
+			value: 'true'
+		});
+		expect(mockSecureSet).toHaveBeenCalled();
+	});
+
+	it('keeps encryption off for existing installs with data and unset pref', async () => {
+		mockPreferencesGet.mockResolvedValue({ value: null });
+		mockGet.mockImplementation(async (key: string) => {
+			if (key === 'yamadori-trees') return [{ id: 'tree-1' }];
+			return undefined;
+		});
+
+		await ensureLocalEncryptionDefaultForNewInstalls();
+
+		expect(mockPreferencesSet).toHaveBeenCalledWith({
+			key: 'yamadori-local-encryption-enabled',
+			value: 'false'
+		});
+	});
+
+	it('does not override an explicit encryption preference', async () => {
+		mockPreferencesGet.mockResolvedValue({ value: 'false' });
+
+		await ensureLocalEncryptionDefaultForNewInstalls();
+
+		expect(mockPreferencesSet).not.toHaveBeenCalled();
 	});
 });

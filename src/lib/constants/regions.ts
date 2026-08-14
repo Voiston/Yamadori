@@ -33,7 +33,14 @@ export type MacroRegion =
 	| 'pt_alentejo'
 	| 'pt_algarve'
 	| 'pt_madeira'
-	| 'pt_azores';
+	| 'pt_azores'
+	| 'au_nsw'
+	| 'au_vic'
+	| 'au_qld'
+	| 'au_sa'
+	| 'au_wa'
+	| 'au_tas'
+	| 'au_nt';
 
 export type BiotopeRegion = {
 	id: string;
@@ -347,5 +354,62 @@ export const BIOTOPE_REGIONS: BiotopeRegion[] = [
 		biotope: 'Atlantic islands — humid scrub',
 		bbox: { south: 36.9, north: 39.8, west: -31.3, east: -24.9 },
 		species: ['Medronheiro', 'Pinheiro-bravo']
+	},
+	// — Australia —
+	{
+		id: 'au-nsw',
+		macroRegion: 'au_nsw',
+		name: 'New South Wales',
+		biotope: 'Coastal sclerophyll and sandstone heath',
+		bbox: { south: -37.5, north: -28.0, west: 141.0, east: 153.7 },
+		species: ['Banksia', 'Waratah', 'Bottlebrush', 'Moreton Bay fig']
+	},
+	{
+		id: 'au-vic',
+		macroRegion: 'au_vic',
+		name: 'Victoria',
+		biotope: 'Temperate eucalypt and coastal scrub',
+		bbox: { south: -39.2, north: -34.0, west: 140.9, east: 150.0 },
+		species: ['Banksia', 'Sheoak', 'Bottlebrush']
+	},
+	{
+		id: 'au-qld',
+		macroRegion: 'au_qld',
+		name: 'Queensland',
+		biotope: 'Subtropical rainforest margins and coastal scrub',
+		bbox: { south: -29.0, north: -10.5, west: 138.0, east: 153.6 },
+		species: ['Moreton Bay fig', 'Bottlebrush', 'Banksia']
+	},
+	{
+		id: 'au-sa',
+		macroRegion: 'au_sa',
+		name: 'South Australia',
+		biotope: 'Mallee and dry sclerophyll',
+		bbox: { south: -38.1, north: -26.0, west: 129.0, east: 141.0 },
+		species: ['Sheoak', 'Banksia']
+	},
+	{
+		id: 'au-wa',
+		macroRegion: 'au_wa',
+		name: 'Western Australia',
+		biotope: 'Kwongan heath and jarrah forest',
+		bbox: { south: -35.2, north: -13.5, west: 112.9, east: 129.0 },
+		species: ['Banksia', 'Sheoak', 'Bottlebrush']
+	},
+	{
+		id: 'au-tas',
+		macroRegion: 'au_tas',
+		name: 'Tasmania',
+		biotope: 'Cool temperate rainforest and alpine',
+		bbox: { south: -43.7, north: -40.5, west: 144.5, east: 148.5 },
+		species: ['Huon pine', 'Celery-top pine']
+	},
+	{
+		id: 'au-nt',
+		macroRegion: 'au_nt',
+		name: 'Northern Territory',
+		biotope: 'Tropical savanna and monsoon forest',
+		bbox: { south: -26.0, north: -10.9, west: 129.0, east: 138.0 },
+		species: ['Bottlebrush', 'Sheoak']
 	}
 ];

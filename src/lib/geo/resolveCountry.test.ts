@@ -133,6 +133,86 @@ describe('resolveCountry', () => {
 	it('resolves New York to US', () => {
 		expect(resolveCountry(40.7128, -74.006)).toBe('US');
 	});
+
+	it('resolves Dublin to IE', () => {
+		expect(resolveCountry(53.3498, -6.2603)).toBe('IE');
+	});
+
+	it('resolves Cork to IE', () => {
+		expect(resolveCountry(51.8985, -8.4756)).toBe('IE');
+	});
+
+	it('resolves Galway to IE', () => {
+		expect(resolveCountry(53.2707, -9.0568)).toBe('IE');
+	});
+
+	it('resolves Donegal town to IE (not NI)', () => {
+		expect(resolveCountry(54.6538, -8.1096)).toBe('IE');
+	});
+
+	it('resolves Belfast to GB (Northern Ireland)', () => {
+		expect(resolveCountry(54.5973, -5.9301)).toBe('GB');
+	});
+
+	it('resolves Derry to GB (Northern Ireland)', () => {
+		expect(resolveCountry(54.9966, -7.3086)).toBe('GB');
+	});
+
+	it('resolves Manchester to GB', () => {
+		expect(resolveCountry(53.4808, -2.2426)).toBe('GB');
+	});
+
+	it('resolves Copenhagen to DK', () => {
+		expect(resolveCountry(55.6761, 12.5683)).toBe('DK');
+	});
+
+	it('resolves Aarhus to DK', () => {
+		expect(resolveCountry(56.1629, 10.2039)).toBe('DK');
+	});
+
+	it('resolves Odense to DK', () => {
+		expect(resolveCountry(55.4038, 10.4024)).toBe('DK');
+	});
+
+	it('resolves Bornholm to DK', () => {
+		expect(resolveCountry(55.1604, 14.8667)).toBe('DK');
+	});
+
+	it('resolves Malmö to SE (east of Øresund)', () => {
+		expect(resolveCountry(55.605, 13.0038)).toBe('SE');
+	});
+
+	it('resolves Hamburg to DE', () => {
+		expect(resolveCountry(53.5511, 9.9937)).toBe('DE');
+	});
+
+	it('resolves Helsinki to FI', () => {
+		expect(resolveCountry(60.1699, 24.9384)).toBe('FI');
+	});
+
+	it('resolves Turku to FI (over SE bbox)', () => {
+		expect(resolveCountry(60.4518, 22.2666)).toBe('FI');
+	});
+
+	it('resolves Tampere to FI (over SE bbox)', () => {
+		expect(resolveCountry(61.4978, 23.761)).toBe('FI');
+	});
+
+	it('resolves Oulu to FI', () => {
+		expect(resolveCountry(65.0121, 25.4651)).toBe('FI');
+	});
+
+	it('resolves Mariehamn (Åland) to FI', () => {
+		expect(resolveCountry(60.1, 19.94)).toBe('FI');
+	});
+
+	it('resolves Umeå to SE (west of Bothnia)', () => {
+		expect(resolveCountry(63.8258, 20.263)).toBe('SE');
+	});
+
+	it('resolves Tromsø to NO', () => {
+		expect(resolveCountry(69.6492, 18.9553)).toBe('NO');
+	});
 });
 
 describe('hasCadastreProvider', () => {
@@ -148,6 +228,9 @@ describe('hasCadastreProvider', () => {
 		expect(hasCadastreProvider('NL')).toBe(true);
 		expect(hasCadastreProvider('SE')).toBe(true);
 		expect(hasCadastreProvider('NO')).toBe(true);
+		expect(hasCadastreProvider('IE')).toBe(true);
+		expect(hasCadastreProvider('DK')).toBe(true);
+		expect(hasCadastreProvider('FI')).toBe(true);
 	});
 
 	it('is false for null', () => {

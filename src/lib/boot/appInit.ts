@@ -17,6 +17,7 @@ import { initDevProOverride } from '$lib/stores/devProOverride.svelte';
 import { initParking } from '$lib/stores/parking.svelte';
 import { initProEntitlement, proEntitlementState } from '$lib/stores/proEntitlement.svelte';
 import { initProPromo } from '$lib/stores/proPromo.svelte';
+import { initProListPromoDismiss } from '$lib/stores/proListPromoDismiss.svelte';
 import { initSecuritySettings, securitySettingsState } from '$lib/stores/securitySettings.svelte';
 import { initTrees, treeStore } from '$lib/stores/trees.svelte';
 import { parkingStore } from '$lib/stores/parking.svelte';
@@ -59,6 +60,7 @@ function scheduleDeferredBoot(): void {
 		void cleanupLegacySyncData();
 		void initBackupReminder();
 		void initProPromo();
+		void initProListPromoDismiss();
 		void initDevProOverride();
 		registerTileCacheInterceptor();
 	};
@@ -152,11 +154,20 @@ export function runAppBoot(options: AppBootOptions): AppBootCleanup {
 
 	void initSecuritySettings()
 		.then(() => Promise.all([initTrees(), initBackupPasswordSettings(), initApiSettings()]))
-		.then(() =>
-			import('$lib/utils/refreshLocationLabels').then((mod) =>
+		.then(() => {
+			// Labels refresh persists trees; only run once thumbs hydration finished
+			// (mediaHydration !== 'full' persists are media-safe).
+			if (!treeStore.loaded) return;
+			return import('$lib/utils/refreshLocationLabels').then((mod) =>
 				mod.refreshLocationLabelsForUiLocale(appearanceSettingsState.locale)
-			)
-		);
+			);
+		})
+		.catch((error) => {
+			console.error('App security/data boot failed:', error);
+			// Ensure tree boot still runs if security init rejected before .then(initTrees).
+			void initTrees();
+			void initBackupPasswordSettings();
+		});
 
 	scheduleDeferredBoot();
 

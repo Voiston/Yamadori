@@ -1,398 +1,211 @@
 <script lang="ts">
-
 	import { getTreeDisplayLabel, type Tree } from '$lib/types/tree';
-
-	import { base } from '$app/paths';
-
+	import { resolve } from '$app/paths';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
-
 	import { copyCoordinates } from '$lib/utils/clipboard';
-
 	import { openNavigation } from '$lib/utils/navigation';
-
 	import { onlineState } from '$lib/utils/online.svelte';
-
 	import { shareTree, shareTreePhoto } from '$lib/utils/share';
-
 	import { isNativeApp } from '$lib/utils/platform';
 	import { showDetailFeedback } from '$lib/stores/appToast.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
-
-
 	let {
-
 		tree,
-
 		pageUrl,
-
 		simpleMode = false,
-
 		onedit
-
 	}: {
-
 		tree: Tree;
-
 		pageUrl: string;
-
 		simpleMode?: boolean;
-
 		onedit?: () => void;
-
 	} = $props();
 
-
+	const hasGps = $derived(tree.latitude !== null && tree.longitude !== null);
 
 	const compassLabel = $derived.by(() => {
-
 		void appearanceSettingsState.locale;
-
 		return m.onboarding_compass_title().replace(/\s*\([^)]*\)$/, '');
-
 	});
 
-
-
 	async function handleNavigate() {
-
 		if (tree.latitude === null || tree.longitude === null) return;
-
 		openNavigation(tree.latitude, tree.longitude, getTreeDisplayLabel(tree));
-
 	}
-
-
 
 	async function handleShare() {
-
 		const result = await shareTree(tree, pageUrl);
-
 		if (result === 'shared') {
-
 			showDetailFeedback(m.feedback_shared());
-
 		} else if (result === 'copied') {
-
 			showDetailFeedback(m.feedback_copied());
-
 		} else {
-
 			showDetailFeedback(m.feedback_copy_failed());
-
 		}
-
 	}
 
-
-
 	async function handleCopy() {
-
 		if (tree.latitude === null || tree.longitude === null) return;
-
 		const ok = await copyCoordinates(tree.latitude, tree.longitude);
-
 		showDetailFeedback(ok ? m.feedback_coords_copied() : m.feedback_copy_failed());
-
 	}
 
 	async function handleSharePhoto() {
-
 		const result = await shareTreePhoto(tree);
-
 		if (result === 'shared') {
-
 			showDetailFeedback(m.feedback_photo_shared());
-
 		} else {
-
 			showDetailFeedback(m.feedback_copy_failed());
-
 		}
-
 	}
-
 </script>
 
-
-
-<div class="grid grid-cols-2 gap-3">
-
-	{#if tree.latitude !== null && tree.longitude !== null}
-
-		<a
-
-			href="{base}/tree/{tree.id}/compass"
-
-			class="flex h-12 items-center justify-center gap-2 rounded-xl bg-forest-800 text-sm font-semibold text-white transition active:scale-[0.98]"
-
-		>
-
-			<svg
-
-				xmlns="http://www.w3.org/2000/svg"
-
-				viewBox="0 0 24 24"
-
-				fill="none"
-
-				stroke="currentColor"
-
-				stroke-width="2"
-
-				class="h-4 w-4"
-
-				aria-hidden="true"
-
+<div class="flex flex-col gap-3">
+	{#if hasGps}
+		<div class="grid grid-cols-2 gap-3">
+			<a
+				href={resolve('/tree/[id]/compass', { id: tree.id })}
+				class="btn-primary gap-2 text-sm"
 			>
-
-				<circle cx="12" cy="12" r="10" />
-
-				<path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-
-				<path d="M12 8l3 8-3-2-3 2 3-8z" fill="currentColor" stroke="none" />
-
-			</svg>
-
-			{compassLabel}
-
-		</a>
-
-
-
-		<button
-
-			type="button"
-
-			onclick={handleNavigate}
-
-			class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
-
-		>
-
-			<svg
-
-				xmlns="http://www.w3.org/2000/svg"
-
-				viewBox="0 0 24 24"
-
-				fill="none"
-
-				stroke="currentColor"
-
-				stroke-width="2"
-
-				class="h-4 w-4"
-
-				aria-hidden="true"
-
-			>
-
-				<path d="M3 11l19-9-9 19-2-8-8-2z" stroke-linecap="round" stroke-linejoin="round" />
-
-			</svg>
-
-			{m.tree_navigate()}
-
-		</button>
-
-
-
-		<a
-
-			href="{base}/map?focus={tree.id}"
-
-			class="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
-
-			title={!onlineState.online ? m.feedback_map_offline() : undefined}
-
-		>
-
-			<span class="flex items-center gap-2">
-
 				<svg
-
 					xmlns="http://www.w3.org/2000/svg"
-
 					viewBox="0 0 24 24"
-
 					fill="none"
-
 					stroke="currentColor"
-
 					stroke-width="2"
-
 					class="h-4 w-4"
-
 					aria-hidden="true"
-
 				>
-
-					<path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" />
-
-					<path d="M8 2v16M16 6v16" />
-
+					<circle cx="12" cy="12" r="10" />
+					<path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+					<path d="M12 8l3 8-3-2-3 2 3-8z" fill="currentColor" stroke="none" />
 				</svg>
+				{compassLabel}
+			</a>
 
-				{m.nav_map()}
-
-			</span>
-
-			{#if !onlineState.online}
-
-				<span class="text-[10px] font-normal text-amber-700">{m.feedback_compass_recommended()}</span>
-
-			{/if}
-
-		</a>
-
-
-
-		<button
-
-			type="button"
-
-			onclick={handleCopy}
-
-			class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
-
-		>
-
-			<svg
-
-				xmlns="http://www.w3.org/2000/svg"
-
-				viewBox="0 0 24 24"
-
-				fill="none"
-
-				stroke="currentColor"
-
-				stroke-width="2"
-
-				class="h-4 w-4"
-
-				aria-hidden="true"
-
+			<button
+				type="button"
+				onclick={handleNavigate}
+				class="btn-secondary btn-secondary--strong"
 			>
-
-				<rect x="9" y="9" width="13" height="13" rx="2" />
-
-				<path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-
-			</svg>
-
-			Copier GPS
-
-		</button>
-
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					class="h-4 w-4"
+					aria-hidden="true"
+				>
+					<path d="M3 11l19-9-9 19-2-8-8-2z" stroke-linecap="round" stroke-linejoin="round" />
+				</svg>
+				{m.tree_navigate()}
+			</button>
+		</div>
 	{/if}
 
-
-
-	<button
-
-		type="button"
-
-		onclick={handleShare}
-
-		class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
-
-	>
-
-		<svg
-
-			xmlns="http://www.w3.org/2000/svg"
-
-			viewBox="0 0 24 24"
-
-			fill="none"
-
-			stroke="currentColor"
-
-			stroke-width="2"
-
-			class="h-4 w-4"
-
-			aria-hidden="true"
-
-		>
-
-			<path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
-
-			<polyline points="16 6 12 2 8 6" />
-
-			<line x1="12" y1="2" x2="12" y2="15" />
-
-		</svg>
-
-		{m.action_share()}
-
-	</button>
-
-
-
-	{#if !simpleMode}
-
-	{#if isNativeApp() && tree.photos.length > 0}
+	<div class="grid grid-cols-2 gap-3">
+		{#if hasGps}
+			<a
+				href="{resolve('/map')}?focus={tree.id}"
+				class="btn-secondary flex-col gap-0.5"
+				title={!onlineState.online ? m.feedback_map_offline() : undefined}
+			>
+				<span class="flex items-center gap-2">
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						class="h-4 w-4"
+						aria-hidden="true"
+					>
+						<path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" />
+						<path d="M8 2v16M16 6v16" />
+					</svg>
+					{m.nav_map()}
+				</span>
+				{#if !onlineState.online}
+					<span class="text-[10px] font-normal text-amber-700">{m.feedback_compass_recommended()}</span>
+				{/if}
+			</a>
+		{/if}
 
 		<button
-
 			type="button"
-
-			onclick={handleSharePhoto}
-
-			class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
-
+			onclick={() => onedit?.()}
+			class="btn-secondary {!hasGps ? 'col-span-2' : ''}"
 		>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				class="h-4 w-4"
+				aria-hidden="true"
+			>
+				<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+				<path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+			</svg>
+			{m.action_edit()}
+		</button>
+	</div>
 
-			{m.share_photo()}
+	<div class="flex flex-wrap items-center gap-1">
+		{#if hasGps}
+			<button
+				type="button"
+				onclick={handleCopy}
+				class="flex h-10 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-muted transition active:scale-[0.98] hover:bg-forest-50 hover:text-forest-800"
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					class="h-3.5 w-3.5"
+					aria-hidden="true"
+				>
+					<rect x="9" y="9" width="13" height="13" rx="2" />
+					<path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+				</svg>
+				{m.action_copy_gps()}
+			</button>
+		{/if}
 
+		<button
+			type="button"
+			onclick={handleShare}
+			class="flex h-10 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-muted transition active:scale-[0.98] hover:bg-forest-50 hover:text-forest-800"
+		>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				class="h-3.5 w-3.5"
+				aria-hidden="true"
+			>
+				<path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
+				<polyline points="16 6 12 2 8 6" />
+				<line x1="12" y1="2" x2="12" y2="15" />
+			</svg>
+			{m.action_share()}
 		</button>
 
-	{/if}
-
-	{/if}
-
-
-
-	<button
-
-		type="button"
-
-		onclick={() => onedit?.()}
-
-		class="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-forest-900 transition active:scale-[0.98]"
-
-	>
-
-		<svg
-
-			xmlns="http://www.w3.org/2000/svg"
-
-			viewBox="0 0 24 24"
-
-			fill="none"
-
-			stroke="currentColor"
-
-			stroke-width="2"
-
-			class="h-4 w-4"
-
-			aria-hidden="true"
-
-		>
-
-			<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-
-			<path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-
-		</svg>
-
-		{m.action_edit()}
-
-	</button>
-
+		{#if !simpleMode && isNativeApp() && tree.photos.length > 0}
+			<button
+				type="button"
+				onclick={handleSharePhoto}
+				class="flex h-10 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-muted transition active:scale-[0.98] hover:bg-forest-50 hover:text-forest-800"
+			>
+				{m.share_photo()}
+			</button>
+		{/if}
+	</div>
 </div>
-

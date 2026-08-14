@@ -1,16 +1,22 @@
 <script lang="ts">
 	import FilterChips from '$lib/components/FilterChips.svelte';
+	import ListProStrip from '$lib/components/ListProStrip.svelte';
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import SortSelect from '$lib/components/SortSelect.svelte';
 	import TreeList from '$lib/components/TreeList.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import { proEntitlementState } from '$lib/stores/proEntitlement.svelte';
+	import {
+		dismissProListPromo,
+		isProListPromoDismissed,
+		proListPromoDismissState
+	} from '$lib/stores/proListPromoDismiss.svelte';
 	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import { proPromoState } from '$lib/stores/proPromo.svelte';
 	import { treeStore } from '$lib/stores/trees.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { Tree } from '$lib/types/tree';
-	import { getHiddenTreeCount, isProUnlocked } from '$lib/utils/featurePolicy';
+	import { getFreeSlotsRemaining, getHiddenTreeCount, isProUnlocked } from '$lib/utils/featurePolicy';
 	import { POOR_ACCURACY_THRESHOLD_M } from '$lib/utils/geo';
 	import { haversineDistanceM } from '$lib/utils/haversine';
 	import { getProPromoState } from '$lib/utils/proOffer';
@@ -158,12 +164,24 @@
 
 	const isPro = $derived(isProUnlocked());
 	const hiddenTreeCount = $derived(getHiddenTreeCount(treeStore.trees));
+	const freeSlotsRemaining = $derived(getFreeSlotsRemaining(treeStore.trees.length));
 	const promoActive = $derived.by(() => {
 		void proPromoState.promoEndsAt;
 		void proEntitlementState.isPro;
 		return getProPromoState(proPromoState.promoEndsAt).phase === 'promo';
 	});
-	const showProConvertStrip = $derived(!isPro && (hiddenTreeCount > 0 || promoActive));
+	const promoListDismissed = $derived.by(() => {
+		void proListPromoDismissState.dismissedUntil;
+		void proListPromoDismissState.loaded;
+		return isProListPromoDismissed();
+	});
+	const showLockedStrip = $derived(!isPro && hiddenTreeCount > 0);
+	const showPromoStrip = $derived(
+		!isPro && promoActive && hiddenTreeCount === 0 && !promoListDismissed
+	);
+	const showFreeSlotWarn = $derived(
+		!isPro && freeSlotsRemaining === 1 && !showLockedStrip && !showPromoStrip
+	);
 </script>
 
 <svelte:head>
@@ -171,21 +189,26 @@
 </svelte:head>
 
 <div class="flex flex-col gap-4 md:gap-6">
-	{#if showProConvertStrip}
+	{#if showLockedStrip}
+		<ListProStrip
+			variant="locked"
+			hiddenCount={hiddenTreeCount}
+			onclick={() => openProPaywall('tree_locked')}
+		/>
+	{:else if showPromoStrip}
+		<ListProStrip
+			variant="promo"
+			onclick={() => openProPaywall('tree_limit')}
+			ondismiss={() => void dismissProListPromo()}
+		/>
+	{:else if showFreeSlotWarn}
 		<button
 			type="button"
-			class="w-full rounded-xl border border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 px-4 py-3 text-left transition active:scale-[0.99]"
-			onclick={() =>
-				openProPaywall(hiddenTreeCount > 0 ? 'tree_locked' : 'tree_limit')}
+			class="app-card w-full px-4 py-3 text-left transition active:scale-[0.99]"
+			onclick={() => openProPaywall('tree_limit')}
 		>
-			<p class="text-sm font-semibold text-amber-950">
-				{#if hiddenTreeCount > 0}
-					{m.pro_trees_hidden_banner({ count: String(hiddenTreeCount) })}
-				{:else}
-					{m.pro_promo_title()}
-				{/if}
-			</p>
-			<p class="mt-1 text-xs font-medium text-amber-900">{m.pro_upgrade_cta()}</p>
+			<p class="text-sm font-medium text-forest-900">{m.pro_free_slot_remaining()}</p>
+			<p class="mt-0.5 text-xs text-muted">{m.pro_upgrade_cta()}</p>
 		</button>
 	{/if}
 
@@ -212,5 +235,11 @@
 		{/if}
 	{/if}
 
-	<TreeList {trees} {distanceByTreeId} {emptyTitle} {emptyMessage} />
+	<TreeList
+		{trees}
+		{distanceByTreeId}
+		{emptyTitle}
+		{emptyMessage}
+		showCaptureCta={!isFiltering}
+	/>
 </div>

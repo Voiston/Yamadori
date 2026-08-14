@@ -1,13 +1,20 @@
-import { secureIdbGet, secureIdbSet } from '$lib/utils/secure-idb';
+import { secureIdbDel, secureIdbGet, secureIdbSet } from '$lib/utils/secure-idb';
 import { toStorable } from '$lib/utils/idb-store';
-import type { Tree } from '$lib/types/tree';
+import { getTreeMediaHydration, type Tree } from '$lib/types/tree';
 import {
+	collectAllReferencedMediaIds,
 	indexEntryFromTree,
 	treeToIndexEntry,
 	treeToStoredRecord,
 	type MediaExtraction
 } from './codec';
-import type { StoredMediaRecord, StoredTreeRecord, TreeIndexEntry } from './types';
+import type {
+	StoredMediaRecord,
+	StoredTreeRecord,
+	StoredTreeVisit,
+	StoredVoiceNoteRef,
+	TreeIndexEntry
+} from './types';
 import { STORAGE_KEY_INDEX, mediaStorageKey, treeStorageKey } from './types';
 
 async function persistMediaExtractions(extractions: MediaExtraction[]): Promise<void> {
@@ -16,9 +23,52 @@ async function persistMediaExtractions(extractions: MediaExtraction[]): Promise<
 	}
 }
 
+/** Keep disk media refs when persisting a partially hydrated in-memory tree. */
+export function mergePreservedMediaRefs(
+	next: StoredTreeRecord,
+	previous: StoredTreeRecord
+): StoredTreeRecord {
+	const previousByVisitId = new Map(previous.visits.map((visit) => [visit.id, visit]));
+
+	const visits: StoredTreeVisit[] = next.visits.map((visit) => {
+		const prior = previousByVisitId.get(visit.id);
+		if (!prior) return visit;
+
+		return {
+			...visit,
+			photoFullIds: [...(prior.photoFullIds ?? [])],
+			photoThumbIds: [...(prior.photoThumbIds ?? [])],
+			photoFullId: prior.photoFullId,
+			photoThumbId: prior.photoThumbId,
+			voiceNote: prior.voiceNote
+				? ({ ...prior.voiceNote } satisfies StoredVoiceNoteRef)
+				: prior.voiceNote === null
+					? null
+					: visit.voiceNote
+		};
+	});
+
+	return {
+		...next,
+		visits,
+		voiceNote: previous.voiceNote
+			? ({ ...previous.voiceNote } satisfies StoredVoiceNoteRef)
+			: previous.voiceNote === null
+				? null
+				: next.voiceNote
+	};
+}
+
 export async function persistTreeRecord(tree: Tree): Promise<StoredTreeRecord> {
+	const previous = await secureIdbGet<StoredTreeRecord>(treeStorageKey(tree.id));
 	const mediaById = new Map<string, StoredMediaRecord>();
-	const stored = treeToStoredRecord(tree, mediaById);
+	let stored = treeToStoredRecord(tree, mediaById);
+	const hydration = getTreeMediaHydration(tree);
+	const preserveMedia = hydration !== 'full' && Boolean(previous);
+
+	if (preserveMedia && previous) {
+		stored = mergePreservedMediaRefs(stored, previous);
+	}
 
 	const extractions: MediaExtraction[] = [...mediaById.entries()].map(([mediaId, record]) => ({
 		mediaId,
@@ -27,6 +77,16 @@ export async function persistTreeRecord(tree: Tree): Promise<StoredTreeRecord> {
 
 	await persistMediaExtractions(extractions);
 	await secureIdbSet(treeStorageKey(tree.id), toStorable(stored));
+
+	if (previous && !preserveMedia) {
+		const nextIds = new Set(collectAllReferencedMediaIds(stored));
+		for (const mediaId of collectAllReferencedMediaIds(previous)) {
+			if (!nextIds.has(mediaId)) {
+				await secureIdbDel(mediaStorageKey(mediaId));
+			}
+		}
+	}
+
 	return stored;
 }
 

@@ -10,41 +10,18 @@
 
 		<meta name="theme-color" content="#1a2e1a" />
 
-		<script>
+		<!--
+			CSP for Capacitor WebView (androidScheme: https).
+			script-src keeps 'unsafe-inline' because adapter-static injects an inline
+			SvelteKit bootstrap in index.html (kit.start). Remote scripts stay blocked.
+			connect-src allows https APIs (tiles, weather, cadastre) plus the ES cadastre HTTP fallback.
+		-->
+		<meta
+			http-equiv="Content-Security-Policy"
+			content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: http://ovc.catastro.meh.es; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+		/>
 
-			(function () {
-
-				try {
-
-					var locale = localStorage.getItem('PARAGLIDE_LOCALE');
-
-					if (locale) {
-
-						document.documentElement.lang = locale;
-
-					}
-
-					var themeMeta = document.querySelector('meta[name="theme-color"]');
-
-					if (localStorage.getItem('yamadori-outdoor-mode') === '1') {
-
-						document.documentElement.dataset.outdoor = 'true';
-
-						if (themeMeta) themeMeta.setAttribute('content', '#ffffff');
-
-					} else if (localStorage.getItem('yamadori-dark-mode') === '1') {
-
-						document.documentElement.dataset.dark = 'true';
-
-						if (themeMeta) themeMeta.setAttribute('content', '#000000');
-
-					}
-
-				} catch (e) {}
-
-			})();
-
-		</script>
+		<script src="%sveltekit.assets%/boot-theme.js"></script>
 
 		<meta name="description" content="Repérage d'arbres en forêt — Yamadori Scouting" />
 
@@ -59,4 +36,3 @@
 	</body>
 
 </html>
-

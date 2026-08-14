@@ -96,7 +96,7 @@
 				</ul>
 				{#if breakdown.max !== undefined}
 					<p class="mt-2 border-t border-gray-100 pt-2 font-medium text-forest-900">
-						Total : {displayValue}
+						{m.yrs_total({ value: displayValue })}
 					</p>
 				{/if}
 			{/if}

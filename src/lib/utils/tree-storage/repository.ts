@@ -57,10 +57,10 @@ export async function getTreeStorageVersion(): Promise<number> {
 	}
 
 	const version = await readStorageVersion();
-	if (version === TREE_STORAGE_VERSION) {
-		storageVersionCache = TREE_STORAGE_VERSION;
-		setCachedStorageVersion(TREE_STORAGE_VERSION);
-		return TREE_STORAGE_VERSION;
+	if (version !== undefined && version >= 1) {
+		storageVersionCache = version;
+		setCachedStorageVersion(version);
+		return version;
 	}
 
 	const legacy = await get<unknown>(STORAGE_KEY_LEGACY);
@@ -77,7 +77,13 @@ export async function ensureTreeStorageMigrated(
 	onProgress?: TreeStorageMigrationCallback
 ): Promise<void> {
 	const version = await getTreeStorageVersion();
-	if (version === TREE_STORAGE_VERSION) {
+	if (version >= 1) {
+		if (version < TREE_STORAGE_VERSION) {
+			const { writeStorageVersion } = await import('./version');
+			await writeStorageVersion(TREE_STORAGE_VERSION);
+			storageVersionCache = TREE_STORAGE_VERSION;
+			setCachedStorageVersion(TREE_STORAGE_VERSION);
+		}
 		return;
 	}
 

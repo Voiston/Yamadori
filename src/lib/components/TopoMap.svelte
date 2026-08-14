@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { getTreeDisplayLabel, type Tree } from '$lib/types/tree';
-	import { base } from '$app/paths';
+	import type { Tree } from '$lib/types/tree';
+	import { base, resolve } from '$app/paths';
 	import { POOR_ACCURACY_THRESHOLD_M } from '$lib/utils/geo';
 	import { formatAccuracy } from '$lib/utils/gps';
+	import { buildTreePopupHtml } from '$lib/utils/map/treePopupHtml';
 	import {
 		createAccuracyCircleFeature,
 		createApproachLine,
@@ -52,6 +53,8 @@
 	} from '$lib/utils/map/mapMarkerStyles';
 	import ParkingPanel from '$lib/components/ParkingPanel.svelte';
 	import MapDownloadOverlay from '$lib/components/MapDownloadOverlay.svelte';
+	import MapOnboardingSheet from '$lib/components/MapOnboardingSheet.svelte';
+	import MapControlsMenu from '$lib/components/MapControlsMenu.svelte';
 	import CadastreBanner from '$lib/components/CadastreBanner.svelte';
 	import VetoLegalChecklist from '$lib/components/VetoLegalChecklist.svelte';
 	import { cadastreLookup, resolveCadastre, resetCadastreLookup } from '$lib/stores/cadastreLookup.svelte';
@@ -69,6 +72,15 @@
 	import { resolveMapTabGpsProfileFromProximity, resolveMapParkingProximity } from '$lib/utils/mapTabGpsProfile';
 	import { hapticSuccess } from '$lib/utils/haptics';
 	import { nativeTap } from '$lib/utils/native-touch';
+	import { MOTION_MS, prefersReducedMotion } from '$lib/utils/motion';
+	import {
+		buildMapOnboardingSteps,
+		resolveMapOnboardingLayersVariant,
+		type MapOnboardingLayersVariant,
+		type MapOnboardingStepId
+	} from '$lib/utils/mapOnboarding';
+	import { getGeoCapabilities } from '$lib/geo/capabilities';
+	import { getMapOnboardingSources } from '$lib/geo/mapOnboardingSources';
 	import maplibregl from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import { onMount } from 'svelte';
@@ -110,6 +122,19 @@
 	let basemap = $state<MapBasemap>('topo');
 	let showCadastreLayer = $state(false);
 	let showProtectedLayer = $state(false);
+	let showMapOnboarding = $state(false);
+	let mapOnboardingSteps = $state<MapOnboardingStepId[]>([]);
+	let mapOnboardingIndex = $state(0);
+	let mapOnboardingLayersVariant = $state<MapOnboardingLayersVariant>('both');
+	let mapOnboardingCadastrePartial = $state(false);
+	let mapOnboardingCadastreSource = $state('parcel data');
+	let mapOnboardingProtectedSource = $state('protected areas');
+	let pulseMenuButton = $state(false);
+	let pulseMenuButtonTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const mapOnboardingStepId = $derived(
+		mapOnboardingSteps[mapOnboardingIndex] ?? 'intro'
+	);
 	type MapCadastreSelection = {
 		latitude: number;
 		longitude: number;
@@ -615,28 +640,13 @@
 		});
 	}
 
-	function escapeHtml(text: string): string {
-		return text
-			.replaceAll('&', '&amp;')
-			.replaceAll('<', '&lt;')
-			.replaceAll('>', '&gt;')
-			.replaceAll('"', '&quot;');
-	}
-
 	function buildPopupHtml(tree: Tree): string {
-		const link = `${base}/tree/${encodeURIComponent(tree.id)}`;
-		const outdoor = appearanceSettingsState.outdoorMode;
-		const secondaryColor = outdoor ? '#000000' : '#374151';
-		const mutedColor = outdoor ? '#000000' : '#6b7280';
-		const linkColor = outdoor ? '#000000' : '#2d4a2d';
-		const locationLine = tree.locationLabel
-			? `<br><span style="color:${secondaryColor};font-size:13px;font-weight:${outdoor ? 700 : 400};">${escapeHtml(tree.locationLabel)}</span>`
-			: '';
-		const accuracyLine =
-			tree.accuracyMeters !== null
-				? `<br><span style="color:${mutedColor};font-size:12px;font-weight:${outdoor ? 700 : 400};">${escapeHtml(formatAccuracy(tree.accuracyMeters))}</span>`
-				: '';
-		return `<strong style="color:#000000;">${escapeHtml(getTreeDisplayLabel(tree))}</strong>${locationLine}${accuracyLine}<br><a href="${link}" style="color:${linkColor};font-weight:700;">${escapeHtml(m.action_view())}</a>`;
+		return buildTreePopupHtml(tree, {
+			base,
+			outdoor: appearanceSettingsState.outdoorMode,
+			viewLabel: m.action_view(),
+			formatAccuracy
+		});
 	}
 
 	function createTreeMarkerElement(): HTMLDivElement {
@@ -686,6 +696,13 @@
 		mapCadastreSelection = { latitude, longitude, stored, species, treeId, source };
 		cadastreDismissedKey = '';
 		vetoChecklistOpen = false;
+		if (
+			showMapOnboarding &&
+			mapOnboardingStepId === 'tap' &&
+			source !== 'focus'
+		) {
+			advanceMapOnboarding();
+		}
 	}
 
 	function syncCadastrePinMarker(): void {
@@ -1105,6 +1122,102 @@
 		setProtectedAreasLayerVisibility(map, next);
 	}
 
+	const MAP_ONBOARDING_KEY = 'yamadori-map-onboarding-seen';
+	const MAP_LAYERS_COACH_KEY = 'yamadori-map-layers-coach-seen';
+
+	function markMapOnboardingSeen(): void {
+		try {
+			localStorage.setItem(MAP_ONBOARDING_KEY, '1');
+		} catch {
+			/* ignore quota / private mode */
+		}
+	}
+
+	function dismissMapOnboarding(): void {
+		showMapOnboarding = false;
+		mapOnboardingIndex = 0;
+		mapOnboardingSteps = [];
+		pulseMenuButton = false;
+		markMapOnboardingSeen();
+	}
+
+	function pulseMenuControl(): void {
+		if (prefersReducedMotion()) return;
+		pulseMenuButton = true;
+		if (pulseMenuButtonTimer) clearTimeout(pulseMenuButtonTimer);
+		pulseMenuButtonTimer = setTimeout(() => {
+			pulseMenuButton = false;
+			pulseMenuButtonTimer = null;
+		}, MOTION_MS.pulse);
+	}
+
+	function advanceMapOnboarding(): void {
+		if (mapOnboardingIndex >= mapOnboardingSteps.length - 1) {
+			dismissMapOnboarding();
+			return;
+		}
+		mapOnboardingIndex += 1;
+		if (mapOnboardingSteps[mapOnboardingIndex] === 'menu') {
+			pulseMenuControl();
+		}
+	}
+
+	function enableUsefulLayers(): void {
+		if (mapOnboardingStepId !== 'layers') return;
+		if (cadastreOverlayAvailable) {
+			setCadastreLayer(true);
+		}
+		if (protectedOverlayAvailable) {
+			setProtectedLayer(true);
+		}
+		pulseMenuControl();
+		advanceMapOnboarding();
+	}
+
+	function hasSeenMapOnboarding(): boolean {
+		try {
+			if (localStorage.getItem(MAP_ONBOARDING_KEY) === '1') return true;
+			if (localStorage.getItem(MAP_LAYERS_COACH_KEY) === '1') {
+				markMapOnboardingSeen();
+				return true;
+			}
+		} catch {
+			return true;
+		}
+		return false;
+	}
+
+	function startMapOnboarding(): void {
+		const center = map?.getCenter();
+		const lat = center?.lat ?? defaultCenter[1];
+		const lng = center?.lng ?? defaultCenter[0];
+		const country = lastMapStyleCountry ?? resolveCountry(lat, lng);
+		const location = { latitude: lat, longitude: lng };
+		const provider = getMapProvider(country, location);
+		const geo = getGeoCapabilities(country);
+		const caps = {
+			hasCadastreOverlay: Boolean(provider.cadastreOverlay),
+			hasProtectedOverlay: Boolean(provider.protectedAreasOverlay),
+			cadastreLevel: geo.cadastre
+		};
+		mapOnboardingSteps = buildMapOnboardingSteps(caps);
+		mapOnboardingLayersVariant = resolveMapOnboardingLayersVariant(caps);
+		mapOnboardingCadastrePartial = caps.cadastreLevel === 'partial';
+		const sources = getMapOnboardingSources(country);
+		mapOnboardingCadastreSource = sources.cadastreSource;
+		mapOnboardingProtectedSource = sources.protectedSource;
+		mapOnboardingIndex = 0;
+		showMapOnboarding = true;
+		pulseMenuControl();
+	}
+
+	$effect(() => {
+		if (embedded || !mapReady) return;
+		if (showMapOnboarding) return;
+		if (hasSeenMapOnboarding()) return;
+		startMapOnboarding();
+	});
+
 	function applyRecenterCamera(position: UserPosition, duration = 600): void {
 		if (!map) return;
 
@@ -1510,6 +1623,10 @@
 				clearTimeout(styleSwitchTimer);
 				styleSwitchTimer = null;
 			}
+			if (pulseMenuButtonTimer) {
+				clearTimeout(pulseMenuButtonTimer);
+				pulseMenuButtonTimer = null;
+			}
 			pendingFocusPopupMarker = undefined;
 			mapReady = false;
 			mapInitDone = false;
@@ -1698,9 +1815,10 @@
 	});
 
 	const showCadastreBanner = $derived(
-		(embedded
-			? cadastreDisplay !== null
-			: (cadastreBannerLoading || cadastreDisplay !== null) && mapCadastreSelection !== null) &&
+		!showMapOnboarding &&
+			(embedded
+				? cadastreDisplay !== null
+				: (cadastreBannerLoading || cadastreDisplay !== null) && mapCadastreSelection !== null) &&
 			cadastreTargetKey !== '' &&
 			cadastreTargetKey !== cadastreDismissedKey
 	);
@@ -1824,131 +1942,51 @@
 </script>
 
 <div class="relative h-full min-h-0 w-full flex-1">
-	<div bind:this={mapContainer} class="topo-map absolute inset-0 h-full w-full"></div>
+	<div
+		bind:this={mapContainer}
+		class="topo-map absolute inset-0 h-full w-full"
+		class:topo-map--embedded={embedded}
+	></div>
 
 	{#if !embedded}
-	<div class="map-controls-top absolute inset-x-2 z-30 pointer-events-none">
-		<div class="pointer-events-auto flex items-center gap-1 overflow-x-auto pb-0.5">
-			<div class="flex shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-sm backdrop-blur-sm">
-				<button
-					type="button"
-					class="px-3 py-2 text-xs font-semibold transition {basemap === 'topo'
-						? 'bg-forest-800 text-white'
-						: 'text-forest-900'}"
-					onclick={() => setBasemap('topo')}
-				>
-					{m.map_layer_plan()}
-				</button>
-				<button
-					type="button"
-					class="px-3 py-2 text-xs font-semibold transition {basemap === 'satellite'
-						? 'bg-forest-800 text-white'
-						: 'text-forest-900'}"
-					onclick={() => setBasemap('satellite')}
-				>
-					{m.map_layer_satellite()}
-				</button>
-			</div>
-			<div class="flex shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-sm backdrop-blur-sm">
-				<button
-					type="button"
-					class="px-3 py-2 text-xs font-semibold transition {showCadastreLayer
-						? 'bg-forest-800 text-white'
-						: 'text-forest-900'}"
-					onclick={() => setCadastreLayer(!showCadastreLayer)}
-					disabled={!canUseApi('ignMap') || !cadastreOverlayAvailable}
-					title={!cadastreOverlayAvailable
-						? m.map_layer_cadastre_unavailable()
-						: !canUseApi('ignMap')
-							? onlineState.online
-								? getApiDisabledError('ignMap')
-								: m.settings_offline_map_hint()
-							: m.map_layer_cadastre_title()}
-				>
-					{m.map_layer_cadastre()}
-				</button>
-				<button
-					type="button"
-					class="px-3 py-2 text-xs font-semibold transition {showProtectedLayer
-						? 'bg-forest-800 text-white'
-						: 'text-forest-900'}"
-					onclick={() => setProtectedLayer(!showProtectedLayer)}
-					disabled={!canUseApi('ignMap') || !protectedOverlayAvailable}
-					title={!protectedOverlayAvailable
-						? undefined
-						: !canUseApi('ignMap')
-							? onlineState.online
-								? getApiDisabledError('ignMap')
-								: m.settings_offline_map_hint()
-							: m.map_layer_protected_title()}
-				>
-					{m.map_layer_protected()}
-				</button>
-			</div>
-			<div class="flex shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-sm backdrop-blur-sm">
-				<button
-					type="button"
-					class="px-3 py-2 text-xs font-semibold transition {viewMode === 'topdown'
-						? 'bg-forest-800 text-white'
-						: 'text-forest-900'}"
-					onclick={() => setViewMode('topdown')}
-				>
-					{m.map_view_topdown()}
-				</button>
-				<button
-					type="button"
-					class="px-3 py-2 text-xs font-semibold transition {viewMode === 'oblique'
-						? 'bg-forest-800 text-white'
-						: 'text-forest-900'}"
-					onclick={() => setViewMode('oblique')}
-				>
-					{m.map_view_oblique()}
-				</button>
-			</div>
-			{#if showCadastreLayer && cadastreOverlayAvailable && canUseApi('ignMap')}
-				<span
-					class="shrink-0 rounded-lg bg-white/90 px-2 py-1.5 text-[11px] text-gray-600 shadow-sm backdrop-blur-sm"
-				>
-					{m.map_cadastre_tap_hint()}
-				</span>
-			{/if}
-			{#if canUseApi('ignMap') && !downloadSelectionMode}
-				<button
-					type="button"
-					class="shrink-0 rounded-lg border border-forest-600/40 bg-forest-50/95 px-3 py-2 text-xs font-semibold text-forest-900 shadow-sm backdrop-blur-sm disabled:opacity-50"
-					onclick={startDownloadSelection}
-					disabled={downloadingZone || !mapReady}
-				>
-					{m.map_offline_button()}
-				</button>
-			{/if}
-			{#if cacheCount > 0}
-				<span
-					class="shrink-0 rounded-lg bg-white/90 px-2 py-1.5 text-[11px] text-gray-600 shadow-sm backdrop-blur-sm"
-				>
-					{m.settings_tiles_count({ count: cacheCount })}
-				</span>
-			{/if}
-		</div>
-	</div>
-	{/if}
-
-	{#if !embedded}
-	<MapDownloadOverlay
-		active={downloadSelectionMode}
-		tileCount={downloadTileCount}
-		downloading={downloadingZone}
-		progress={downloadProgress}
-		onCancel={cancelDownloadSelection}
-		onDownload={() => void handleDownloadZone()}
-	/>
-	{/if}
-
-	<div class="map-recenter-control pointer-events-auto absolute right-2 z-50">
+	<div class="map-controls-top absolute left-2 z-30 flex flex-col items-start gap-2 pointer-events-none">
+		<MapControlsMenu
+			{basemap}
+			{showCadastreLayer}
+			{showProtectedLayer}
+			{viewMode}
+			cadastreDisabled={!canUseApi('ignMap') || !cadastreOverlayAvailable}
+			protectedDisabled={!canUseApi('ignMap') || !protectedOverlayAvailable}
+			cadastreTitle={!cadastreOverlayAvailable
+				? m.map_layer_cadastre_unavailable()
+				: !canUseApi('ignMap')
+					? onlineState.online
+						? getApiDisabledError('ignMap')
+						: m.settings_offline_map_hint()
+					: m.map_layer_cadastre_title()}
+			protectedTitle={!protectedOverlayAvailable
+				? undefined
+				: !canUseApi('ignMap')
+					? onlineState.online
+						? getApiDisabledError('ignMap')
+						: m.settings_offline_map_hint()
+					: m.map_layer_protected_title()}
+			showCadastreHint={showCadastreLayer && cadastreOverlayAvailable && canUseApi('ignMap')}
+			offlineAvailable={canUseApi('ignMap') && !downloadSelectionMode}
+			{cacheCount}
+			{downloadingZone}
+			{mapReady}
+			pulseMenu={pulseMenuButton}
+			onbasemap={setBasemap}
+			oncadastre={() => setCadastreLayer(!showCadastreLayer)}
+			onprotected={() => setProtectedLayer(!showProtectedLayer)}
+			onviewmode={setViewMode}
+			onoffline={startDownloadSelection}
+		/>
 		<button
 			type="button"
 			use:nativeTap={{ onactivate: () => void handleRecenterButton(), label: 'map-recenter' }}
-			class="map-follow-toggle flex min-h-11 h-11 items-center justify-center gap-1.5 rounded-xl border px-3 text-sm font-semibold shadow-sm backdrop-blur-sm transition active:scale-[0.98] disabled:opacity-50 {followUser
+			class="map-follow-toggle pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border shadow-sm backdrop-blur-sm transition active:scale-[0.98] disabled:opacity-50 {followUser
 				? 'map-follow-toggle--active'
 				: 'border-gray-200 bg-white/95 text-forest-900'}"
 			disabled={!canRecenter}
@@ -1969,34 +2007,67 @@
 				<path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round" />
 				<path d="M12 5l-1.5 4.5H12h1.5L12 5z" fill="currentColor" stroke="none" />
 			</svg>
-			<span class="whitespace-nowrap">
-				{followUser ? m.map_follow_short_active() : m.map_follow_short()}
-			</span>
 		</button>
 	</div>
+	{/if}
+
+	{#if !embedded}
+	<MapDownloadOverlay
+		active={downloadSelectionMode}
+		tileCount={downloadTileCount}
+		downloading={downloadingZone}
+		progress={downloadProgress}
+		onCancel={cancelDownloadSelection}
+		onDownload={() => void handleDownloadZone()}
+	/>
+	{/if}
 
 	{#if !onlineState.online && cacheCount === 0 && !downloadSelectionMode && !embedded}
 		<div
-			class="pointer-events-none absolute inset-x-4 map-banner-top rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-center text-sm text-sky-900 shadow-sm"
+			class="pointer-events-none absolute inset-x-4 map-banner-top app-card px-4 py-3 text-center text-sm text-sky-900"
 			role="status"
 		>
 			{m.settings_offline_map_hint()}
 		</div>
 	{/if}
 
+	{#if showMapOnboarding && !embedded && !downloadSelectionMode}
+		<div class="map-onboarding-sheet pointer-events-auto">
+			<MapOnboardingSheet
+				stepId={mapOnboardingStepId}
+				stepIndex={mapOnboardingIndex + 1}
+				stepTotal={mapOnboardingSteps.length}
+				layersVariant={mapOnboardingLayersVariant}
+				cadastrePartial={mapOnboardingCadastrePartial}
+				cadastreSource={mapOnboardingCadastreSource}
+				protectedSource={mapOnboardingProtectedSource}
+				onenable={enableUsefulLayers}
+				onnext={advanceMapOnboarding}
+				ondone={dismissMapOnboarding}
+				onskip={dismissMapOnboarding}
+			/>
+		</div>
+	{/if}
+
 	{#if tileError}
 		<div
-			class="pointer-events-none absolute inset-x-4 map-banner-top rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-900 shadow-sm"
+			class="pointer-events-none absolute inset-x-4 map-banner-top app-card border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-900"
 			role="alert"
 		>
 			{tileError}
 		</div>
-	{:else if gpsCount === 0 && !embedded}
+	{:else if gpsCount === 0 && !embedded && !showMapOnboarding}
 		<div
-			class="pointer-events-none absolute inset-x-4 map-banner-top rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-900 shadow-sm"
+			class="pointer-events-auto absolute inset-x-4 map-banner-top app-card px-4 py-3 text-center shadow-sm"
 			role="status"
 		>
-			{m.gps_no_coords_saved()}
+			<p class="text-sm text-forest-900">{m.gps_no_coords_saved()}</p>
+			<a
+				href={resolve('/capture')}
+				class="btn-primary btn-primary--inline mt-3 !h-10 text-sm"
+			>
+				{m.nav_add()}
+			</a>
 		</div>
 	{/if}
 
@@ -2029,13 +2100,13 @@
 	{/if}
 
 	<div class="pointer-events-none absolute inset-x-4 bottom-4 z-10 flex flex-col gap-2">
-		{#if !embedded}
+		{#if !embedded && !showMapOnboarding}
 		<p
 			class="pointer-events-auto self-end max-w-[min(100%,18rem)] rounded bg-white/90 px-2 py-1 text-right text-[10px] leading-snug text-gray-600 shadow-sm"
 		>
 			{mapAttribution}
 		</p>
-		<div class="pointer-events-auto w-full">
+		<div class="pointer-events-auto w-full self-end">
 			<ParkingPanel />
 		</div>
 		{/if}
@@ -2046,5 +2117,15 @@
 	.topo-map :global(.maplibregl-ctrl-bottom-right),
 	.topo-map :global(.maplibregl-ctrl-bottom-left) {
 		display: none;
+	}
+
+	/* Clear compass overlay buttons (lock heading + dial toggle) at top-right. */
+	.topo-map--embedded :global(.maplibregl-ctrl-top-right) {
+		top: 4.75rem;
+	}
+
+	.topo-map--embedded :global(.maplibregl-ctrl-group button) {
+		width: 2.25rem;
+		height: 2.25rem;
 	}
 </style>

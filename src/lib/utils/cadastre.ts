@@ -264,23 +264,31 @@ export function getCadastreSummary(info: CadastreInfo): string {
 		case 'tribal':
 			return info.section === 'NZ'
 				? m.cadastre_summary_whenua_rahui({ unit })
-				: m.cadastre_summary_tribal({ unit });
+				: info.section === 'AU'
+					? m.cadastre_summary_capad_ipa({ unit })
+					: m.cadastre_summary_tribal({ unit });
 		case 'military':
 			return m.cadastre_summary_military({ unit });
 		case 'other_federal':
 			return info.section === 'NZ'
 				? m.cadastre_summary_doc_conservation({ unit })
-				: m.cadastre_summary_other_federal({ unit });
+				: info.section === 'AU'
+					? m.cadastre_summary_capad_conservation({ unit })
+					: m.cadastre_summary_other_federal({ unit });
 		case 'provincial_park':
 			return m.cadastre_summary_provincial_park({ unit });
 		case 'national_wildlife_area':
 			return m.cadastre_summary_nwa({ unit });
 		case 'ipca':
-			return m.cadastre_summary_ipca({ unit });
+			return info.section === 'AU'
+				? m.cadastre_summary_capad_ipa({ unit })
+				: m.cadastre_summary_ipca({ unit });
 		case 'crown_unverified':
 			return info.section === 'NZ'
 				? m.cadastre_summary_outside_pcl({ unit })
-				: m.cadastre_summary_crown_unverified({ unit });
+				: info.section === 'AU'
+					? m.cadastre_summary_outside_capad({ unit })
+					: m.cadastre_summary_crown_unverified({ unit });
 		default:
 			return m.cadastre_summary_private(args);
 	}
@@ -338,10 +346,15 @@ export function getCadastreBannerMessage(info: CadastreInfo): { title: string; d
 						title: m.cadastre_whenua_rahui_title({ unit }),
 						detail: m.cadastre_whenua_rahui_detail()
 					}
-				: {
-						title: m.cadastre_tribal_title({ unit }),
-						detail: m.cadastre_tribal_detail()
-					};
+				: info.section === 'AU'
+					? {
+							title: m.cadastre_capad_ipa_title({ unit }),
+							detail: m.cadastre_capad_ipa_detail()
+						}
+					: {
+							title: m.cadastre_tribal_title({ unit }),
+							detail: m.cadastre_tribal_detail()
+						};
 		case 'military':
 		case 'other_federal':
 			return info.section === 'NZ'
@@ -349,10 +362,15 @@ export function getCadastreBannerMessage(info: CadastreInfo): { title: string; d
 						title: m.cadastre_doc_conservation_title({ unit }),
 						detail: m.cadastre_doc_conservation_detail()
 					}
-				: {
-						title: m.cadastre_other_federal_title({ unit }),
-						detail: m.cadastre_other_federal_detail()
-					};
+				: info.section === 'AU'
+					? {
+							title: m.cadastre_capad_conservation_title({ unit }),
+							detail: m.cadastre_capad_conservation_detail()
+						}
+					: {
+							title: m.cadastre_other_federal_title({ unit }),
+							detail: m.cadastre_other_federal_detail()
+						};
 		case 'provincial_park':
 			return {
 				title: m.cadastre_provincial_park_title({ unit }),
@@ -364,20 +382,30 @@ export function getCadastreBannerMessage(info: CadastreInfo): { title: string; d
 				detail: m.cadastre_nwa_detail()
 			};
 		case 'ipca':
-			return {
-				title: m.cadastre_ipca_title({ unit }),
-				detail: m.cadastre_ipca_detail()
-			};
+			return info.section === 'AU'
+				? {
+						title: m.cadastre_capad_ipa_title({ unit }),
+						detail: m.cadastre_capad_ipa_detail()
+					}
+				: {
+						title: m.cadastre_ipca_title({ unit }),
+						detail: m.cadastre_ipca_detail()
+					};
 		case 'crown_unverified':
 			return info.section === 'NZ'
 				? {
 						title: m.cadastre_outside_pcl_title(),
 						detail: m.cadastre_outside_pcl_detail()
 					}
-				: {
-						title: m.cadastre_crown_unverified_title(),
-						detail: m.cadastre_crown_unverified_detail()
-					};
+				: info.section === 'AU'
+					? {
+							title: m.cadastre_outside_capad_title(),
+							detail: m.cadastre_outside_capad_detail()
+						}
+					: {
+							title: m.cadastre_crown_unverified_title(),
+							detail: m.cadastre_crown_unverified_detail()
+						};
 		default:
 			return {
 				title: m.cadastre_private_title(args),

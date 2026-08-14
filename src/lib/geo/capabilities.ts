@@ -141,6 +141,51 @@ export function getGeoCapabilities(country: CountryCode | null): GeoCapabilities
 				municipality: 'partial',
 				speciesProtection: 'partial'
 			};
+		case 'IE':
+			return {
+				country,
+				cadastre: 'partial',
+				protectedAreas: 'full',
+				municipality: 'partial',
+				speciesProtection: 'partial'
+			};
+		case 'DK':
+			return {
+				country,
+				cadastre: 'partial',
+				protectedAreas: 'full',
+				municipality: 'partial',
+				speciesProtection: 'partial'
+			};
+		case 'FI':
+			return {
+				country,
+				cadastre: 'partial',
+				protectedAreas: 'full',
+				municipality: 'partial',
+				speciesProtection: 'partial'
+			};
+		case 'AU':
+			return {
+				country,
+				cadastre: 'partial',
+				protectedAreas: 'full',
+				municipality: 'partial',
+				speciesProtection: 'partial'
+			};
+		case 'JP':
+			return {
+				country,
+				cadastre: 'partial',
+				/**
+				 * Static MOE national-park polygons (+ optional KSJ A10 merge).
+				 * Partial: prefectural parks / 国有林 not fully covered; no live API key.
+				 * Never fall through to EEA.
+				 */
+				protectedAreas: 'partial',
+				municipality: 'partial',
+				speciesProtection: 'partial'
+			};
 		default:
 			return {
 				country,

@@ -1,9 +1,11 @@
 <script lang="ts">
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { getGddBaseCategoryLabels, getGddSeasonZone } from '$lib/constants/gdd-config';
 	import { getGdd7dMetricHelp, getGddMetricHelp } from '$lib/constants/gdd-metric-help';
 	import { speciesDisplayName } from '$lib/constants/species-i18n';
 	import { agriData } from '$lib/stores/agriData.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import { getGddSeasonStartDate } from '$lib/utils/openMeteoArchive';
 	import GddSparkline from './GddSparkline.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
@@ -52,7 +54,9 @@
 		return raw ? speciesDisplayName(raw) : null;
 	});
 
-	const seasonZone = $derived(gdd ? getGddSeasonZone(gdd.cumulativeSinceJan1) : null);
+	const seasonZone = $derived(
+		gdd ? getGddSeasonZone(gdd.cumulativeSinceJan1, gdd.baseCategory) : null
+	);
 
 	const seasonZoneClass = $derived(
 		seasonZone?.tone === 'good'
@@ -61,6 +65,21 @@
 				? 'text-amber-800'
 				: 'text-muted'
 	);
+
+	const seasonStartLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (!data) return '';
+		const start = getGddSeasonStartDate(
+			data.fetchedAt ? new Date(data.fetchedAt) : new Date(),
+			data.latitude
+		);
+		return data.latitude < 0 ? m.gdd_season_start_july({ date: start }) : m.gdd_season_start_jan({ date: start });
+	});
+
+	const gddBaseTempLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return gdd ? m.gdd_base_temp({ temp: String(gdd.baseTempC) }) : '';
+	});
 </script>
 
 <div>
@@ -98,23 +117,19 @@
 	{#if offline && !gdd && !agriLoading && !fromCache}
 		<p class="mt-3 text-sm text-muted" role="status">{m.climate_online_required()}</p>
 	{:else if agriLoading}
-		<div class="mt-4 flex items-center gap-3 text-sm text-muted" role="status">
-			<svg
-				class="h-5 w-5 animate-spin text-forest-600"
-				xmlns="http://www.w3.org/2000/svg"
-				fill="none"
-				viewBox="0 0 24 24"
-				aria-hidden="true"
-			>
-				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-				></circle>
-				<path
-					class="opacity-75"
-					fill="currentColor"
-					d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-				></path>
-			</svg>
-			Calcul du cumul de degrés-jours…
+		<div
+			class="mt-4 flex flex-col gap-3 sm:grid sm:grid-cols-2 sm:gap-3"
+			role="status"
+			aria-busy="true"
+			aria-label={m.agri_loading()}
+		>
+			{#each [0, 1] as i (i)}
+				<div class="rounded-lg bg-violet-50/60 px-4 py-3">
+					<Skeleton class="h-3.5 w-28" decorative />
+					<Skeleton class="mt-2 h-8 w-20" decorative />
+					<Skeleton class="mt-2 h-3 w-full" decorative />
+				</div>
+			{/each}
 		</div>
 	{:else if gdd}
 		{#if gdd.phenology}
@@ -135,6 +150,9 @@
 					<p class="mt-1 text-sm font-medium {seasonZoneClass}" role="status">
 						{seasonZone.label}
 					</p>
+				{/if}
+				{#if seasonStartLabel}
+					<p class="mt-1 text-xs text-muted">{seasonStartLabel}</p>
 				{:else}
 					<p class="mt-1 text-xs text-muted">{m.gdd_since_jan1()}</p>
 				{/if}
@@ -169,7 +187,7 @@
 						<div>
 							<p class="font-medium text-forest-800">{gdd7dMetricHelp.interpretationTitle}</p>
 							<ul class="mt-2 space-y-1.5 text-muted">
-								{#each gdd7dMetricHelp.interpretationLevels as level}
+								{#each gdd7dMetricHelp.interpretationLevels as level (level.label)}
 									<li>
 										<span class="font-medium text-forest-800">{level.label}</span>
 										→ {level.text}
@@ -182,7 +200,7 @@
 							<p class="font-medium text-forest-800">{gdd7dMetricHelp.yamadoriTitle}</p>
 							<p class="mt-1 leading-relaxed text-muted">{gdd7dMetricHelp.yamadoriIntro}</p>
 							<ul class="mt-2 list-disc space-y-1.5 pl-4 text-muted">
-								{#each gdd7dMetricHelp.yamadoriPoints as point}
+								{#each gdd7dMetricHelp.yamadoriPoints as point (point)}
 									<li>{point}</li>
 								{/each}
 							</ul>
@@ -206,7 +224,7 @@
 		{/if}
 
 		<p class="mt-4 text-xs text-muted">
-			T° base : {gdd.baseTempC} °C ({baseCategoryLabel})
+			{gddBaseTempLabel} ({baseCategoryLabel})
 			{#if speciesDisplay}
 				· {speciesDisplay}
 			{/if}

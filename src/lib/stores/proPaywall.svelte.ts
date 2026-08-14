@@ -14,7 +14,7 @@ export function openProPaywall(reason: ProPaywallReason): void {
 	}
 	proPaywallState.reason = reason;
 	proPaywallState.open = true;
-	if (reason === 'tree_limit') {
+	if (reason === 'tree_limit' || reason === 'tree_locked') {
 		void startPromoWindowIfNeeded();
 	}
 }

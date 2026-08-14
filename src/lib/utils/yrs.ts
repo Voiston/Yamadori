@@ -1,20 +1,39 @@
 import * as m from '$lib/paraglide/messages.js';
 import type { AgriData } from '$lib/types/agri';
-import type { PhenologyStageId } from '$lib/types/gdd';
+import type { GddBaseCategory, PhenologyStageId } from '$lib/types/gdd';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
 import { getMicroclimateFactor } from '$lib/constants/environment-exposure';
-import { getPhenologyStages } from '$lib/constants/gdd-config';
-import { getCernageOptions } from '$lib/constants/assessment';
+import {
+	getPhenologyStageMeta,
+	isEvergreenSpecies,
+	isSpeciesInYrsCatalog,
+	resolveYrsGddCategory
+} from '$lib/constants/gdd-config';
+import { resolveYrsGddWindowForSpecies, resolveSpeciesGddProfile } from '$lib/constants/species-gdd-profiles';
+import {
+	getAoutementOptions,
+	getCernageOptions,
+	getLeafFallOptions
+} from '$lib/constants/assessment';
 import type {
+	AoutementStatus,
 	CernageStatus,
+	LeafFallPct,
+	YrsConfidence,
 	YrsDecision,
 	YrsLayerScores,
 	YrsPlantInputs,
 	YrsSnapshot,
 	YrsStoredSnapshot
 } from '$lib/types/yrs';
-import { YAMADORI_RISK_THRESHOLDS } from '$lib/constants/agri-thresholds';
+import {
+	resolveClimateProfile,
+	resolveYamadoriRiskThresholds,
+	type YamadoriRiskThresholds
+} from '$lib/constants/climate-profiles';
 import { resolveDominantPhenologyStage } from '$lib/utils/phenologyResolve';
+import { resolveHarvestCalendarPrior } from '$lib/geo/harvestWindowPrior';
+import { resolveYrsLocalization } from '$lib/geo/yrsLocalization';
 import {
 	formatSoilNightDropAttenuationLabel,
 	getSoilNightDropActivationWeight,
@@ -22,8 +41,30 @@ import {
 	isSoilNightDropPenalized
 } from '$lib/utils/soilNightDrop';
 
-const GDD_OPTIMAL_MIN = 150;
-const GDD_OPTIMAL_MAX = 400;
+function clamp(value: number, min: number, max: number): number {
+	return Math.max(min, Math.min(max, value));
+}
+
+function thresholdsFor(data: AgriData): YamadoriRiskThresholds {
+	return resolveYamadoriRiskThresholds(data.latitude, data.longitude);
+}
+
+/** Continuous harvest-calendar malus: −min(12, 3 × monthsFromWindow). */
+export function harvestCalendarPhenologyPenalty(monthsFromWindow: number): number {
+	if (monthsFromWindow <= 0) return 0;
+	return -Math.min(12, 3 * monthsFromWindow);
+}
+
+/** Frost stress points: min(25, 5 + 5×nights + severity°C). */
+export function frostStressPenaltyPoints(data: AgriData): number {
+	if (data.frostEventsPast7d <= 0 && !data.frostRiskNext7d) return 0;
+	const thresholds = thresholdsFor(data);
+	let severity = 0;
+	if (data.frostRiskNext7d && data.frostMinNext7dC !== null) {
+		severity = clamp(Math.round(thresholds.frostDangerousC - data.frostMinNext7dC), 0, 10);
+	}
+	return Math.min(25, 5 + 5 * data.frostEventsPast7d + severity);
+}
 
 export interface YrsScoreBreakdownItem {
 	label: string;
@@ -46,13 +87,9 @@ export interface YrsScoreBreakdown {
 	stressPenalty: YrsLayerBreakdown;
 }
 
-function clamp(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
-}
-
 function phenologyStageLabel(stage: PhenologyStageId | null): string {
 	if (!stage) return m.yrs_stage_unknown();
-	return getPhenologyStages().find((entry) => entry.id === stage)?.label ?? stage;
+	return getPhenologyStageMeta(stage)?.label ?? stage;
 }
 
 function cernageLabel(status: CernageStatus | null | undefined): string {
@@ -60,28 +97,94 @@ function cernageLabel(status: CernageStatus | null | undefined): string {
 	return getCernageOptions().find((option) => option.value === status)?.label ?? status;
 }
 
-function getGddClimatePoints(gdd: number | null): YrsScoreBreakdownItem {
+function aoutementLabel(status: AoutementStatus | null | undefined): string {
+	if (!status) return '';
+	return getAoutementOptions().find((option) => option.value === status)?.label ?? status;
+}
+
+function leafFallLabel(pct: LeafFallPct | null | undefined): string {
+	if (pct == null) return '';
+	return getLeafFallOptions().find((option) => option.value === pct)?.label ?? `${pct}%`;
+}
+
+/** Late summer / autumn months where aoutement & leaf-fall inform harvest timing. */
+export function isLateSeasonPhenologyContext(
+	latitude: number,
+	referenceDate: Date = new Date()
+): boolean {
+	const month = referenceDate.getMonth() + 1;
+	if (latitude < 0) {
+		return month >= 2 && month <= 5;
+	}
+	return month >= 8 && month <= 12;
+}
+
+function aoutementAdjustment(status: AoutementStatus | null | undefined): number {
+	switch (status) {
+		case 'aoute':
+			return 10;
+		case 'en_cours':
+			return 4;
+		case 'non_aoute':
+			return -4;
+		default:
+			return 0;
+	}
+}
+
+function leafFallAdjustment(pct: LeafFallPct | null | undefined): number {
+	switch (pct) {
+		case 100:
+			return 10;
+		case 80:
+			return 8;
+		case 50:
+			return 3;
+		case 25:
+			return -2;
+		case 0:
+			return -5;
+		default:
+			return 0;
+	}
+}
+
+function resolveCategory(data: AgriData, inputs: YrsPlantInputs): GddBaseCategory {
+	const profile = resolveSpeciesGddProfile(inputs.species);
+	if (profile) return profile.category;
+	return resolveYrsGddCategory(inputs.species, data.gdd?.baseCategory);
+}
+
+function getGddClimatePoints(
+	gdd: number | null,
+	category: GddBaseCategory,
+	species?: string
+): YrsScoreBreakdownItem {
+	const window = resolveYrsGddWindowForSpecies(species, category);
 	if (gdd !== null) {
-		if (gdd >= GDD_OPTIMAL_MIN && gdd <= GDD_OPTIMAL_MAX) {
+		if (gdd >= window.optimalMin && gdd <= window.optimalMax) {
 			return { label: m.yrs_gdd_favorable({ gdd: String(gdd) }), points: 15 };
 		}
-		if (gdd >= 80 && gdd < GDD_OPTIMAL_MIN) {
+		if (gdd >= window.earlyMin && gdd < window.optimalMin) {
 			return { label: m.yrs_gdd_early({ gdd: String(gdd) }), points: 8 };
 		}
-		if (gdd > GDD_OPTIMAL_MAX && gdd <= 550) {
+		if (gdd > window.optimalMax && gdd <= window.lateMax) {
 			return { label: m.yrs_gdd_late({ gdd: String(gdd) }), points: 8 };
 		}
 		return { label: m.yrs_gdd_outside({ gdd: String(gdd) }), points: 3 };
 	}
-	return { label: m.yrs_gdd_unavailable(), points: 5 };
+	return { label: m.yrs_gdd_unavailable(), points: 2 };
 }
 
-function getEt0ClimatePoints(data: AgriData): YrsScoreBreakdownItem | null {
+function getEt0ClimatePoints(
+	data: AgriData,
+	thresholds: YamadoriRiskThresholds
+): YrsScoreBreakdownItem | null {
 	const et0Past = data.et0Past7dMeanMm;
 	const et0Forecast = data.et0Trend7dMeanMm;
 	if (et0Past === null || et0Forecast === null) return null;
 
-	const { excellentMax } = YAMADORI_RISK_THRESHOLDS.et0Trend7dMeanMm;
+	const { excellentMax } = thresholds.et0Trend7dMeanMm;
 	if (et0Past <= excellentMax && et0Forecast <= excellentMax) {
 		return {
 			label: m.yrs_breakdown_et0_stable({
@@ -109,12 +212,15 @@ function getEt0ClimatePoints(data: AgriData): YrsScoreBreakdownItem | null {
 	};
 }
 
-function getAirClimatePoints(data: AgriData): YrsScoreBreakdownItem {
-	const { passableLow, passableHigh, dangerousLow, dangerousHigh } = YAMADORI_RISK_THRESHOLDS.airTempC;
+function getAirClimatePoints(
+	data: AgriData,
+	thresholds: YamadoriRiskThresholds
+): YrsScoreBreakdownItem {
+	const { passableLow, passableHigh, dangerousLow, dangerousHigh } = thresholds.airTempC;
 	if (
 		data.airTemperatureC >= passableLow &&
 		data.airTemperatureC <= passableHigh &&
-		data.windSpeedKmh < YAMADORI_RISK_THRESHOLDS.windSpeedKmh.passableMin
+		data.windSpeedKmh < thresholds.windSpeedKmh.passableMin
 	) {
 		return {
 			label: m.yrs_breakdown_air_mild({
@@ -127,7 +233,7 @@ function getAirClimatePoints(data: AgriData): YrsScoreBreakdownItem {
 	if (
 		data.airTemperatureC >= dangerousLow &&
 		data.airTemperatureC <= dangerousHigh &&
-		data.windSpeedKmh < YAMADORI_RISK_THRESHOLDS.windSpeedKmh.dangerousMin
+		data.windSpeedKmh < thresholds.windSpeedKmh.dangerousMin
 	) {
 		return {
 			label: m.yrs_breakdown_air_acceptable({
@@ -146,12 +252,17 @@ function getAirClimatePoints(data: AgriData): YrsScoreBreakdownItem {
 	};
 }
 
-export function getClimateScoreBreakdown(data: AgriData): YrsLayerBreakdown {
+export function getClimateScoreBreakdown(
+	data: AgriData,
+	inputs: YrsPlantInputs = {}
+): YrsLayerBreakdown {
+	const category = resolveCategory(data, inputs);
+	const thresholds = thresholdsFor(data);
 	const items = [
-		getGddClimatePoints(data.gdd?.cumulativeSinceJan1 ?? null),
-		getAirClimatePoints(data)
+		getGddClimatePoints(data.gdd?.cumulativeSinceJan1 ?? null, category, inputs.species),
+		getAirClimatePoints(data, thresholds)
 	];
-	const et0Item = getEt0ClimatePoints(data);
+	const et0Item = getEt0ClimatePoints(data, thresholds);
 	if (et0Item) items.splice(1, 0, et0Item);
 
 	const total = clamp(
@@ -163,13 +274,14 @@ export function getClimateScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 }
 
 /** ClimateScore (0–30) : GDD, ET₀ stable, conditions air douces. */
-export function computeClimateScore(data: AgriData): number {
-	return getClimateScoreBreakdown(data).total;
+export function computeClimateScore(data: AgriData, inputs: YrsPlantInputs = {}): number {
+	return getClimateScoreBreakdown(data, inputs).total;
 }
 
 /** SoilScore (0–25) : zone 18 cm, activité 6 cm, stabilité. */
 export function getSoilScoreBreakdown(data: AgriData): YrsLayerBreakdown {
-	const { excellentMin, excellentMax } = YAMADORI_RISK_THRESHOLDS.soil18cmTempC;
+	const thresholds = thresholdsFor(data);
+	const { excellentMin, excellentMax } = thresholds.soil18cmTempC;
 	const temp = String(data.soilTemperature18cmC);
 	let soil18Points = 6;
 	let soil18Label = m.yrs_breakdown_soil18_high({ temp });
@@ -186,8 +298,8 @@ export function getSoilScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 	}
 
 	const soil6Active =
-		data.soilTemperature6cmC >= YAMADORI_RISK_THRESHOLDS.soilStableTempC.min &&
-		data.soilTemperature6cmC <= YAMADORI_RISK_THRESHOLDS.soilStableTempC.max;
+		data.soilTemperature6cmC >= thresholds.soilStableTempC.min &&
+		data.soilTemperature6cmC <= thresholds.soilStableTempC.max;
 	const soil6Temp = String(data.soilTemperature6cmC);
 
 	const items: YrsScoreBreakdownItem[] = [
@@ -204,12 +316,12 @@ export function getSoilScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 		days: String(data.soilConsecutiveStableDays)
 	});
 
-	if (data.soilConsecutiveStableDays >= YAMADORI_RISK_THRESHOLDS.soilStableDays.excellentMin) {
+	if (data.soilConsecutiveStableDays >= thresholds.soilStableDays.excellentMin) {
 		items.push({
 			label: stableDaysLabel,
 			points: 5
 		});
-	} else if (data.soilConsecutiveStableDays >= YAMADORI_RISK_THRESHOLDS.soilStableDays.passableMin) {
+	} else if (data.soilConsecutiveStableDays >= thresholds.soilStableDays.passableMin) {
 		items.push({
 			label: stableDaysLabel,
 			points: 3
@@ -233,16 +345,25 @@ export function computeSoilScore(data: AgriData): number {
 	return getSoilScoreBreakdown(data).total;
 }
 
-function phenologyStagePoints(stage: PhenologyStageId | null): number {
+function phenologyStagePoints(
+	stage: PhenologyStageId | null,
+	category: GddBaseCategory
+): number {
 	switch (stage) {
 		case 'dormance':
-			return 5;
+			// Mountain species are often lifted still dormant / early wake — slight boost.
+			return category === 'montagnarde' ? 8 : 5;
 		case 'bourgeon_gonfle':
 			return 15;
+		case 'pointe_verte':
+			return 20;
 		case 'debourrement':
+		case 'chandelle':
 			return 25;
+		case 'pinceau':
+			return 10;
 		case 'feuillaison':
-			return 3;
+			return category === 'standard' ? 5 : 3;
 		case 'croissance_active':
 			return -5;
 		default:
@@ -270,13 +391,20 @@ export function getPhenologyScoreBreakdown(
 	data: AgriData,
 	inputs: YrsPlantInputs = {}
 ): YrsLayerBreakdown {
+	const category = resolveCategory(data, inputs);
 	const stage = resolveDominantPhenologyStage(data, inputs);
 	const items: YrsScoreBreakdownItem[] = [];
+	const evergreen =
+		(inputs.species ? isEvergreenSpecies(inputs.species) : false) ||
+		Boolean(data.gdd?.phenologyUnavailableReason);
 
-	if (data.gdd === null && !inputs.observedPhenologyStage) {
-		items.push({ label: m.yrs_phenology_unavailable(), points: 10 });
+	if (
+		(data.gdd === null && !inputs.observedPhenologyStage) ||
+		(evergreen && !inputs.observedPhenologyStage && !stage)
+	) {
+		items.push({ label: m.yrs_phenology_unavailable(), points: 4 });
 	} else {
-		const stagePoints = phenologyStagePoints(stage);
+		const stagePoints = phenologyStagePoints(stage, category);
 		const stageLabel = phenologyStageLabel(stage);
 		items.push({
 			label: inputs.observedPhenologyStage
@@ -294,6 +422,40 @@ export function getPhenologyScoreBreakdown(
 		});
 	}
 
+	const referenceDate = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
+	if (isLateSeasonPhenologyContext(data.latitude, referenceDate)) {
+		const aoutementPoints = aoutementAdjustment(inputs.aoutementStatus);
+		if (aoutementPoints !== 0) {
+			items.push({
+				label: m.yrs_breakdown_aoutement({ status: aoutementLabel(inputs.aoutementStatus) }),
+				points: aoutementPoints
+			});
+		}
+		const leafFallPoints = leafFallAdjustment(inputs.leafFallPct);
+		if (leafFallPoints !== 0) {
+			items.push({
+				label: m.yrs_breakdown_leaf_fall({ pct: leafFallLabel(inputs.leafFallPct) }),
+				points: leafFallPoints
+			});
+		}
+	}
+
+	const harvestPrior = resolveHarvestCalendarPrior(
+		inputs.species ?? '',
+		data.latitude,
+		data.longitude,
+		referenceDate
+	);
+	const harvestPenalty = harvestPrior.applicable
+		? harvestCalendarPhenologyPenalty(harvestPrior.monthsFromWindow)
+		: 0;
+	if (harvestPenalty !== 0) {
+		items.push({
+			label: m.yrs_breakdown_harvest_calendar_outside(),
+			points: harvestPenalty
+		});
+	}
+
 	const total = clamp(
 		Math.round(items.reduce((sum, item) => sum + item.points, 0)),
 		0,
@@ -306,60 +468,97 @@ export function computePhenologyScore(data: AgriData, inputs: YrsPlantInputs = {
 	return getPhenologyScoreBreakdown(data, inputs).total;
 }
 
-/** HydricScore (0–20) : WSI et risque futur. */
+/** HydricScore (0–20) : FAO-proxy Ks + forecast ET₀ stress. */
 export function getHydricScoreBreakdown(data: AgriData): YrsLayerBreakdown {
-	let item: YrsScoreBreakdownItem;
+	const items: YrsScoreBreakdownItem[] = [];
+	const ks = data.hydricStressKs ?? null;
 
-	if (data.wsi === null) {
-		if (data.waterBalance7dMm !== null) {
-			if (data.waterBalance7dMm > 5) {
-				item = {
-					label: m.yrs_breakdown_water_balance_favorable({
-						balance: String(data.waterBalance7dMm)
-					}),
-					points: 15
-				};
-			} else if (data.waterBalance7dMm >= -5) {
-				item = {
-					label: m.yrs_breakdown_water_balance_neutral({
-						balance: String(data.waterBalance7dMm)
-					}),
-					points: 10
-				};
-			} else {
-				item = {
-					label: m.yrs_breakdown_water_balance_deficit({
-						balance: String(data.waterBalance7dMm)
-					}),
-					points: 4
-				};
-			}
+	if (ks !== null) {
+		const ksLabel = String(ks);
+		if (ks >= 0.8) {
+			items.push({ label: m.yrs_breakdown_ks_excellent({ ks: ksLabel }), points: 20 });
+		} else if (ks >= 0.6) {
+			items.push({ label: m.yrs_breakdown_ks_good({ ks: ksLabel }), points: 14 });
+		} else if (ks >= 0.4) {
+			items.push({ label: m.yrs_breakdown_ks_moderate({ ks: ksLabel }), points: 8 });
+		} else if (ks >= 0.2) {
+			items.push({ label: m.yrs_breakdown_ks_low({ ks: ksLabel }), points: 4 });
 		} else {
-			item = { label: m.yrs_hydric_unavailable(), points: 8 };
+			items.push({ label: m.yrs_breakdown_ks_critical({ ks: ksLabel }), points: 2 });
 		}
-	} else if (data.wsi > 5) {
-		item = {
-			label: m.yrs_breakdown_wsi_excellent({ wsi: String(data.wsi) }),
-			points: 20
-		};
-	} else if (data.wsi >= -2) {
-		item = {
-			label: m.yrs_breakdown_wsi_acceptable({ wsi: String(data.wsi) }),
-			points: 10
-		};
-	} else if (data.wsi >= -8) {
-		item = {
-			label: m.yrs_breakdown_wsi_moderate_stress({ wsi: String(data.wsi) }),
-			points: 5
-		};
+	} else if (data.wsi !== null) {
+		// Legacy cache without Ks
+		if (data.wsi > 5) {
+			items.push({
+				label: m.yrs_breakdown_wsi_excellent({ wsi: String(data.wsi) }),
+				points: 20
+			});
+		} else if (data.wsi >= -2) {
+			items.push({
+				label: m.yrs_breakdown_wsi_acceptable({ wsi: String(data.wsi) }),
+				points: 10
+			});
+		} else if (data.wsi >= -8) {
+			items.push({
+				label: m.yrs_breakdown_wsi_moderate_stress({ wsi: String(data.wsi) }),
+				points: 5
+			});
+		} else {
+			items.push({
+				label: m.yrs_breakdown_wsi_strong_stress({ wsi: String(data.wsi) }),
+				points: 2
+			});
+		}
+	} else if (data.waterBalance7dMm !== null) {
+		if (data.waterBalance7dMm > 5) {
+			items.push({
+				label: m.yrs_breakdown_water_balance_favorable({
+					balance: String(data.waterBalance7dMm)
+				}),
+				points: 15
+			});
+		} else if (data.waterBalance7dMm >= -5) {
+			items.push({
+				label: m.yrs_breakdown_water_balance_neutral({
+					balance: String(data.waterBalance7dMm)
+				}),
+				points: 10
+			});
+		} else {
+			items.push({
+				label: m.yrs_breakdown_water_balance_deficit({
+					balance: String(data.waterBalance7dMm)
+				}),
+				points: 4
+			});
+		}
 	} else {
-		item = {
-			label: m.yrs_breakdown_wsi_strong_stress({ wsi: String(data.wsi) }),
-			points: 2
-		};
+		items.push({ label: m.yrs_hydric_unavailable(), points: 3 });
 	}
 
-	return { total: item.points, max: 20, items: [item] };
+	const thresholds = thresholdsFor(data);
+	const excellentWeekly = 7 * thresholds.et0Trend7dMeanMm.excellentMax;
+	let futureMalus = 0;
+	if (data.futureStressRiskMm !== null && excellentWeekly > 0) {
+		if (data.futureStressRiskMm > excellentWeekly * 2) futureMalus = 8;
+		else if (data.futureStressRiskMm > excellentWeekly * 1.5) futureMalus = 5;
+		else if (data.futureStressRiskMm > excellentWeekly) futureMalus = 3;
+	}
+	if (futureMalus > 0) {
+		items.push({
+			label: m.yrs_breakdown_et0_forecast_stress({
+				mm: String(data.futureStressRiskMm)
+			}),
+			points: -futureMalus
+		});
+	}
+
+	const total = clamp(
+		Math.round(items.reduce((sum, item) => sum + item.points, 0)),
+		0,
+		20
+	);
+	return { total, max: 20, items };
 }
 
 export function computeHydricScore(data: AgriData): number {
@@ -385,7 +584,7 @@ export function getStressPenaltyBreakdown(
 		}
 		items.push({
 			label: m.yrs_breakdown_frost_label({ detail: parts.join(', ') }),
-			points: 15
+			points: frostStressPenaltyPoints(data)
 		});
 	}
 
@@ -452,11 +651,98 @@ export function getYrsScoreBreakdown(
 	inputs: YrsPlantInputs = {}
 ): YrsScoreBreakdown {
 	return {
-		climate: getClimateScoreBreakdown(data),
+		climate: getClimateScoreBreakdown(data, inputs),
 		soil: getSoilScoreBreakdown(data),
 		phenology: getPhenologyScoreBreakdown(data, inputs),
 		hydric: getHydricScoreBreakdown(data),
 		stressPenalty: getStressPenaltyBreakdown(data, inputs)
+	};
+}
+
+export type YrsConfidenceGap = 'gdd' | 'wsi' | 'observedPhenology' | 'speciesMapped';
+
+/** Missing inputs that currently limit YRS confidence. */
+export function getYrsConfidenceGaps(
+	data: AgriData,
+	inputs: YrsPlantInputs = {}
+): YrsConfidenceGap[] {
+	const gaps: YrsConfidenceGap[] = [];
+	if (data.gdd === null) gaps.push('gdd');
+	if (
+		data.hydricStressKs === null &&
+		data.wsi === null &&
+		data.waterBalance7dMm === null
+	) {
+		gaps.push('wsi');
+	}
+	if (!inputs.observedPhenologyStage) gaps.push('observedPhenology');
+	const species = inputs.species?.trim() ?? '';
+	if (!species || !isSpeciesInYrsCatalog(species)) {
+		gaps.push('speciesMapped');
+	}
+	return gaps;
+}
+
+/** Prefer the gap the user can most easily fix in capture. */
+export function getPrimaryYrsConfidenceGap(
+	data: AgriData,
+	inputs: YrsPlantInputs = {}
+): YrsConfidenceGap | null {
+	const gaps = new Set(getYrsConfidenceGaps(data, inputs));
+	const priority: YrsConfidenceGap[] = [
+		'observedPhenology',
+		'speciesMapped',
+		'wsi',
+		'gdd'
+	];
+	return priority.find((gap) => gaps.has(gap)) ?? null;
+}
+
+export function getYrsConfidenceGapCta(gap: YrsConfidenceGap | null): string | null {
+	if (!gap) return null;
+	if (gap === 'observedPhenology') return m.yrs_confidence_cta_phenology();
+	if (gap === 'speciesMapped') return m.yrs_confidence_cta_species();
+	if (gap === 'wsi') return m.yrs_confidence_cta_hydric();
+	return m.yrs_confidence_cta_gdd();
+}
+
+/** Confidence from data completeness — independent of the numeric YRS. */
+export function computeYrsConfidence(
+	data: AgriData,
+	inputs: YrsPlantInputs = {},
+	localization: ReturnType<typeof resolveYrsLocalization> = 'local'
+): YrsConfidence {
+	let points = 0;
+
+	if (data.gdd !== null) points += 2;
+	if (data.hydricStressKs !== null || data.wsi !== null) points += 2;
+	else if (data.waterBalance7dMm !== null) points += 1;
+
+	if (inputs.observedPhenologyStage) points += 2;
+	else if (data.gdd?.phenology) points += 1;
+
+	if (inputs.species?.trim() && isSpeciesInYrsCatalog(inputs.species)) {
+		points += 1;
+	} else if (inputs.species?.trim()) {
+		points += 0.5;
+	}
+
+	// Generic Western-Europe defaults outside supported countries → never "high"
+	if (localization === 'generic') {
+		points = Math.max(0, points - 1);
+		if (points >= 6) return 'medium';
+	}
+
+	if (points >= 6) return 'high';
+	if (points >= 3) return 'medium';
+	return 'low';
+}
+
+export function getYrsConfidenceLabels(): Record<YrsConfidence, string> {
+	return {
+		high: m.yrs_confidence_high(),
+		medium: m.yrs_confidence_medium(),
+		low: m.yrs_confidence_low()
 	};
 }
 
@@ -465,6 +751,18 @@ export function determineYrsDecision(score: number): YrsDecision {
 	if (score >= 60) return 'ACCEPTABLE';
 	if (score >= 40) return 'RISK';
 	return 'NO_GO';
+}
+
+/** Gate OPTIMAL when data confidence is low — numeric score stays unchanged. */
+export function applyYrsConfidenceGate(
+	score: number,
+	confidence: YrsConfidence
+): YrsDecision {
+	const decision = determineYrsDecision(score);
+	if (confidence === 'low' && decision === 'OPTIMAL') {
+		return 'ACCEPTABLE';
+	}
+	return decision;
 }
 
 export function getYrsDecisionLabels(): Record<YrsDecision, string> {
@@ -480,7 +778,13 @@ export function getYrsScoreLabel(): string {
 	return m.yrs_score_label();
 }
 
-function buildYrsSummary(decision: YrsDecision, layers: YrsLayerScores, data: AgriData): string {
+function buildYrsSummary(
+	decision: YrsDecision,
+	layers: YrsLayerScores,
+	data: AgriData,
+	inputs: YrsPlantInputs = {},
+	confidence: YrsConfidence = 'medium'
+): string {
 	const label = getYrsDecisionLabels()[decision];
 	const layerRatios: [string, number][] = [
 		[m.yrs_layer_climate(), layers.climate / 30],
@@ -490,17 +794,39 @@ function buildYrsSummary(decision: YrsDecision, layers: YrsLayerScores, data: Ag
 	];
 	const weakest = layerRatios.sort((a, b) => a[1] - b[1])[0];
 
+	if (confidence === 'low') {
+		return m.yrs_climate_summary_low_confidence({ label });
+	}
+
+	const referenceDate = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
+	const harvestPrior = resolveHarvestCalendarPrior(
+		inputs.species ?? '',
+		data.latitude,
+		data.longitude,
+		referenceDate
+	);
+	if (harvestPrior.applicable && !harvestPrior.inWindow) {
+		return m.yrs_climate_summary_harvest_calendar({ label });
+	}
+
 	if (decision === 'OPTIMAL') {
 		return m.yrs_climate_summary_optimal({ label });
 	}
 
-	if (data.soilTemperature18cmC < YAMADORI_RISK_THRESHOLDS.soil18cmTempC.excellentMin) {
+	const thresholds = thresholdsFor(data);
+	if (data.soilTemperature18cmC < thresholds.soil18cmTempC.excellentMin) {
 		return m.yrs_climate_summary_cold_soil({
 			label,
 			temp: String(data.soilTemperature18cmC)
 		});
 	}
 
+	if (data.hydricStressKs !== null && data.hydricStressKs < 0.4) {
+		return m.yrs_climate_summary_hydric({
+			label,
+			wsi: String(data.hydricStressKs)
+		});
+	}
 	if (data.wsi !== null && data.wsi < -5) {
 		return m.yrs_climate_summary_hydric({ label, wsi: String(data.wsi) });
 	}
@@ -513,7 +839,7 @@ function buildYrsSummary(decision: YrsDecision, layers: YrsLayerScores, data: Ag
 
 export function computeYrsLayers(data: AgriData, inputs: YrsPlantInputs = {}): YrsLayerScores {
 	return {
-		climate: computeClimateScore(data),
+		climate: computeClimateScore(data, inputs),
 		soil: computeSoilScore(data),
 		phenology: computePhenologyScore(data, inputs),
 		hydric: computeHydricScore(data),
@@ -526,23 +852,29 @@ export function computeYamadoriReadinessScore(
 	inputs: YrsPlantInputs = {}
 ): YrsSnapshot {
 	const layers = computeYrsLayers(data, inputs);
+	// microclimateFactor is 1.0 for all exposures; attenuation happens in applyEnvironmentExposure.
 	const raw =
 		(layers.climate + layers.soil + layers.phenology + layers.hydric - layers.stressPenalty) *
 		getMicroclimateFactor(inputs.environmentExposure ?? DEFAULT_ENVIRONMENT_EXPOSURE);
 	const score = clamp(Math.round(raw), 0, 100);
-	const decision = determineYrsDecision(score);
+	const localization = resolveYrsLocalization(data.latitude, data.longitude);
+	const confidence = computeYrsConfidence(data, inputs, localization);
+	const decision = applyYrsConfidenceGate(score, confidence);
 
 	return {
 		score,
 		decision,
 		layers,
-		summary: buildYrsSummary(decision, layers, data)
+		summary: buildYrsSummary(decision, layers, data, inputs, confidence),
+		confidence,
+		climateProfile: resolveClimateProfile(data.latitude, data.longitude),
+		localization
 	};
 }
 
 export function getCombinedYamadoriVerdict(
 	potentialScore: number | null,
-	yrs: YrsSnapshot | null
+	yrs: Pick<YrsSnapshot, 'score'> | null
 ): string | null {
 	if (!yrs || potentialScore === null) return null;
 	if (potentialScore >= 7 && yrs.score >= 60) {

@@ -45,7 +45,8 @@ import {
 	purchasePro,
 	reconcilePendingPurchase,
 	resolvePurchasableProductId,
-	getProProduct
+	getProProduct,
+	getActiveProOffer
 } from './billing';
 
 const NOW = Date.parse('2026-06-01T12:00:00.000Z');
@@ -370,6 +371,71 @@ describe('getProProduct', () => {
 
 			expect(product).toBeNull();
 		},
-		15_000
+		30_000
 	);
+});
+
+describe('getActiveProOffer catalog retries', () => {
+	beforeEach(() => {
+		resetBillingQueueForTests();
+		proPromoState.promoEndsAt = null;
+		proEntitlementState.purchasePending = false;
+		mockGetProducts.mockReset();
+		vi.useRealTimers();
+	});
+
+	it('retries when the first Play response is missing the promo SKU', async () => {
+		setPromoWindow(NOW);
+		mockGetProducts
+			.mockResolvedValueOnce({
+				products: [
+					{
+						productIdentifier: PRO_PRODUCT_ID,
+						priceString: '29,00 €',
+						title: 'Pro'
+					}
+				]
+			})
+			.mockResolvedValueOnce({
+				products: [
+					{
+						productIdentifier: PRO_PROMO_PRODUCT_ID,
+						priceString: '19,00 €',
+						title: 'Pro Promo'
+					},
+					{
+						productIdentifier: PRO_PRODUCT_ID,
+						priceString: '29,00 €',
+						title: 'Pro'
+					}
+				]
+			});
+
+		const offer = await getActiveProOffer(NOW);
+
+		expect(offer.productId).toBe(PRO_PROMO_PRODUCT_ID);
+		expect(offer.priceString).toBe('19,00 €');
+		expect(offer.fullPriceString).toBe('29,00 €');
+		expect(mockGetProducts).toHaveBeenCalledTimes(2);
+	});
+
+	it('returns null promo price when every attempt stays partial', async () => {
+		setPromoWindow(NOW);
+		mockGetProducts.mockResolvedValue({
+			products: [
+				{
+					productIdentifier: PRO_PRODUCT_ID,
+					priceString: '29,00 €',
+					title: 'Pro'
+				}
+			]
+		});
+
+		const offer = await getActiveProOffer(NOW);
+
+		expect(offer.productId).toBe(PRO_PROMO_PRODUCT_ID);
+		expect(offer.priceString).toBeNull();
+		expect(offer.fullPriceString).toBe('29,00 €');
+		expect(mockGetProducts).toHaveBeenCalledTimes(5);
+	});
 });

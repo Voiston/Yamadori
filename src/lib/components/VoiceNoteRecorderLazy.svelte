@@ -7,6 +7,7 @@
 
 	let {
 		value = $bindable(null),
+		sessionActive = $bindable(false),
 		...rest
 	}: VoiceNoteRecorderProps = $props();
 
@@ -46,7 +47,12 @@
 </script>
 
 {#if VoiceNoteRecorderComponent}
-	<VoiceNoteRecorderComponent bind:this={recorderRef} bind:value {...rest} />
+	<VoiceNoteRecorderComponent
+		bind:this={recorderRef}
+		bind:value
+		bind:sessionActive
+		{...rest}
+	/>
 {:else if loadFailed}
 	<p class="text-sm text-muted" role="status" data-capture-tutorial="voice">
 		{m.voice_note_optional()}

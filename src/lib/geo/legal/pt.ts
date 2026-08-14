@@ -5,8 +5,8 @@ import {
 } from '$lib/geo/speciesSearchUrls';
 
 /**
- * Portugal legal content pack — Código Civil, florestas, conservação da natureza.
- * Articles are indicative Diário da República / institutional links.
+ * Portugal legal content pack — Código Civil, DL 169/2001 (sobreiro/azinheira),
+ * DL 142/2008 (conservação da natureza). Links Diário da República / PGDLisboa.
  */
 export const ptLegalPack: LegalContentPack = {
 	country: 'PT',
@@ -24,18 +24,18 @@ export const ptLegalPack: LegalContentPack = {
 		{
 			id: 'pt_florestas',
 			group: 'forest',
-			url: 'https://www.icnf.pt/',
-			title: 'Regime florestal / ICNF',
+			url: 'https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/2001-167292655',
+			title: 'DL n.º 169/2001 — proteção do sobreiro e da azinheira',
 			summary:
-				'A gestão e o aproveitamento florestal em Portugal estão enquadrados por legislação nacional e planos regionais. Em espaços florestais públicos ou sujeitos a regime especial, o aproveitamento exige autorização da entidade competente (ICNF / autarquia).'
+				'O corte ou arranque de sobreiros e azinheiras (em povoamento ou isolados) carece de autorização, salvo desbastes previstos em plano de gestão florestal aprovado. Aplica-se em Portugal continental.'
 		},
 		{
 			id: 'pt_conservacao_natureza',
 			group: 'environment',
-			url: 'https://www.icnf.pt/conservacao',
-			title: 'Conservação da natureza e Rede Natura 2000',
+			url: 'https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/2008-34502775',
+			title: 'DL n.º 142/2008 — conservação da natureza e biodiversidade',
 			summary:
-				'Áreas protegidas e sítios da Rede Natura 2000 (Lei da Conservação da Natureza e da Biodiversidade) restringem a recolha de espécies e a alteração de habitats. Verificar sempre o estatuto do local e da espécie.'
+				'Regime jurídico do SNAC / Rede Natura 2000 e restrições em áreas classificadas. A recolha de espécies e a alteração de habitats podem ser proibidas — verificar o estatuto do local e da espécie (Madeira/Açores têm diplomas regionais próprios).'
 		}
 	],
 	speciesSearchBase: SPECIES_SEARCH_BASE.floraOn,

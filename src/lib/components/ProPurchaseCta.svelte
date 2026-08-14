@@ -67,7 +67,9 @@
 		return true;
 	});
 
-	const purchaseDisabled = $derived(!canEnableProPurchase(proPromoState.loaded));
+	const purchaseDisabled = $derived(
+		!canEnableProPurchase(proPromoState.loaded, showPromo, pricesReady)
+	);
 
 	const bannerOffer = $derived.by((): ProActiveOffer | null => {
 		return createPromoBannerOffer(showPromo, expectedProductId, promoUi, priceOffer);
@@ -75,7 +77,7 @@
 
 	const displayPrice = $derived.by(() => {
 		void appearanceSettingsState.locale;
-		if (!proPromoState.loaded) {
+		if (!proPromoState.loaded || (showPromo && !pricesLoaded)) {
 			return m.pro_price_loading();
 		}
 		if (pricesReady && priceOffer?.priceString) {
@@ -209,14 +211,25 @@
 	{/if}
 
 	{#if showPromo && pricesLoaded && !pricesReady}
-		<p class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950" role="status">
-			{m.pro_promo_purchase_unavailable()}
-		</p>
+		<div class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950" role="status">
+			<p>{m.pro_promo_purchase_unavailable()}</p>
+			<button
+				type="button"
+				class="mt-1.5 font-medium text-forest-700 underline-offset-2 transition hover:underline disabled:opacity-60"
+				disabled={pending}
+				onclick={() => {
+					pricesLoaded = false;
+					void refreshPrices();
+				}}
+			>
+				{m.action_retry()}
+			</button>
+		</div>
 	{/if}
 
 	<button
 		type="button"
-		class="flex h-12 w-full items-center justify-center rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.98] disabled:opacity-60"
+		class="btn-primary"
 		disabled={purchaseDisabled}
 		onclick={() => void handlePurchase()}
 	>

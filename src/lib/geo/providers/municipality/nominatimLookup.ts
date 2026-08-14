@@ -19,12 +19,14 @@ export type MunicipalityRole =
 	| 'gemeente'
 	| 'kommun'
 	| 'kommune'
+	| 'kunta'
 	| 'council'
 	| 'commune'
 	| 'county'
 	| 'mairie'
 	| 'camara'
-	| 'district';
+	| 'district'
+	| 'shichoson';
 
 const SEARCH_QUERIES: Record<MunicipalityRole, (name: string, cantonLabel?: string) => string> = {
 	ayuntamiento: (name) => `ayuntamiento ${name}`,
@@ -32,7 +34,9 @@ const SEARCH_QUERIES: Record<MunicipalityRole, (name: string, cantonLabel?: stri
 	gemeinde: (name) => `Gemeinde ${name}`,
 	gemeente: (name) => `gemeente ${name}`,
 	kommun: (name) => `kommun ${name} Sverige`,
+	/** Default Norge; DK overrides via `country` in `searchWebsite`. */
 	kommune: (name) => `kommune ${name} Norge`,
+	kunta: (name) => `kunta ${name} Suomi`,
 	council: (name) => `${name} council`,
 	commune: (name, cantonLabel) =>
 		cantonLabel
@@ -41,11 +45,21 @@ const SEARCH_QUERIES: Record<MunicipalityRole, (name: string, cantonLabel?: stri
 	county: (name) => `${name} county office OR city hall`,
 	mairie: (name) => `mairie ${name}`,
 	camara: (name) => `câmara municipal ${name} Portugal`,
-	district: (name) => `${name} district council New Zealand OR city council`
+	district: (name) => `${name} district council New Zealand OR city council`,
+	shichoson: (name) => `${name} 役場 OR 市役所 Japan`
 };
 
-function searchWebsite(role: MunicipalityRole, name: string, cantonLabel?: string): string {
-	return `https://www.google.com/search?q=${encodeURIComponent(SEARCH_QUERIES[role](name, cantonLabel))}`;
+function searchWebsite(
+	role: MunicipalityRole,
+	name: string,
+	options?: { cantonLabel?: string; country?: CountryCode }
+): string {
+	const cantonLabel = options?.cantonLabel;
+	const query =
+		role === 'kommune' && options?.country === 'DK'
+			? `kommune ${name} Danmark`
+			: SEARCH_QUERIES[role](name, cantonLabel);
+	return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }
 
 /**
@@ -57,12 +71,14 @@ export async function lookupMunicipalityViaNominatim(
 	longitude: number,
 	role: MunicipalityRole,
 	fallbackName: string,
-	options?: { signal?: AbortSignal; cantonLabel?: string }
+	options?: { signal?: AbortSignal; cantonLabel?: string; country?: CountryCode }
 ): Promise<MunicipalityContact | null> {
 	throwIfAborted(options?.signal);
 
 	const nameFallback = fallbackName.trim();
 	const cantonLabel = options?.cantonLabel?.trim() || undefined;
+	const country = options?.country;
+	const searchOpts = { cantonLabel, country };
 	const coordsValid =
 		Number.isFinite(latitude) &&
 		Number.isFinite(longitude) &&
@@ -75,7 +91,7 @@ export async function lookupMunicipalityViaNominatim(
 			name: nameFallback,
 			phoneDisplay: '',
 			phoneTel: '',
-			website: searchWebsite(role, nameFallback, cantonLabel),
+			website: searchWebsite(role, nameFallback, searchOpts),
 			fetchedAt: new Date().toISOString()
 		};
 	}
@@ -91,7 +107,7 @@ export async function lookupMunicipalityViaNominatim(
 			name,
 			phoneDisplay: '',
 			phoneTel: '',
-			website: searchWebsite(role, name, cantonLabel),
+			website: searchWebsite(role, name, searchOpts),
 			fetchedAt: new Date().toISOString()
 		};
 	} catch (error) {
@@ -102,7 +118,7 @@ export async function lookupMunicipalityViaNominatim(
 			name,
 			phoneDisplay: '',
 			phoneTel: '',
-			website: searchWebsite(role, name, cantonLabel),
+			website: searchWebsite(role, name, searchOpts),
 			fetchedAt: new Date().toISOString()
 		};
 	}
@@ -120,6 +136,10 @@ export function roleForCountry(country: CountryCode): MunicipalityRole {
 			return 'gemeinde';
 		case 'GB':
 			return 'council';
+		case 'IE':
+			return 'council';
+		case 'AU':
+			return 'council';
 		case 'CH':
 			return 'commune';
 		case 'BE':
@@ -130,6 +150,10 @@ export function roleForCountry(country: CountryCode): MunicipalityRole {
 			return 'kommun';
 		case 'NO':
 			return 'kommune';
+		case 'DK':
+			return 'kommune';
+		case 'FI':
+			return 'kunta';
 		case 'US':
 			return 'county';
 		case 'CA':
@@ -138,6 +162,8 @@ export function roleForCountry(country: CountryCode): MunicipalityRole {
 			return 'district';
 		case 'PT':
 			return 'camara';
+		case 'JP':
+			return 'shichoson';
 		default:
 			return 'mairie';
 	}

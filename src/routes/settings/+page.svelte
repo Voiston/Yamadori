@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import {
 		appearanceSettingsState,
 		initAppearanceSettings,
@@ -36,6 +36,8 @@
 	import { getAppVersionLabel } from '$lib/utils/nativeInit';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import PasswordPromptDialog from '$lib/components/PasswordPromptDialog.svelte';
+	import { portal, APP_SHELL_PORTAL_TARGET } from '$lib/utils/portal';
+	import { modalFocus } from '$lib/utils/modalFocus';
 	import BackupPasswordFormDialog, {
 		type BackupPasswordFormMode,
 		type BackupPasswordFormResult
@@ -141,7 +143,6 @@
 	let clearingApiCaches = $state(false);
 	let backingUp = $state(false);
 	let restoring = $state(false);
-	let showLegacyJsonInput = $state(false);
 	let showReplaceBackupDialog = $state(false);
 	let pendingArchive = $state<RebuiltArchive | null>(null);
 	let pendingLegacyBackup = $state<YamadoriLegacyBackup | null>(null);
@@ -154,7 +155,12 @@
 	let showPasswordExportDialog = $state(false);
 	let passwordImportError = $state<string | null>(null);
 	let passwordExportError = $state<string | null>(null);
+	/** When true, next export asks for a password (default: unprotected). */
+	let exportProtectWithPassword = $state(false);
+	/** verify = configured backup password; oneshot = password for this export only. */
+	let exportPasswordMode = $state<'verify' | 'oneshot'>('verify');
 	let showLocalEncryptionConfirm = $state(false);
+	let showLegalDisclaimerDialog = $state(false);
 	let storageLocked = $derived(securitySettingsState.migrationPending);
 	let pendingPasswordBlob = $state<Blob | null>(null);
 	let pendingPasswordImportMode = $state<'merge' | 'replace'>('merge');
@@ -164,7 +170,6 @@
 	let pendingLegacyReexportBlob = $state<Blob | null>(null);
 	let legacyReexportPasswordError = $state<string | null>(null);
 	let backupInput: HTMLInputElement | undefined = $state();
-	let legacyBackupInput: HTMLInputElement | undefined = $state();
 
 	let intlLocale = $derived.by(() => {
 		void appearanceSettingsState.locale;
@@ -194,6 +199,16 @@
 		requestAnimationFrame(() => {
 			document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 		});
+	}
+
+	function closeLegalDisclaimerDialog() {
+		showLegalDisclaimerDialog = false;
+	}
+
+	function handleLegalDisclaimerKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			closeLegalDisclaimerDialog();
+		}
 	}
 
 	const apiToggles: {
@@ -451,8 +466,10 @@
 	}
 
 	async function runExportBackup(mode: ArchiveDeliveryMode, exportPassword?: string) {
-		const result = await exportAppBackup(mode, { password: exportPassword });
-		showSettingsToast('ok', formatExportSuccessMessage(result));
+		const { delivery } = await exportAppBackup(mode, {
+			password: exportPassword
+		});
+		showSettingsToast('ok', formatExportSuccessMessage(delivery));
 	}
 
 	async function handleExportBackup(mode: ArchiveDeliveryMode) {
@@ -462,9 +479,10 @@
 			return;
 		}
 
-		if (backupPasswordSettingsState.configured) {
+		if (exportProtectWithPassword) {
 			pendingExportMode = mode;
 			passwordExportError = null;
+			exportPasswordMode = backupPasswordSettingsState.configured ? 'verify' : 'oneshot';
 			showPasswordExportDialog = true;
 			return;
 		}
@@ -488,8 +506,13 @@
 		passwordExportError = null;
 		dismissAppToast();
 		try {
-			if (!(await verifyBackupPassword(password))) {
-				passwordExportError = m.archive_wrong_password();
+			if (exportPasswordMode === 'verify') {
+				if (!(await verifyBackupPassword(password))) {
+					passwordExportError = m.archive_wrong_password();
+					return;
+				}
+			} else if (password.length < 8) {
+				passwordExportError = m.settings_backup_password_too_short();
 				return;
 			}
 			showPasswordExportDialog = false;
@@ -515,12 +538,6 @@
 		backupInput?.click();
 	}
 
-	function openLegacyBackupImport(mode: 'merge' | 'replace') {
-		if (guardStorageLocked()) return;
-		importMode = mode;
-		legacyBackupInput?.click();
-	}
-
 	function clearPendingBackup(): void {
 		pendingArchive = null;
 		pendingLegacyBackup = null;
@@ -540,11 +557,13 @@
 			await mergeTreesFromBackup(data.trees);
 		}
 		await restoreParking(data.parking);
-		await restoreAppearanceSettings(data.appearanceSettings);
 		if (data.apiSettings) {
 			await restoreApiSettings(data.apiSettings);
 		}
+		// Reload before appearance restore so any later label refresh sees a settled store.
 		await reloadLocalData();
+		// Never refresh labels during import — it races thumbs-only memory and can wipe media.
+		await restoreAppearanceSettings(data.appearanceSettings, { skipLabelRefresh: true });
 		return treeStore.trees.length;
 	}
 
@@ -673,6 +692,7 @@
 				showSettingsToast('error', analysis.message);
 				return;
 			}
+			// weak (legacy crypto-theater) or honest plaintext → offer password envelope
 
 			pendingLegacyReexportBlob = blob;
 			legacyReexportPasswordError = null;
@@ -779,15 +799,6 @@
 		devProOverrideState.available && devProOverrideState.enabled && !proEntitlementState.isPro
 	);
 
-	async function handleLegacyBackupFileSelected(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		input.value = '';
-		if (!file) return;
-
-		await importLegacyBackupText(await file.text());
-	}
-
 	async function handleReplaceBackup() {
 		restoring = true;
 		dismissAppToast();
@@ -892,152 +903,113 @@
 	<section class="flex flex-col gap-3">
 		<div>
 			<h2 class="text-lg font-semibold text-forest-900">{m.settings_display()}</h2>
-			<p class="mt-1 text-sm text-muted">{m.settings_display_hint()}</p>
-			<p class="mt-1 text-xs text-muted">{m.settings_header_shortcuts_hint()}</p>
 		</div>
 
-		{#if isAndroidApp()}
-			<label
-				class="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
-			>
+		<div class="app-section-list">
+			{#if isAndroidApp()}
+				<label class="app-section-row">
+					<input
+						type="checkbox"
+						class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
+						checked={captureSettingsState.terrainModeEnabled}
+						onchange={(event) => void setTerrainModeEnabled(event.currentTarget.checked)}
+					/>
+					<span class="text-sm">
+						<span class="font-medium text-forest-900">{m.settings_terrain_mode()}</span>
+						<span class="mt-0.5 block text-muted">{m.settings_terrain_mode_hint()}</span>
+					</span>
+				</label>
+			{/if}
+
+			<label class="app-section-row">
 				<input
 					type="checkbox"
 					class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
-					checked={captureSettingsState.terrainModeEnabled}
-					onchange={(event) => void setTerrainModeEnabled(event.currentTarget.checked)}
+					checked={appearanceSettingsState.simpleMode}
+					onchange={(event) => void setSimpleMode(event.currentTarget.checked)}
 				/>
 				<span class="text-sm">
-					<span class="font-medium text-forest-900">{m.settings_terrain_mode()}</span>
-					<span class="mt-0.5 block text-muted">{m.settings_terrain_mode_hint()}</span>
+					<span class="font-medium text-forest-900">{m.simple_mode_label()}</span>
+					<span class="mt-0.5 block text-muted">{m.settings_simple_mode_hint()}</span>
 				</span>
 			</label>
-		{/if}
 
-		<label
-			class="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
-		>
-			<input
-				type="checkbox"
-				class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
-				checked={appearanceSettingsState.simpleMode}
-				onchange={(event) => void setSimpleMode(event.currentTarget.checked)}
-			/>
-			<span class="text-sm">
-				<span class="font-medium text-forest-900">{m.simple_mode_label()}</span>
-				<span class="mt-0.5 block text-muted">{m.settings_simple_mode_hint()}</span>
-			</span>
-		</label>
-
-		<label
-			class="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
-			class:opacity-60={powerSavingModeState.active}
-		>
-			<input
-				type="checkbox"
-				class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600 disabled:cursor-not-allowed"
-				checked={appearanceSettingsState.outdoorMode}
-				disabled={powerSavingModeState.active}
-				onchange={(event) => void setOutdoorMode(event.currentTarget.checked)}
-			/>
-			<span class="text-sm">
-				<span class="font-medium text-forest-900">{m.settings_outdoor_mode()}</span>
-				<span class="mt-0.5 block text-muted">
-					{m.settings_outdoor_hint()}
-					{#if isNativeApp()}
-						{m.settings_outdoor_android_brightness()}
-					{/if}
-					{#if powerSavingModeState.active}
-						{m.settings_power_saving_outdoor_blocked()}
-					{/if}
-				</span>
-			</span>
-		</label>
-
-		<label
-			class="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
-		>
-			<input
-				type="checkbox"
-				class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
-				checked={appearanceSettingsState.darkMode}
-				onchange={(event) => void setDarkMode(event.currentTarget.checked)}
-			/>
-			<span class="text-sm">
-				<span class="font-medium text-forest-900">{m.settings_dark_mode()}</span>
-				<span class="mt-0.5 block text-muted">{m.settings_dark_hint()}</span>
-			</span>
-		</label>
-
-		<label
-			class="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
-		>
-			<input
-				type="checkbox"
-				class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
-				checked={powerSavingModeState.active}
-				onchange={(event) => void setPowerSavingMode(event.currentTarget.checked)}
-			/>
-			<span class="text-sm">
-				<span class="font-medium text-forest-900">{m.settings_power_saving_mode()}</span>
-				<span class="mt-0.5 block text-muted">{m.settings_power_saving_hint()}</span>
-			</span>
-		</label>
-
-		<div class="flex flex-col gap-2">
-			<label for="app-locale" class="text-sm font-medium text-forest-900"
-				>{m.settings_language()}</label
-			>
-			<select
-				id="app-locale"
-				class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-forest-900"
-				value={appearanceSettingsState.locale}
-				onchange={(event) => void handleLocaleChange(event)}
-			>
-				{#each LOCALE_OPTIONS as option (option.value)}
-					<option value={option.value}>{option.label}</option>
-				{/each}
-			</select>
-		</div>
-	</section>
-
-	<section class="flex flex-col gap-3">
-		<div>
-			<h2 class="text-lg font-semibold text-forest-900">{m.settings_compass_gps_title()}</h2>
-			<p class="mt-1 text-sm text-muted">{m.settings_compass_gps_hint()}</p>
-		</div>
-
-		{#each [
-			{ value: 'watch' as CompassGpsProfile, label: m.settings_compass_gps_watch_label(), hint: m.settings_compass_gps_watch_hint() },
-			{ value: 'proximity' as CompassGpsProfile, label: m.settings_compass_gps_proximity_label(), hint: m.settings_compass_gps_proximity_hint() }
-		] as option (option.value)}
-			<label
-				class="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
-			>
+			<label class="app-section-row" class:opacity-60={powerSavingModeState.active}>
 				<input
-					type="radio"
-					name="compass-gps-profile"
-					class="mt-1 h-4 w-4 border-gray-300 text-forest-800 focus:ring-forest-600"
-					checked={compassSettingsState.gpsProfile === option.value}
-					onchange={() => void setCompassGpsProfile(option.value)}
+					type="checkbox"
+					class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600 disabled:cursor-not-allowed"
+					checked={appearanceSettingsState.outdoorMode}
+					disabled={powerSavingModeState.active}
+					onchange={(event) => void setOutdoorMode(event.currentTarget.checked)}
 				/>
 				<span class="text-sm">
-					<span class="font-medium text-forest-900">{option.label}</span>
-					<span class="mt-0.5 block text-muted">{option.hint}</span>
+					<span class="font-medium text-forest-900">{m.settings_outdoor_mode()}</span>
+					<span class="mt-0.5 block text-muted">
+						{m.settings_outdoor_hint()}
+						{#if isNativeApp()}
+							{m.settings_outdoor_android_brightness()}
+						{/if}
+						{#if powerSavingModeState.active}
+							{m.settings_power_saving_outdoor_blocked()}
+						{/if}
+					</span>
 				</span>
 			</label>
-		{/each}
+
+			<label class="app-section-row">
+				<input
+					type="checkbox"
+					class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
+					checked={appearanceSettingsState.darkMode}
+					onchange={(event) => void setDarkMode(event.currentTarget.checked)}
+				/>
+				<span class="text-sm">
+					<span class="font-medium text-forest-900">{m.settings_dark_mode()}</span>
+					<span class="mt-0.5 block text-muted">{m.settings_dark_hint()}</span>
+				</span>
+			</label>
+
+			<label class="app-section-row">
+				<input
+					type="checkbox"
+					class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
+					checked={powerSavingModeState.active}
+					onchange={(event) => void setPowerSavingMode(event.currentTarget.checked)}
+				/>
+				<span class="text-sm">
+					<span class="font-medium text-forest-900">{m.settings_power_saving_mode()}</span>
+					<span class="mt-0.5 block text-muted">{m.settings_power_saving_hint()}</span>
+				</span>
+			</label>
+
+			<div class="flex flex-col gap-2 px-4 py-3">
+				<label for="app-locale" class="text-sm font-medium text-forest-900"
+					>{m.settings_language()}</label
+				>
+				<select
+					id="app-locale"
+					class="rounded-[var(--radius-control)] border border-gray-200 bg-white px-4 py-3 text-sm text-forest-900"
+					value={appearanceSettingsState.locale}
+					onchange={(event) => void handleLocaleChange(event)}
+				>
+					{#each LOCALE_OPTIONS as option (option.value)}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+			</div>
+		</div>
 	</section>
 
 	<section class="flex flex-col gap-3">
 		<div>
 			<h2 class="text-lg font-semibold text-forest-900">{m.settings_backup()}</h2>
 			<p class="mt-1 text-sm text-muted">
-				{m.settings_backup_hint(treePluralArgs(treeStore.trees.length))}
+				{m.settings_backup_hint()}
 			</p>
 		</div>
 
 		{#if isAndroidApp() && incomingBackupState.pending}
-			<div class="rounded-xl border border-forest-200 bg-forest-50 px-4 py-3">
+			<div class="app-card border-forest-200 bg-forest-50 px-4 py-3">
 				<p class="text-sm font-medium text-forest-900">{m.settings_backup_received()}</p>
 				<p class="mt-1 text-sm text-forest-800">
 					{m.settings_backup_received_hint({ name: incomingBackupState.pending.displayName })}
@@ -1053,7 +1025,7 @@
 						type="button"
 						onclick={() => void handleIncomingImport('merge')}
 						disabled={restoring || storageLocked}
-						class="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800 disabled:opacity-50"
+						class="btn-secondary !h-11 text-sm sm:!w-auto"
 					>
 						{m.action_merge()}
 					</button>
@@ -1061,7 +1033,7 @@
 						type="button"
 						onclick={() => void handleIncomingImport('replace')}
 						disabled={restoring || storageLocked}
-						class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-900 disabled:opacity-50"
+						class="!h-11 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-4 text-sm font-medium text-amber-900 transition active:scale-[0.98] disabled:opacity-50 sm:w-auto"
 					>
 						{m.settings_replace_all()}
 					</button>
@@ -1069,7 +1041,7 @@
 						type="button"
 						onclick={() => void dismissIncomingBackup()}
 						disabled={restoring || storageLocked}
-						class="rounded-xl px-4 py-2.5 text-sm font-medium text-muted disabled:opacity-50"
+						class="rounded-[var(--radius-control)] px-4 py-2.5 text-sm font-medium text-muted disabled:opacity-50"
 					>
 						{m.action_ignore()}
 					</button>
@@ -1077,7 +1049,73 @@
 			</div>
 		{/if}
 
-		<div class="rounded-xl border border-gray-200 bg-white px-4 py-3">
+		<div class="app-section-list">
+			<div id="backup-export" class="scroll-mt-4 px-4 py-3">
+				<p class="text-sm font-medium text-forest-900">{m.settings_backup_export()}</p>
+				<label class="mt-3 flex items-start gap-3">
+					<input
+						type="checkbox"
+						class="mt-1 h-4 w-4 rounded border-forest-300 text-forest-700 focus:ring-forest-500"
+						bind:checked={exportProtectWithPassword}
+						disabled={backingUp || storageLocked}
+					/>
+					<span>
+						<span class="block text-sm text-forest-900">{m.settings_backup_export_protect()}</span>
+						<span class="mt-0.5 block text-xs text-muted">{m.settings_backup_export_protect_hint()}</span>
+						{#if !exportProtectWithPassword}
+							<span class="mt-1 block text-xs text-amber-800">{m.settings_backup_export_unprotected_warning()}</span>
+						{/if}
+					</span>
+				</label>
+				<div class="mt-3 flex flex-col gap-2">
+					<button
+						type="button"
+						onclick={() => void handleExportBackup('share')}
+						disabled={backingUp || !treeStore.loaded || storageLocked}
+						class="btn-primary !h-11 text-sm"
+					>
+						{backingUp ? m.action_exporting() : m.action_export()}
+					</button>
+					<button
+						type="button"
+						onclick={() => void handleExportBackup('local')}
+						disabled={backingUp || !treeStore.loaded || storageLocked}
+						class="btn-secondary !h-11 text-sm"
+					>
+						{backingUp
+							? m.action_saving()
+							: isAndroidApp()
+								? m.settings_save_downloads()
+								: m.settings_download_backup()}
+					</button>
+				</div>
+			</div>
+
+			<div id="backup-import" class="scroll-mt-4 px-4 py-3">
+				<p class="text-sm font-medium text-forest-900">{m.settings_backup_import()}</p>
+				<p class="mt-1 text-xs text-muted">{m.settings_backup_import_hint()}</p>
+				<div class="mt-3 flex flex-col gap-2">
+					<button
+						type="button"
+						onclick={() => openBackupImport('merge')}
+						disabled={restoring || storageLocked}
+						class="btn-secondary !h-11 text-sm"
+					>
+						{restoring ? m.action_importing() : m.action_import()}
+					</button>
+					<button
+						type="button"
+						onclick={() => openBackupImport('replace')}
+						disabled={restoring || storageLocked}
+						class="!h-11 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-4 text-sm font-medium text-amber-900 transition active:scale-[0.98] disabled:opacity-50"
+					>
+						{m.settings_import_replace()}
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<div class="app-card px-4 py-3">
 			{#if backupPasswordSettingsState.configured}
 				<p class="text-sm font-medium text-forest-900">
 					{m.settings_backup_password_configured()}
@@ -1086,14 +1124,14 @@
 					<button
 						type="button"
 						onclick={() => openPasswordForm('change')}
-						class="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800"
+						class="btn-secondary !h-11 text-sm sm:!w-auto"
 					>
 						{m.settings_backup_password_change()}
 					</button>
 					<button
 						type="button"
 						onclick={() => openPasswordForm('remove')}
-						class="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800"
+						class="btn-secondary !h-11 text-sm sm:!w-auto"
 					>
 						{m.settings_backup_password_remove()}
 					</button>
@@ -1116,108 +1154,30 @@
 					{/if}
 				</div>
 			{:else}
-				<p class="text-sm text-muted">{m.settings_backup_password_hint_help()}</p>
-				<p class="mt-2 text-xs text-amber-800">{m.settings_backup_password_recommended()}</p>
+				<p class="text-xs text-amber-800">{m.settings_backup_password_recommended()}</p>
 				<button
 					type="button"
 					onclick={() => openPasswordForm('setup')}
-					class="mt-3 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800"
+					class="btn-secondary mt-3 !h-11 text-sm sm:!w-auto"
 				>
 					{m.settings_backup_password_setup()}
 				</button>
 			{/if}
 		</div>
 
-		<div id="backup-export" class="scroll-mt-4 rounded-xl border border-gray-200 bg-white px-4 py-3">
-			<p class="text-sm font-medium text-forest-900">{m.settings_backup_export()}</p>
-			<div class="mt-3 flex flex-col gap-2">
+		<div class="app-section-list">
+			<div class="px-4 py-3">
+				<p class="text-sm font-medium text-forest-900">{m.settings_legacy_archive_reexport_title()}</p>
+				<p class="mt-1 text-xs text-muted">{m.settings_legacy_archive_reexport_body()}</p>
 				<button
 					type="button"
-					onclick={() => void handleExportBackup('share')}
-					disabled={backingUp || !treeStore.loaded || storageLocked}
-					class="rounded-xl bg-forest-800 px-4 py-3 text-sm font-medium text-white transition active:scale-[0.98] disabled:opacity-50"
+					onclick={openLegacyArchiveReexport}
+					disabled={backingUp || storageLocked}
+					class="btn-secondary mt-3 !h-11 text-sm sm:!w-auto"
 				>
-					{backingUp ? m.action_exporting() : m.action_export()}
-				</button>
-				<button
-					type="button"
-					onclick={() => void handleExportBackup('local')}
-					disabled={backingUp || !treeStore.loaded || storageLocked}
-					class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
-				>
-					{backingUp
-						? m.action_saving()
-						: isAndroidApp()
-							? m.settings_save_downloads()
-							: m.settings_download_backup()}
+					{m.settings_legacy_archive_reexport_action()}
 				</button>
 			</div>
-		</div>
-
-		<div id="backup-import" class="scroll-mt-4 rounded-xl border border-gray-200 bg-white px-4 py-3">
-			<p class="text-sm font-medium text-forest-900">{m.settings_backup_import()}</p>
-			<p class="mt-1 text-xs text-muted">{m.settings_backup_import_hint()}</p>
-			<div class="mt-3 flex flex-col gap-2">
-				<button
-					type="button"
-					onclick={() => openBackupImport('merge')}
-					disabled={restoring || storageLocked}
-					class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
-				>
-					{restoring ? m.action_importing() : m.action_import()}
-				</button>
-				<button
-					type="button"
-					onclick={() => openBackupImport('replace')}
-					disabled={restoring || storageLocked}
-					class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 transition active:scale-[0.98] disabled:opacity-50"
-				>
-					{m.settings_import_replace()}
-				</button>
-			</div>
-			<button
-				type="button"
-				onclick={() => {
-					showLegacyJsonInput = !showLegacyJsonInput;
-				}}
-				class="mt-3 text-left text-xs font-medium text-muted underline-offset-2 hover:underline"
-			>
-				{showLegacyJsonInput ? m.settings_hide_legacy_json() : m.settings_show_legacy_json()}
-			</button>
-			{#if showLegacyJsonInput}
-				<div class="mt-2 flex flex-col gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3">
-					<p class="text-xs text-muted">{m.settings_legacy_json_hint()}</p>
-					<button
-						type="button"
-						onclick={() => openLegacyBackupImport('merge')}
-						disabled={restoring || storageLocked}
-						class="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800"
-					>
-						{m.settings_import_json_merge()}
-					</button>
-					<button
-						type="button"
-						onclick={() => openLegacyBackupImport('replace')}
-						disabled={restoring || storageLocked}
-						class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-900"
-					>
-						{m.settings_import_json_replace()}
-					</button>
-				</div>
-			{/if}
-		</div>
-
-		<div class="rounded-xl border border-gray-200 bg-white px-4 py-3">
-			<p class="text-sm font-medium text-forest-900">{m.settings_legacy_archive_reexport_title()}</p>
-			<p class="mt-1 text-xs text-muted">{m.settings_legacy_archive_reexport_body()}</p>
-			<button
-				type="button"
-				onclick={openLegacyArchiveReexport}
-				disabled={backingUp || storageLocked}
-				class="mt-3 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-forest-800 disabled:opacity-50"
-			>
-				{m.settings_legacy_archive_reexport_action()}
-			</button>
 		</div>
 
 		<input
@@ -1234,13 +1194,34 @@
 			class="hidden"
 			onchange={(event) => void handleLegacyReexportFileSelected(event)}
 		/>
-		<input
-			bind:this={legacyBackupInput}
-			type="file"
-			accept="application/json,.json"
-			class="hidden"
-			onchange={(event) => void handleLegacyBackupFileSelected(event)}
-		/>
+	</section>
+
+	<section class="flex flex-col gap-3">
+		<div>
+			<h2 class="text-lg font-semibold text-forest-900">{m.settings_compass_gps_title()}</h2>
+			<p class="mt-1 text-sm text-muted">{m.settings_compass_gps_hint()}</p>
+		</div>
+
+		<div class="app-section-list">
+			{#each [
+				{ value: 'watch' as CompassGpsProfile, label: m.settings_compass_gps_watch_label(), hint: m.settings_compass_gps_watch_hint() },
+				{ value: 'proximity' as CompassGpsProfile, label: m.settings_compass_gps_proximity_label(), hint: m.settings_compass_gps_proximity_hint() }
+			] as option (option.value)}
+				<label class="app-section-row">
+					<input
+						type="radio"
+						name="compass-gps-profile"
+						class="mt-1 h-4 w-4 border-gray-300 text-forest-800 focus:ring-forest-600"
+						checked={compassSettingsState.gpsProfile === option.value}
+						onchange={() => void setCompassGpsProfile(option.value)}
+					/>
+					<span class="text-sm">
+						<span class="font-medium text-forest-900">{option.label}</span>
+						<span class="mt-0.5 block text-muted">{option.hint}</span>
+					</span>
+				</label>
+			{/each}
+		</div>
 	</section>
 
 	<section class="flex flex-col gap-3">
@@ -1255,43 +1236,48 @@
 				</p>
 			{/if}
 		</div>
-		<div class="rounded-xl border border-gray-200 bg-white px-4 py-3">
-			<p class="text-sm font-medium text-forest-900">
-				{isPro ? m.pro_status_active() : m.pro_status_free()}
-			</p>
-			<p class="mt-1 text-sm text-muted">
-				{#if isPro}
-					{m.pro_trees_count_pro({ count: String(treeStore.trees.length) })}
-				{:else if hiddenTreeCount > 0}
-					{m.pro_trees_count({
-						visible: String(treeStore.trees.length - hiddenTreeCount),
-						hidden: String(hiddenTreeCount)
-					})}
-				{:else}
-					{m.pro_trees_count_pro({ count: String(treeStore.trees.length) })}
+		<div class="pro-surface">
+			<div class="pro-surface-hero">
+				<span class="pro-badge">{m.pro_badge_short()}</span>
+				<p class="mt-2 text-sm font-medium text-white/90">
+					{isPro ? m.pro_status_active() : m.pro_status_free()}
+				</p>
+			</div>
+			<div class="px-4 py-3">
+				<p class="text-sm text-muted">
+					{#if isPro}
+						{m.pro_trees_count_pro({ count: String(treeStore.trees.length) })}
+					{:else if hiddenTreeCount > 0}
+						{m.pro_trees_count({
+							visible: String(treeStore.trees.length - hiddenTreeCount),
+							hidden: String(hiddenTreeCount)
+						})}
+					{:else}
+						{m.pro_trees_count_pro({ count: String(treeStore.trees.length) })}
+					{/if}
+				</p>
+				{#if !isPro}
+					<div class="mt-3">
+						<ProPurchaseCta active={!isPro} />
+					</div>
 				{/if}
-			</p>
-			{#if !isPro}
-				<div class="mt-3">
-					<ProPurchaseCta active={!isPro} />
-				</div>
-			{/if}
-			{#if devProOverrideState.available}
-				<div class="mt-3 border-t border-gray-100 pt-3">
-					<button
-						type="button"
-						class="w-full rounded-lg border px-4 py-2.5 text-sm font-medium transition active:scale-[0.98] {devProOverrideState.enabled
-							? 'border-amber-400 bg-amber-50 text-amber-900'
-							: 'border-gray-300 bg-white text-forest-800'}"
-						onclick={() => void setDevProOverride(!devProOverrideState.enabled)}
-					>
-						{devProOverrideState.enabled
-							? m.pro_dev_test_disable()
-							: m.pro_dev_test_enable()}
-					</button>
-					<p class="mt-1 text-xs text-muted">{m.pro_dev_test_hint()}</p>
-				</div>
-			{/if}
+				{#if devProOverrideState.available}
+					<div class="mt-3 border-t border-gray-100 pt-3">
+						<button
+							type="button"
+							class="w-full rounded-lg border px-4 py-2.5 text-sm font-medium transition active:scale-[0.98] {devProOverrideState.enabled
+								? 'border-amber-400 bg-amber-50 text-amber-900'
+								: 'border-gray-300 bg-white text-forest-800'}"
+							onclick={() => void setDevProOverride(!devProOverrideState.enabled)}
+						>
+							{devProOverrideState.enabled
+								? m.pro_dev_test_disable()
+								: m.pro_dev_test_enable()}
+						</button>
+						<p class="mt-1 text-xs text-muted">{m.pro_dev_test_hint()}</p>
+					</div>
+				{/if}
+			</div>
 		</div>
 	</section>
 
@@ -1313,11 +1299,10 @@
 
 	<section class="flex flex-col gap-3">
 		<div>
-			<h3 class="text-base font-semibold text-forest-900">{m.settings_online_services()}</h3>
+			<h2 class="text-lg font-semibold text-forest-900">{m.settings_online_services()}</h2>
 			<p class="mt-1 text-sm text-muted">{m.settings_online_services_hint()}</p>
-			<p class="mt-1 text-xs text-muted">{m.settings_api_open_meteo_commercial_note()}</p>
 		</div>
-		<div class="flex flex-col gap-3">
+		<div class="app-section-list">
 			{#each apiToggles as toggle (toggle.service)}
 				<SettingsApiToggle
 					title={toggle.title()}
@@ -1349,50 +1334,64 @@
 	<section class="flex flex-col gap-3">
 		<div>
 			<h2 class="text-lg font-semibold text-forest-900">{m.settings_security_privacy()}</h2>
-			{#if isLocalEncryptionAvailable()}
-				<p class="mt-1 text-sm text-muted">{m.settings_local_encryption_hint()}</p>
-			{:else}
-				<p class="mt-1 text-sm text-muted">{m.settings_privacy_hint()}</p>
-			{/if}
+			<p class="mt-1 text-sm text-muted">{m.settings_privacy_hint()}</p>
 		</div>
 
-		{#if isLocalEncryptionAvailable()}
-			<label class="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3">
-				<input
-					type="checkbox"
-					checked={securitySettingsState.localEncryptionEnabled}
-					disabled={securitySettingsState.migrationPending}
-					onchange={(event) => {
-						const input = event.currentTarget as HTMLInputElement;
-						const requested = input.checked;
-						input.checked = securitySettingsState.localEncryptionEnabled;
-						handleLocalEncryptionToggle(requested);
-					}}
-					class="h-4 w-4 rounded"
-				/>
-				<span class="text-sm text-forest-900">{m.settings_local_encryption()}</span>
-			</label>
-		{/if}
+		<div class="app-section-list">
+			{#if isLocalEncryptionAvailable()}
+				<label class="app-section-row">
+					<input
+						type="checkbox"
+						class="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-forest-800 focus:ring-forest-600 disabled:cursor-not-allowed"
+						checked={securitySettingsState.localEncryptionEnabled}
+						disabled={securitySettingsState.migrationPending}
+						onchange={(event) => {
+							const input = event.currentTarget as HTMLInputElement;
+							const requested = input.checked;
+							input.checked = securitySettingsState.localEncryptionEnabled;
+							handleLocalEncryptionToggle(requested);
+						}}
+					/>
+					<span class="min-w-0 flex-1 text-sm">
+						<span class="font-medium text-forest-900">{m.settings_local_encryption()}</span>
+						<span class="mt-0.5 block text-muted">{m.settings_local_encryption_hint()}</span>
+						{#if !securitySettingsState.localEncryptionEnabled}
+							<span class="mt-1 block text-xs text-amber-800">{m.settings_local_encryption_off_warning()}</span>
+						{/if}
+					</span>
+				</label>
+			{/if}
 
-		{#if isAndroidApp()}
+			{#if isAndroidApp()}
+				<button
+					type="button"
+					onclick={() => void handleResetOnboarding()}
+					class="w-full px-4 py-3 text-center text-sm font-medium text-forest-800 transition active:scale-[0.98]"
+				>
+					{m.settings_reset_onboarding()}
+				</button>
+			{/if}
+
+			<a
+				href={resolve('/settings/privacy')}
+				class="block px-4 py-3 text-center text-sm font-medium text-forest-800 transition active:scale-[0.98]"
+			>
+				{m.settings_privacy_policy_link()}
+			</a>
+
 			<button
 				type="button"
-				onclick={() => void handleResetOnboarding()}
-				class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98]"
+				onclick={() => {
+					showLegalDisclaimerDialog = true;
+				}}
+				class="w-full px-4 py-3 text-center text-sm font-medium text-forest-800 transition active:scale-[0.98]"
 			>
-				{m.settings_reset_onboarding()}
+				{m.settings_legal_disclaimer_link()}
 			</button>
-		{/if}
-
-		<a
-			href="{base}/settings/privacy"
-			class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-medium text-forest-800 transition active:scale-[0.98]"
-		>
-			{m.settings_privacy_policy_link()}
-		</a>
+		</div>
 	</section>
 
-	<a href="{base}/" class="text-center text-sm font-medium text-forest-800">{m.layout_back()}</a>
+	<a href={resolve('/')} class="text-center text-sm font-medium text-forest-800">{m.layout_back()}</a>
 </div>
 
 <ConfirmDialog
@@ -1405,6 +1404,47 @@
 		showLocalEncryptionConfirm = false;
 	}}
 />
+
+<svelte:window
+	onkeydown={showLegalDisclaimerDialog ? handleLegalDisclaimerKeydown : undefined}
+/>
+
+{#if showLegalDisclaimerDialog}
+	<div
+		use:portal={APP_SHELL_PORTAL_TARGET}
+		data-yamadori-portal
+		class="fixed inset-0 z-[100] flex items-end justify-center bg-forest-900/40 p-4 sm:items-center"
+		role="presentation"
+		onclick={(event) => {
+			if (event.target === event.currentTarget) {
+				closeLegalDisclaimerDialog();
+			}
+		}}
+	>
+		<div
+			class="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="legal-disclaimer-dialog-title"
+			aria-describedby="legal-disclaimer-dialog-body"
+			use:modalFocus={true}
+		>
+			<h2 id="legal-disclaimer-dialog-title" class="text-lg font-semibold text-forest-900">
+				{m.settings_legal_disclaimer_link()}
+			</h2>
+			<p id="legal-disclaimer-dialog-body" class="mt-3 text-sm leading-relaxed text-muted">
+				{m.veto_disclaimer_body()}
+			</p>
+			<button
+				type="button"
+				onclick={closeLegalDisclaimerDialog}
+				class="mt-6 flex h-12 w-full items-center justify-center rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.98]"
+			>
+				{m.action_close()}
+			</button>
+		</div>
+	</div>
+{/if}
 
 <ConfirmDialog
 	bind:open={showReplaceBackupDialog}
@@ -1421,9 +1461,13 @@
 <PasswordPromptDialog
 	bind:open={showPasswordExportDialog}
 	bind:error={passwordExportError}
-	title={m.settings_backup_export_password_title()}
-	message={m.settings_backup_export_password_message()}
-	hint={getBackupPasswordHint()}
+	title={exportPasswordMode === 'oneshot'
+		? m.settings_backup_export_oneshot_title()
+		: m.settings_backup_export_password_title()}
+	message={exportPasswordMode === 'oneshot'
+		? m.settings_backup_export_oneshot_message()
+		: m.settings_backup_export_password_message()}
+	hint={exportPasswordMode === 'verify' ? getBackupPasswordHint() : null}
 	onconfirm={(password) => void handlePasswordExportConfirm(password)}
 	oncancel={cancelPasswordExport}
 />

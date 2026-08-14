@@ -12,10 +12,10 @@ const minimalInput: ArchiveExportInput = {
 };
 
 describe('legacy archive re-export', () => {
-	it('detects unprotected archives as weak', async () => {
+	it('detects honest plaintext archives', async () => {
 		const blob = await buildArchive(minimalInput);
 		const analysis = await analyzeArchiveConfidentiality(blob);
-		expect(analysis.kind).toBe('weak');
+		expect(analysis.kind).toBe('plaintext');
 	});
 
 	it('detects password-protected archives', async () => {
@@ -25,7 +25,7 @@ describe('legacy archive re-export', () => {
 		expect(analysis.kind).toBe('password_protected');
 	});
 
-	it('re-exports weak archive with password envelope', async () => {
+	it('re-exports plaintext archive with password envelope', async () => {
 		const source = await buildArchive(minimalInput);
 		const strengthened = await reexportArchiveWithPassword(
 			source,

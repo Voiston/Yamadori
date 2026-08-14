@@ -17,12 +17,17 @@ const COUNTRY_NOTES: Partial<Record<CountryCode, NoteFn>> = {
 	NL: () => m.veto_disclaimer_note_nl(),
 	AT: () => m.veto_disclaimer_note_at(),
 	PT: () => m.veto_disclaimer_note_pt(),
+	IE: () => m.veto_disclaimer_note_ie(),
 	GB: () => m.veto_disclaimer_note_gb(),
 	SE: () => m.veto_disclaimer_note_se(),
 	NO: () => m.veto_disclaimer_note_no(),
 	US: () => m.veto_disclaimer_note_us(),
 	CA: () => m.veto_disclaimer_note_ca(),
-	NZ: () => m.veto_disclaimer_note_nz()
+	NZ: () => m.veto_disclaimer_note_nz(),
+	AU: () => m.veto_disclaimer_note_au(),
+	DK: () => m.veto_disclaimer_note_dk(),
+	FI: () => m.veto_disclaimer_note_fi(),
+	JP: () => m.veto_disclaimer_note_jp()
 };
 
 export function vetoDisclaimerCountryNote(country: CountryCode | null): string {

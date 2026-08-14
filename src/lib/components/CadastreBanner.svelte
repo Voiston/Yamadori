@@ -59,9 +59,9 @@
 {#if loading}
 	<div
 		data-capture-tutorial="cadastre"
-		class="rounded-xl border border-gray-200 bg-white/95 px-3 py-2 text-xs text-muted shadow-lg backdrop-blur-md {floating
+		class="app-card bg-white/95 px-3 py-2 text-xs text-muted backdrop-blur-md {floating
 			? 'ring-1 ring-black/5'
-			: 'shadow-sm'}"
+			: ''}"
 		role="status"
 		aria-live="polite"
 	>
@@ -70,9 +70,9 @@
 {:else if info && accent}
 	<div
 		data-capture-tutorial="cadastre"
-		class="relative overflow-hidden rounded-xl border bg-white/95 text-left shadow-lg backdrop-blur-md {accent.border} {floating
+		class="app-card relative overflow-hidden bg-white/95 text-left backdrop-blur-md {accent.border} {floating
 			? 'ring-1 ring-black/5'
-			: 'shadow-sm'} {compact ? 'px-3 py-2' : 'px-3 py-2.5'}"
+			: ''} {compact ? 'px-3 py-2' : 'px-3 py-2.5'}"
 		role="status"
 		aria-live="polite"
 	>

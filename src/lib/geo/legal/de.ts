@@ -9,6 +9,7 @@ import {
  * - BGB § 911 (Überfall — Fallobst auf Nachbargrundstück gehört diesem Grundstück).
  * - BWaldG § 14 (Betreten des Waldes zu Erholungszwecken).
  * - BNatSchG § 39 (allgemeiner Artenschutz / „Handstraußregel“ für den Eigenbedarf).
+ * - BNatSchG § 44 (Zugriffsverbote für besonders/streng geschützte Arten).
  */
 export const deLegalPack: LegalContentPack = {
 	country: 'DE',
@@ -36,6 +37,14 @@ export const deLegalPack: LegalContentPack = {
 			title: '§ 39 BNatSchG — Handstraußregel',
 			summary:
 				'Geringe Mengen wild lebender Pflanzen und Früchte dürfen für den persönlichen Bedarf pfleglich entnommen werden — außer besonders/streng geschützte Arten und Schutzgebiete.'
+		},
+		{
+			id: 'de_bnatschg_44',
+			group: 'environment',
+			url: 'https://www.gesetze-im-internet.de/bnatschg_2009/__44.html',
+			title: '§ 44 BNatSchG — Zugriffsverbote',
+			summary:
+				'Besonders und streng geschützte wild lebende Pflanzen dürfen nicht entnommen, beschädigt oder zerstört werden (vgl. auch BArtSchV Anlage 1).'
 		}
 	],
 	speciesSearchBase: SPECIES_SEARCH_BASE.floraWeb,

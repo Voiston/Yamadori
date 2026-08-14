@@ -29,11 +29,26 @@ export function resolveCountry(latitude: number, longitude: number): CountryCode
 		pointInCountryBboxes(latitude, longitude, country)
 	);
 
+	// JP mainland bbox is a rectangle over the Sea of Japan — drop false hits
+	// on the Korean east coast / Russian Primorye (Vladivostok) before scoring.
+	if (matches.includes('JP') && !isPlausibleJapanLand(latitude, longitude)) {
+		matches.splice(
+			0,
+			matches.length,
+			...matches.filter((country) => country !== 'JP')
+		);
+	}
+
 	if (matches.length === 0) return null;
 
-	// Copenhagen / Zealand sits in a loose SE bbox west of Øresund — drop SE first.
+	// Legacy: Copenhagen / Zealand sat in loose SE bbox west of Øresund.
+	// Prefer DK when present; otherwise still drop SE so the point is not Sweden.
 	if (matches.includes('SE') && longitude < 12.65 && latitude < 56.05) {
-		matches.splice(0, matches.length, ...matches.filter((country) => country !== 'SE'));
+		if (matches.includes('DK')) {
+			matches.splice(0, matches.length, ...matches.filter((country) => country !== 'SE'));
+		} else {
+			matches.splice(0, matches.length, ...matches.filter((country) => country !== 'SE'));
+		}
 	}
 
 	if (matches.length === 0) return null;
@@ -41,6 +56,12 @@ export function resolveCountry(latitude: number, longitude: number): CountryCode
 
 	// Tight country bboxes that overlap larger neighbours.
 	if (matches.includes('CH')) return 'CH';
+
+	// DK ↔ SE (Øresund) / DK ↔ DE (Schleswig).
+	if (matches.includes('DK') && (matches.includes('SE') || matches.includes('DE'))) {
+		return resolveDenmarkBorders(latitude, longitude, matches);
+	}
+	if (matches.includes('DK')) return 'DK';
 
 	// BE ↔ NL overlap (Flanders vs Zeeland/Brabant/Limburg).
 	// Antwerp-like (south-west) → BE; Dutch Brabant/Limburg → NL; Aachen → DE later.
@@ -91,6 +112,12 @@ export function resolveCountry(latitude: number, longitude: number): CountryCode
 	// Skåne overlaps northern DE bbox — prefer SE.
 	if (matches.includes('SE') && matches.includes('DE')) return 'SE';
 
+	// FI ↔ SE (Bothnia / Torne) / FI ↔ NO (Lapland).
+	if (matches.includes('FI') && (matches.includes('SE') || matches.includes('NO'))) {
+		return resolveFinlandBorders(latitude, longitude, matches);
+	}
+	if (matches.includes('FI')) return 'FI';
+
 	// SE ↔ NO border (Trøndelag / Jämtland / Oslo–Karlstad corridor).
 	if (matches.includes('SE') && matches.includes('NO')) {
 		return centeredness(latitude, longitude, 'NO') < centeredness(latitude, longitude, 'SE')
@@ -113,11 +140,120 @@ export function resolveCountry(latitude: number, longitude: number): CountryCode
 	}
 	if (matches.includes('PT')) return 'PT';
 
+	// IE ↔ GB / Northern Ireland (ROI vs NI pocket).
+	if (matches.includes('IE') && matches.includes('GB')) {
+		return resolveIrelandUkBorder(latitude, longitude);
+	}
+	if (matches.includes('IE')) return 'IE';
+
 	return matches.reduce((closest, candidate) =>
 		centeredness(latitude, longitude, candidate) < centeredness(latitude, longitude, closest)
 			? candidate
 			: closest
 	);
+}
+
+/**
+ * Disambiguate FI vs SE (Gulf of Bothnia / Torne) and FI vs NO (Lapland).
+ * Approximate borders only — not cadastral.
+ */
+function resolveFinlandBorders(
+	latitude: number,
+	longitude: number,
+	matches: CountryCode[]
+): CountryCode {
+	// Åland sits in SE's loose bbox; prefer FI when FI matches.
+	if (
+		matches.includes('FI') &&
+		latitude >= 59.7 &&
+		latitude <= 60.6 &&
+		longitude >= 19.3 &&
+		longitude <= 21.4
+	) {
+		return 'FI';
+	}
+
+	if (matches.includes('SE') && matches.includes('FI')) {
+		// Torne valley: Haparanda (SE) west of ~24.15; Tornio (FI) east.
+		if (latitude >= 65.5) {
+			return longitude >= 24.15 ? 'FI' : 'SE';
+		}
+		// Swedish Bothnia coast (e.g. Umeå ~20.3) vs Finnish west coast (Turku ~22.3).
+		if (longitude < 21.5) return 'SE';
+		return 'FI';
+	}
+
+	if (matches.includes('NO') && matches.includes('FI')) {
+		// Norwegian land border with Finland is only in the far north.
+		// Southern / central Finland sits inside NO's loose continental bbox.
+		if (latitude < 68.0) return 'FI';
+		// Kirkenes / eastern Finnmark sits east of Finnish Lapland bulge.
+		if (latitude >= 69.2 && longitude >= 28.5) return 'NO';
+		return centeredness(latitude, longitude, 'FI') < centeredness(latitude, longitude, 'NO')
+			? 'FI'
+			: 'NO';
+	}
+
+	if (matches.includes('FI')) return 'FI';
+	if (matches.includes('SE')) return 'SE';
+	if (matches.includes('NO')) return 'NO';
+	return 'FI';
+}
+
+/**
+ * Disambiguate DK vs SE (Øresund) and DK vs DE (Schleswig).
+ * Approximate borders only — not cadastral.
+ */
+function resolveDenmarkBorders(
+	latitude: number,
+	longitude: number,
+	matches: CountryCode[]
+): CountryCode {
+	// East of Øresund → Sweden (Malmö / Helsingborg).
+	if (matches.includes('SE') && longitude >= 12.65) return 'SE';
+
+	// Swedish west coast across Kattegat (Halland / Bohuslän / Gothenburg).
+	// Keep Danish islands west of ~11.7 (e.g. Anholt ~11.54) as DK.
+	if (matches.includes('SE') && latitude >= 56.2 && longitude >= 11.7) return 'SE';
+
+	// Flensburg corridor (DE) just south of the land border.
+	if (
+		matches.includes('DE') &&
+		latitude < 54.85 &&
+		longitude > 9.0 &&
+		longitude < 9.75
+	) {
+		return 'DE';
+	}
+
+	if (matches.includes('DK')) return 'DK';
+	if (matches.includes('SE')) return 'SE';
+	if (matches.includes('DE')) return 'DE';
+	return 'DK';
+}
+
+/**
+ * Disambiguate IE/GB when both bboxes contain the point (island of Ireland).
+ * Approximate border only — Belfast/Derry stay GB; Donegal/Dublin stay IE.
+ */
+function resolveIrelandUkBorder(latitude: number, longitude: number): CountryCode {
+	// Eastern NI (Antrim / Down / Belfast).
+	if (latitude >= 54.15 && latitude <= 55.3 && longitude >= -6.5 && longitude <= -5.4) {
+		return 'GB';
+	}
+	// Derry city / north-central NI (exclude Donegal west of ~−7.5).
+	if (latitude >= 54.7 && latitude <= 55.2 && longitude >= -7.45 && longitude <= -6.5) {
+		return 'GB';
+	}
+	// Mid Ulster / Armagh corridor.
+	if (latitude >= 54.15 && latitude <= 54.7 && longitude >= -7.5 && longitude <= -6.5) {
+		return 'GB';
+	}
+	// Fermanagh / west Tyrone east of Donegal town.
+	if (latitude >= 54.2 && latitude <= 54.65 && longitude >= -7.9 && longitude <= -7.5) {
+		return 'GB';
+	}
+	return 'IE';
 }
 
 /**
@@ -178,4 +314,22 @@ function resolveUsCanadaBorder(latitude: number, longitude: number): CountryCode
 	return centeredness(latitude, longitude, 'CA') < centeredness(latitude, longitude, 'US')
 		? 'CA'
 		: 'US';
+}
+
+/**
+ * True for points that fall in JP bboxes and are plausibly Japanese land
+ * (or nearshore), not the Korean east coast / Primorye rectangle false positives.
+ * Okinawa / Amami / Ogasawara EXTRA bboxes are accepted as-is.
+ */
+function isPlausibleJapanLand(latitude: number, longitude: number): boolean {
+	/** Ryukyu / Ogasawara extras — south of mainland minLat or far east. */
+	if (latitude < 30.2 || longitude > 141.5) return true;
+
+	/** Russian Primorye / northern Sea of Japan (e.g. Vladivostok) — Hokkaido is east of ~139.4. */
+	if (latitude >= 41.0 && longitude < 139.4) return false;
+
+	/** Korean peninsula east coast (e.g. Busan / Pohang) vs Kyushu / Tsushima. */
+	if (latitude >= 33.0 && latitude <= 39.5 && longitude < 129.25) return false;
+
+	return true;
 }

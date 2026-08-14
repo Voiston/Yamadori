@@ -11,10 +11,10 @@ describe('resolveAgriLoadAction', () => {
 		source: 'live' as const,
 		currentFetchKey: '47.20_2.20',
 		currentDisplayKey:
-			'47.20_2.20|{"species":"Erable","observedPhenologyStage":null,"cernageStatus":null,"environmentExposure":"OPEN"}',
+			'47.20_2.20|{"species":"Erable","observedPhenologyStage":null,"cernageStatus":null,"aoutementStatus":null,"leafFallPct":null,"environmentExposure":"OPEN"}',
 		nextFetchKey: '47.20_2.20',
 		nextDisplayKey:
-			'47.20_2.20|{"species":"Erable","observedPhenologyStage":null,"cernageStatus":null,"environmentExposure":"OPEN"}'
+			'47.20_2.20|{"species":"Erable","observedPhenologyStage":null,"cernageStatus":null,"aoutementStatus":null,"leafFallPct":null,"environmentExposure":"OPEN"}'
 	};
 
 	it('skips when live data is already loaded for the same context', () => {
@@ -34,7 +34,7 @@ describe('resolveAgriLoadAction', () => {
 				force: false,
 				online: true,
 				nextDisplayKey:
-					'47.20_2.20|{"species":"Erable","observedPhenologyStage":"leaf_out","cernageStatus":null,"environmentExposure":"OPEN"}'
+					'47.20_2.20|{"species":"Erable","observedPhenologyStage":"leaf_out","cernageStatus":null,"aoutementStatus":null,"leafFallPct":null,"environmentExposure":"OPEN"}'
 			})
 		).toBe('recompute');
 	});
@@ -47,7 +47,7 @@ describe('resolveAgriLoadAction', () => {
 				online: true,
 				nextFetchKey: '47.20_2.20',
 				nextDisplayKey:
-					'47.20_2.20|{"species":"Pin","observedPhenologyStage":null,"cernageStatus":null,"environmentExposure":"OPEN"}'
+					'47.20_2.20|{"species":"Pin","observedPhenologyStage":null,"cernageStatus":null,"aoutementStatus":null,"leafFallPct":null,"environmentExposure":"OPEN"}'
 			})
 		).toBe('recompute');
 	});
@@ -93,7 +93,7 @@ describe('resolveAgriLoadAction', () => {
 				online: true,
 				nextFetchKey: '47.30_2.30',
 				nextDisplayKey:
-					'47.30_2.30|{"species":"Erable","observedPhenologyStage":null,"cernageStatus":null,"environmentExposure":"OPEN"}'
+					'47.30_2.30|{"species":"Erable","observedPhenologyStage":null,"cernageStatus":null,"aoutementStatus":null,"leafFallPct":null,"environmentExposure":"OPEN"}'
 			})
 		).toBe('fetch');
 	});
@@ -106,20 +106,17 @@ describe('buildAgriFetchKey', () => {
 });
 
 describe('buildAgriDisplayKey', () => {
-	it('includes species and environment exposure in the display key', () => {
-		const openKey = buildAgriDisplayKey(47.2, 2.2, {
+	it('includes aoutement and leaf fall in the display key', () => {
+		const baseKey = buildAgriDisplayKey(47.2, 2.2, {
 			species: 'Erable',
 			environmentExposure: 'OPEN'
 		});
-		const edgeKey = buildAgriDisplayKey(47.2, 2.2, {
+		const lateKey = buildAgriDisplayKey(47.2, 2.2, {
 			species: 'Erable',
-			environmentExposure: 'EDGE'
+			environmentExposure: 'OPEN',
+			aoutementStatus: 'aoute',
+			leafFallPct: 80
 		});
-		const pineKey = buildAgriDisplayKey(47.2, 2.2, {
-			species: 'Pin',
-			environmentExposure: 'OPEN'
-		});
-		expect(openKey).not.toBe(edgeKey);
-		expect(openKey).not.toBe(pineKey);
+		expect(baseKey).not.toBe(lateKey);
 	});
 });

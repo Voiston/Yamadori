@@ -1,7 +1,7 @@
 import type { Tree, VoiceNote } from '$lib/types/tree';
 import { zip } from 'fflate';
 import { sha256Hex } from './checksums';
-import { encryptPayload, encryptEnvelope, generateArchiveKeyMaterial, ivToBase64 } from './crypto';
+import { encryptEnvelope } from './crypto';
 import {
 	extensionForMime,
 	mediaZipPath,
@@ -9,7 +9,9 @@ import {
 	parseDataUrl
 } from './media';
 import {
+	ARCHIVE_DONNEES_JSON_PATH,
 	ARCHIVE_FORMAT_VERSION,
+	ARCHIVE_MANIFEST_PATH,
 	type ArchiveBuildOptions,
 	type ArchiveExportInput,
 	type ArchiveFileEntry,
@@ -22,9 +24,6 @@ import {
 	type YamadoriArchiveData,
 	type ZipEntryMap
 } from './types';
-
-const MANIFEST_PATH = 'manifest.json';
-const DONNEES_PATH = 'donnees.enc';
 
 type MediaCollector = {
 	files: ZipEntryMap;
@@ -69,16 +68,24 @@ function exportVoiceNote(
 }
 
 function treeToArchive(tree: Tree, collector: MediaCollector): TreeArchive {
-	const visits: TreeVisitArchive[] = tree.visits.map((visit) => ({
-		id: visit.id,
-		visitedAt: visit.visitedAt,
-		note: visit.note,
-		photoPath: addMediaFromDataUrl(collector, visit.photoBase64, `v-${visit.id}`),
-		voiceNote: visit.voiceNote
-			? exportVoiceNote(visit.voiceNote, collector, `voice-${visit.id}`)
-			: null,
-		yrsSnapshot: visit.yrsSnapshot ?? null
-	}));
+	const visits: TreeVisitArchive[] = tree.visits.map((visit) => {
+		const photoPaths = visit.photos
+			.map((photo, index) =>
+				addMediaFromDataUrl(collector, photo, `v-${visit.id}-${index}`)
+			)
+			.filter(Boolean);
+		return {
+			id: visit.id,
+			visitedAt: visit.visitedAt,
+			note: visit.note,
+			photoPaths,
+			photoPath: photoPaths[0] ?? '',
+			voiceNote: visit.voiceNote
+				? exportVoiceNote(visit.voiceNote, collector, `voice-${visit.id}`)
+				: null,
+			yrsSnapshot: visit.yrsSnapshot ?? null
+		};
+	});
 
 	const photos = tree.photos.map((photo, index) => {
 		if (!photo.trim()) return '';
@@ -128,6 +135,33 @@ async function buildFileEntries(files: ZipEntryMap): Promise<ArchiveFileEntry[]>
 	return entries.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+function zipEntries(zipFiles: ZipEntryMap): Promise<Uint8Array> {
+	return new Promise((resolve, reject) => {
+		const zipInput: Record<string, Uint8Array> = {};
+		for (const [path, data] of Object.entries(zipFiles)) {
+			zipInput[path] = data;
+		}
+
+		zip(
+			zipInput,
+			{
+				level: 6,
+				mem: 8
+			},
+			(error, result) => {
+				if (error) reject(error);
+				else resolve(result);
+			}
+		);
+	});
+}
+
+/**
+ * Build a Yamadori archive.
+ * - Without password: honest plaintext ZIP (`donnees.json`, `encryption: null`).
+ * - With password: same plaintext ZIP wrapped in a PBKDF2 password envelope
+ *   (key never stored in the archive).
+ */
 export async function buildArchive(
 	input: ArchiveExportInput,
 	options?: ArchiveBuildOptions | ArchiveProgressCallback
@@ -147,15 +181,13 @@ export async function buildArchive(
 		...(input.apiSettings ? { apiSettings: input.apiSettings } : {})
 	};
 
-	const plaintext = JSON.stringify(payload);
-	const archiveKeyMaterial = generateArchiveKeyMaterial();
-	const { ciphertext, iv } = await encryptPayload(plaintext, archiveKeyMaterial);
+	const plaintextBytes = new TextEncoder().encode(JSON.stringify(payload));
 
 	onProgress?.('encrypt', 60);
 
 	const zipFiles: ZipEntryMap = {
 		...collector.files,
-		[DONNEES_PATH]: ciphertext
+		[ARCHIVE_DONNEES_JSON_PATH]: plaintextBytes
 	};
 
 	const fileEntries = await buildFileEntries(zipFiles);
@@ -163,12 +195,7 @@ export async function buildArchive(
 		formatVersion: ARCHIVE_FORMAT_VERSION,
 		appVersion: input.appVersion,
 		exportedAt: new Date().toISOString(),
-		encryption: {
-			algorithm: 'AES-256-GCM',
-			keyScope: 'archive',
-			keyMaterial: ivToBase64(archiveKeyMaterial),
-			iv: ivToBase64(iv)
-		},
+		encryption: null,
 		stats: {
 			treeCount: trees.length,
 			mediaFileCount: collector.paths.length
@@ -177,28 +204,11 @@ export async function buildArchive(
 	};
 
 	const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
-	zipFiles[MANIFEST_PATH] = manifestBytes;
+	zipFiles[ARCHIVE_MANIFEST_PATH] = manifestBytes;
 
 	onProgress?.('zip', 80);
 
-	const zipped = await new Promise<Uint8Array>((resolve, reject) => {
-		const zipInput: Record<string, Uint8Array> = {};
-		for (const [path, data] of Object.entries(zipFiles)) {
-			zipInput[path] = data;
-		}
-
-		zip(
-			zipInput,
-			{
-				level: 6,
-				mem: 8
-			},
-			(error, result) => {
-				if (error) reject(error);
-				else resolve(result);
-			}
-		);
-	});
+	const zipped = await zipEntries(zipFiles);
 
 	onProgress?.('zip', 100);
 

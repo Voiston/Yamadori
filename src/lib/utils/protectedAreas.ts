@@ -88,7 +88,15 @@ function emptyZoneStatus(): Record<ProtectedZoneCardId, ProtectedZonePresence> {
 		doc_national_park: 'clear',
 		doc_conservation: 'clear',
 		whenua_rahui: 'clear',
-		outside_pcl: 'clear'
+		outside_pcl: 'clear',
+		capad_national_park: 'clear',
+		capad_conservation: 'clear',
+		capad_ipa: 'clear',
+		outside_capad: 'clear',
+		ksj_national_park: 'clear',
+		ksj_special_zone: 'clear',
+		ksj_prefectural_park: 'clear',
+		outside_ksj: 'clear'
 	};
 }
 

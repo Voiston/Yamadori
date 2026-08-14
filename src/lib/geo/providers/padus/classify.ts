@@ -90,6 +90,10 @@ export function classifyPadusHit(hit: PadusFeeHit): CadastreZoneType {
 	if (mang === 'BLM') {
 		return 'blm';
 	}
+	// FWS National Wildlife Refuge / refuge system — hard veto before other federal.
+	if (mang === 'FWS' || des === 'NWR' || unit.includes('NATIONAL WILDLIFE REFUGE')) {
+		return 'national_wildlife_area';
+	}
 	if (des === 'SP' || mang.includes('SP') || unit.includes('STATE PARK')) {
 		return 'state_park';
 	}
@@ -99,7 +103,7 @@ export function classifyPadusHit(hit: PadusFeeHit): CadastreZoneType {
 	if (mangType === 'LOC' || mang === 'CITY' || mang === 'CNTY' || mang === 'REG') {
 		return 'local_park';
 	}
-	if (mangType === 'FED' || mang === 'FWS' || mang === 'NPS' || mang === 'TVA' || mang === 'DOE') {
+	if (mangType === 'FED' || mang === 'TVA' || mang === 'DOE') {
 		return 'other_federal';
 	}
 

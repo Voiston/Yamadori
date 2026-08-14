@@ -9,6 +9,7 @@
 	import { isProUnlocked } from '$lib/utils/featurePolicy';
 	import { portal } from '$lib/utils/portal';
 	import { modalFocus } from '$lib/utils/modalFocus';
+	import { sheetBackdrop, sheetPanel } from '$lib/utils/motion';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let feedback = $state<string | null>(null);
@@ -67,19 +68,29 @@
 {#if open}
 	<div
 		use:portal
-		class="fixed inset-0 z-[100] flex items-end justify-center bg-forest-900/40 p-4 sm:items-center"
+		class="fixed inset-0 z-[100] flex items-end justify-center p-4 sm:items-center"
 		role="presentation"
-		onclick={handleBackdropClick}
 	>
 		<div
-			class="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl"
+			class="absolute inset-0 bg-forest-900/40"
+			role="presentation"
+			transition:sheetBackdrop
+			onclick={handleBackdropClick}
+		></div>
+		<div
+			class="relative z-10 w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl"
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="pro-paywall-title"
 			aria-describedby="pro-paywall-desc"
+			transition:sheetPanel
 			use:modalFocus
 		>
 			<div class="bg-gradient-to-br from-forest-800 to-forest-900 px-6 pb-8 pt-6 text-white">
+				<div
+					class="sheet-grabber sheet-grabber--on-dark mb-4 sm:hidden"
+					aria-hidden="true"
+				></div>
 				<button
 					type="button"
 					class="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-lg leading-none transition active:scale-95"
@@ -88,11 +99,7 @@
 				>
 					×
 				</button>
-				<span
-					class="inline-flex rounded-full border border-amber-300/40 bg-amber-400/20 px-3 py-0.5 text-xs font-semibold tracking-wide text-amber-100 uppercase"
-				>
-					Pro
-				</span>
+				<span class="pro-badge">{m.pro_badge_short()}</span>
 				<h2 id="pro-paywall-title" class="mt-3 text-2xl font-semibold">{m.pro_modal_title()}</h2>
 				<p class="mt-1 text-sm text-forest-100/90">{m.pro_modal_subtitle()}</p>
 			</div>

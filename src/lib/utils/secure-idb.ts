@@ -38,6 +38,14 @@ async function listSensitiveStorageKeys(): Promise<string[]> {
 	return [...discovered];
 }
 
+async function hasExistingSensitiveData(): Promise<boolean> {
+	for (const storageKey of await listSensitiveStorageKeys()) {
+		const raw = await get<unknown>(storageKey);
+		if (raw !== undefined) return true;
+	}
+	return false;
+}
+
 type EncryptedEnvelope = {
 	__yamadori_enc_v1: true;
 	iv: string;
@@ -64,12 +72,15 @@ function bytesToBase64(bytes: Uint8Array): string {
 	return btoa(binary);
 }
 
-async function readEncryptionEnabledPref(): Promise<boolean> {
+/** `null` = preference never written (pre-decision). */
+async function readEncryptionEnabledPref(): Promise<boolean | null> {
 	try {
 		const { value } = await Preferences.get({ key: PREF_KEY_ENABLED });
-		return value === 'true';
+		if (value === 'true') return true;
+		if (value === 'false') return false;
+		return null;
 	} catch {
-		return false;
+		return null;
 	}
 }
 
@@ -86,8 +97,27 @@ export async function isLocalEncryptionEnabled(): Promise<boolean> {
 	if (encryptionEnabledCache !== null) {
 		return encryptionEnabledCache;
 	}
-	encryptionEnabledCache = await readEncryptionEnabledPref();
+	encryptionEnabledCache = (await readEncryptionEnabledPref()) ?? false;
 	return encryptionEnabledCache;
+}
+
+/**
+ * New native installs default to local encryption (KeyStore-backed, no PIN).
+ * Existing installs that never set the preference stay off (no silent migration).
+ */
+export async function ensureLocalEncryptionDefaultForNewInstalls(): Promise<void> {
+	if (!isNativeApp()) return;
+
+	const existing = await readEncryptionEnabledPref();
+	if (existing !== null) return;
+
+	if (await hasExistingSensitiveData()) {
+		await writeEncryptionEnabledPref(false);
+		return;
+	}
+
+	await getOrCreateEncryptionKeyMaterial();
+	await writeEncryptionEnabledPref(true);
 }
 
 export function isLocalEncryptionEnabledSync(): boolean {

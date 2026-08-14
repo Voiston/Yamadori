@@ -2,8 +2,9 @@ import { buildInpnSpeciesSearchUrl, INPN_SPECIES_SEARCH_BASE } from '$lib/consta
 import type { SpeciesProtectionPack } from '$lib/geo/providers/species-protection/types';
 
 /**
- * Curated FR pack — yamadori/bonsai-relevant taxa from national protection orders
- * (e.g. arrêté 20 jan 1982) and well-known regional cases. Non-exhaustive.
+ * Curated FR pack — yamadori/bonsai-relevant taxa.
+ * `national` entries must appear on the arrêté of 20 Jan 1982 (as amended).
+ * Regional / habitat-only cases use `regional` + `caution`. Non-exhaustive.
  */
 export const frSpeciesProtectionPack: SpeciesProtectionPack = {
 	country: 'FR',
@@ -19,9 +20,35 @@ export const frSpeciesProtectionPack: SpeciesProtectionPack = {
 			names: ['Bouleau nain', 'Betula nana', 'Dwarf birch']
 		},
 		{
-			id: 'fr_pinus_salzmannii',
+			id: 'fr_salix_lapponum',
 			level: 'veto',
 			scope: 'national',
+			label: 'Saule des Lapons (Salix lapponum)',
+			names: ['Saule des Lapons', 'Salix lapponum', 'Downy willow']
+		},
+		{
+			id: 'fr_daphne_striata',
+			level: 'veto',
+			scope: 'national',
+			label: 'Camélée strié (Daphne striata)',
+			names: ['Camélée strié', 'Daphne striata', 'Striped daphne']
+		},
+		{
+			id: 'fr_dracocephalum',
+			level: 'veto',
+			scope: 'national',
+			label: 'Dracocephale d’Autriche',
+			names: [
+				'Dracocephalum austriacum',
+				'Dracocephale',
+				'Dracocephalum ruyschiana',
+				'Dracocephale de Ruysch'
+			]
+		},
+		{
+			id: 'fr_pinus_salzmannii',
+			level: 'caution',
+			scope: 'regional',
 			label: 'Pin de Salzmann (Pinus nigra subsp. salzmannii)',
 			names: [
 				'Pin de Salzmann',
@@ -33,32 +60,11 @@ export const frSpeciesProtectionPack: SpeciesProtectionPack = {
 			]
 		},
 		{
-			id: 'fr_salix_lapponum',
-			level: 'veto',
-			scope: 'national',
-			label: 'Saule des Lapons (Salix lapponum)',
-			names: ['Saule des Lapons', 'Salix lapponum', 'Downy willow']
-		},
-		{
 			id: 'fr_salix_repens',
 			level: 'caution',
-			scope: 'national',
+			scope: 'regional',
 			label: 'Saule rampant (Salix repens)',
 			names: ['Saule rampant', 'Salix repens', 'Creeping willow']
-		},
-		{
-			id: 'fr_daphne',
-			level: 'veto',
-			scope: 'national',
-			label: 'Daphné (Daphne spp.)',
-			names: ['Daphné', 'Daphne', 'Daphne mezereum', 'Bois-joli', 'Daphne laureola']
-		},
-		{
-			id: 'fr_dracocephalum',
-			level: 'veto',
-			scope: 'national',
-			label: 'Dracocephale d’Autriche',
-			names: ['Dracocephalum austriacum', 'Dracocephale']
 		},
 		{
 			id: 'fr_osmunda',

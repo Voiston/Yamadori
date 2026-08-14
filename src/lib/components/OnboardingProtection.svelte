@@ -13,7 +13,8 @@
 	import { exportAppBackup } from '$lib/utils/backupExport';
 	import * as m from '$lib/paraglide/messages.js';
 	import { isAndroidApp } from '$lib/utils/platform';
-	import { portal, BODY_PORTAL_TARGET, ONBOARDING_OVERLAY_CLASS, ONBOARDING_PANEL_CLASS } from '$lib/utils/portal';
+	import { portal, BODY_PORTAL_TARGET, ONBOARDING_PANEL_CLASS } from '$lib/utils/portal';
+	import { sheetBackdrop, sheetPanel } from '$lib/utils/motion';
 	import { onMount, tick } from 'svelte';
 
 	let {
@@ -29,14 +30,14 @@
 	const stepIds: StepId[] = ['protection', 'protection_setup'];
 
 	let stepIndex = $state(0);
-	let enableLocalEncryption = $state(true);
+	let enableLocalEncryption = $state(false);
 	let working = $state(false);
 	let feedback = $state('');
 	let feedbackError = $state(false);
 	let showPasswordFormDialog = $state(false);
 	let passwordFormError = $state<string | null>(null);
 	let exportPassword = $state<string | undefined>(undefined);
-	let setupView = $state<'choices' | 'export'>('choices');
+	let setupView = $state<'password' | 'export'>('password');
 	let dismissed = $state(false);
 
 	onMount(() => {
@@ -56,7 +57,9 @@
 	let currentDescription = $derived.by(() => {
 		void appearanceSettingsState.locale;
 		if (currentStepId === 'protection_setup') {
-			return m.onboarding_protection_setup_desc();
+			return setupView === 'export'
+				? m.onboarding_protection_setup_desc()
+				: m.onboarding_protection_password_setup();
 		}
 		if (captureSavedTree) {
 			return m.onboarding_protection_congrats_desc();
@@ -95,13 +98,28 @@
 		}
 	}
 
+	function startProtectNow() {
+		enableLocalEncryption = true;
+		stepIndex = 1;
+		setupView = 'password';
+		feedback = '';
+		showPasswordFormDialog = true;
+	}
+
+	function chooseLater() {
+		enableLocalEncryption = false;
+		void finishProtectionPhase();
+	}
+
 	async function handleExportBackup(mode: ArchiveDeliveryMode) {
 		working = true;
 		feedback = '';
 		feedbackError = false;
 		try {
-			const result = await exportAppBackup(mode, { password: exportPassword });
-			showFeedback(formatExportSuccessMessage(result));
+			const { delivery } = await exportAppBackup(mode, {
+				password: exportPassword
+			});
+			showFeedback(formatExportSuccessMessage(delivery));
 			await dismissAndComplete();
 		} catch (error) {
 			showFeedback(
@@ -111,11 +129,6 @@
 		} finally {
 			working = false;
 		}
-	}
-
-	function advanceToSetup() {
-		stepIndex = 1;
-		setupView = 'choices';
 	}
 
 	async function handlePasswordFormConfirm(result: BackupPasswordFormResult) {
@@ -137,113 +150,114 @@
 </script>
 
 {#if !dismissed}
-<div
-	use:portal={BODY_PORTAL_TARGET}
-	data-yamadori-onboarding-overlay
-	class={ONBOARDING_OVERLAY_CLASS}
-	role="dialog"
-	aria-modal="true"
-	aria-labelledby="onboarding-protection-title"
->
-	<OnboardingStepPanel
-		progress={m.onboarding_step({ current: stepIndex + 1, total: stepIds.length })}
-		title={currentTitle}
-		titleId="onboarding-protection-title"
-		description={currentDescription}
-		panelClass="{ONBOARDING_PANEL_CLASS} w-full"
+	<div
+		use:portal={BODY_PORTAL_TARGET}
+		data-yamadori-onboarding-overlay
+		class="fixed inset-0 z-50 flex items-end pb-onboarding-sheet pt-safe sm:items-center sm:justify-center sm:px-4"
+		role="presentation"
 	>
-		{#snippet middle()}
-			{#if currentStepId === 'protection'}
-				<label class="flex items-start gap-3 rounded-xl border border-gray-200 bg-forest-50 px-3 py-3">
-					<input
-						type="checkbox"
-						bind:checked={enableLocalEncryption}
-						disabled={working}
-						class="mt-0.5 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
-					/>
-					<span class="text-sm text-forest-900">
-						<span class="font-medium">{m.onboarding_protection_encryption_label()}</span>
-						<span class="mt-1 block text-muted">{m.onboarding_protection_encryption_hint()}</span>
-					</span>
-				</label>
-			{/if}
+		<div class="absolute inset-0 bg-black/50" transition:sheetBackdrop role="presentation"></div>
+		<div
+			class="relative z-10 w-full"
+			transition:sheetPanel
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="onboarding-protection-title"
+		>
+			<OnboardingStepPanel
+				progress={m.onboarding_step({
+					current: stepIndex + 1,
+					total: stepIds.length
+				})}
+				title={currentTitle}
+				titleId="onboarding-protection-title"
+				description={currentDescription}
+				panelClass="{ONBOARDING_PANEL_CLASS} w-full"
+			>
+				{#snippet middle()}
+					{#if feedback}
+						<p
+							class="rounded-xl px-3 py-2 text-sm {feedbackError
+								? 'bg-red-50 text-red-800'
+								: 'bg-green-50 text-green-800'}"
+							role="status"
+						>
+							{feedback}
+						</p>
+					{/if}
+				{/snippet}
 
-			{#if feedback}
-				<p
-					class="rounded-xl px-3 py-2 text-sm {feedbackError
-						? 'bg-red-50 text-red-800'
-						: 'bg-green-50 text-green-800'}"
-					role="status"
-				>
-					{feedback}
-				</p>
-			{/if}
-		{/snippet}
-
-		{#snippet actions()}
-			{#if currentStepId === 'protection'}
-				<button
-					type="button"
-					onclick={advanceToSetup}
-					disabled={working}
-					class="rounded-xl bg-forest-800 px-4 py-3 text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
-				>
-					{m.onboarding_continue()}
-				</button>
-			{:else if setupView === 'choices'}
-				<button
-					type="button"
-					onclick={() => {
-						showPasswordFormDialog = true;
-					}}
-					disabled={working}
-					class="rounded-xl bg-forest-800 px-4 py-3 text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
-				>
-					{m.onboarding_protection_password_setup()}
-				</button>
-				<button
-					type="button"
-					onclick={() => {
-						setupView = 'export';
-					}}
-					disabled={working}
-					class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
-				>
-					{m.onboarding_protection_password_skip()}
-				</button>
-			{:else}
-				<button
-					type="button"
-					onclick={() => void handleExportBackup('share')}
-					disabled={working}
-					class="rounded-xl bg-forest-800 px-4 py-3 text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
-				>
-					{working ? m.climate_loading() : m.action_export()}
-				</button>
-				<button
-					type="button"
-					onclick={() => void handleExportBackup('local')}
-					disabled={working}
-					class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98] disabled:opacity-50"
-				>
-					{working
-						? m.action_saving()
-						: isAndroidApp()
-							? m.settings_save_downloads()
-							: m.settings_download_backup()}
-				</button>
-				<button
-					type="button"
-					onclick={() => void finishProtectionPhase()}
-					disabled={working}
-					class="rounded-xl px-4 py-2 text-sm font-medium text-muted transition active:scale-[0.98] disabled:opacity-50"
-				>
-					{m.onboarding_protection_export_later()}
-				</button>
-			{/if}
-		{/snippet}
-	</OnboardingStepPanel>
-</div>
+				{#snippet actions()}
+					{#if currentStepId === 'protection'}
+						<button
+							type="button"
+							onclick={startProtectNow}
+							disabled={working}
+							class="btn-primary"
+						>
+							{m.onboarding_protection_now()}
+						</button>
+						<button
+							type="button"
+							onclick={chooseLater}
+							disabled={working}
+							class="rounded-[var(--radius-control)] px-4 py-2 text-sm font-medium text-muted transition active:scale-[0.98] disabled:opacity-50"
+						>
+							{m.onboarding_protection_later()}
+						</button>
+					{:else if setupView === 'password'}
+						<button
+							type="button"
+							onclick={() => {
+								showPasswordFormDialog = true;
+							}}
+							disabled={working}
+							class="btn-primary"
+						>
+							{m.onboarding_protection_password_setup()}
+						</button>
+						<button
+							type="button"
+							onclick={chooseLater}
+							disabled={working}
+							class="rounded-[var(--radius-control)] px-4 py-2 text-sm font-medium text-muted transition active:scale-[0.98] disabled:opacity-50"
+						>
+							{m.onboarding_protection_later()}
+						</button>
+					{:else}
+						<button
+							type="button"
+							onclick={() => void handleExportBackup('share')}
+							disabled={working}
+							class="btn-primary"
+						>
+							{working ? m.climate_loading() : m.action_export()}
+						</button>
+						<button
+							type="button"
+							onclick={() => void handleExportBackup('local')}
+							disabled={working}
+							class="btn-secondary"
+						>
+							{working
+								? m.action_saving()
+								: isAndroidApp()
+									? m.settings_save_downloads()
+									: m.settings_download_backup()}
+						</button>
+						<button
+							type="button"
+							onclick={() => void finishProtectionPhase()}
+							disabled={working}
+							class="rounded-[var(--radius-control)] px-4 py-2 text-sm font-medium text-muted transition active:scale-[0.98] disabled:opacity-50"
+						>
+							{m.onboarding_protection_export_later()}
+						</button>
+					{/if}
+				{/snippet}
+			</OnboardingStepPanel>
+		</div>
+	</div>
 {/if}
 
 <BackupPasswordFormDialog

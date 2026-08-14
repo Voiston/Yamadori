@@ -1,6 +1,7 @@
 <script lang="ts">
 	import OnboardingStepPanel from '$lib/components/OnboardingStepPanel.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import { acceptLegalDisclaimer } from '$lib/stores/onboarding.svelte';
 	import {
 		requestCameraPermission,
 		requestCompassPermission,
@@ -8,7 +9,8 @@
 		requestMicrophonePermission
 	} from '$lib/utils/permissions';
 	import * as m from '$lib/paraglide/messages.js';
-	import { portal, BODY_PORTAL_TARGET, ONBOARDING_OVERLAY_CLASS, ONBOARDING_PANEL_CLASS } from '$lib/utils/portal';
+	import { portal, BODY_PORTAL_TARGET, ONBOARDING_PANEL_CLASS } from '$lib/utils/portal';
+	import { sheetBackdrop, sheetPanel } from '$lib/utils/motion';
 
 	let { onphasecomplete }: { onphasecomplete: () => void } = $props();
 
@@ -86,8 +88,14 @@
 		}
 
 		if (currentStepId === 'legal') {
-			blurActiveElement();
-			onphasecomplete();
+			working = true;
+			try {
+				await acceptLegalDisclaimer();
+				blurActiveElement();
+				onphasecomplete();
+			} finally {
+				working = false;
+			}
 			return;
 		}
 
@@ -142,11 +150,17 @@
 <div
 	use:portal={BODY_PORTAL_TARGET}
 	data-yamadori-onboarding-overlay
-	class={ONBOARDING_OVERLAY_CLASS}
-	role="dialog"
-	aria-modal="true"
-	aria-labelledby="onboarding-title"
+	class="fixed inset-0 z-50 flex items-end pb-onboarding-sheet pt-safe sm:items-center sm:justify-center sm:px-4"
+	role="presentation"
 >
+	<div class="absolute inset-0 bg-black/50" transition:sheetBackdrop role="presentation"></div>
+	<div
+		class="relative z-10 w-full"
+		transition:sheetPanel
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="onboarding-title"
+	>
 	<OnboardingStepPanel
 		progress={m.onboarding_step({ current: stepIndex + 1, total: stepIds.length })}
 		title={currentTitle}
@@ -175,7 +189,7 @@
 				type="button"
 				onclick={() => void handlePrimaryAction()}
 				disabled={working}
-				class="rounded-xl bg-forest-800 px-4 py-3 text-sm font-semibold text-white transition active:scale-[0.98] focus:outline-none disabled:opacity-50"
+				class="btn-primary"
 			>
 				{#if working}
 					{m.climate_loading()}
@@ -197,11 +211,12 @@
 					type="button"
 					onclick={handleSkip}
 					disabled={working}
-					class="rounded-xl px-4 py-2 text-sm font-medium text-muted transition active:scale-[0.98] focus:outline-none disabled:opacity-50"
+					class="rounded-[var(--radius-control)] px-4 py-2 text-sm font-medium text-muted transition active:scale-[0.98] disabled:opacity-50"
 				>
 					{isLastStep ? m.onboarding_finish_skip() : m.onboarding_skip()}
 				</button>
 			{/if}
 		{/snippet}
 	</OnboardingStepPanel>
+	</div>
 </div>

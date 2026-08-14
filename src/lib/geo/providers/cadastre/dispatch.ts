@@ -14,6 +14,11 @@ import { lookupCadastreUs } from '$lib/geo/providers/cadastre/us';
 import { lookupCadastreCa } from '$lib/geo/providers/cadastre/ca';
 import { lookupCadastreNz } from '$lib/geo/providers/cadastre/nz';
 import { lookupCadastrePt } from '$lib/geo/providers/cadastre/pt';
+import { lookupCadastreIe } from '$lib/geo/providers/cadastre/ie';
+import { lookupCadastreAu } from '$lib/geo/providers/cadastre/au';
+import { lookupCadastreDk } from '$lib/geo/providers/cadastre/dk';
+import { lookupCadastreFi } from '$lib/geo/providers/cadastre/fi';
+import { lookupCadastreJp } from '$lib/geo/providers/cadastre/jp';
 import type { CadastreInfo } from '$lib/types/cadastre';
 import { getApiDisabledError, isApiEnabled } from '$lib/utils/apiPolicy';
 import { lookupCadastre } from '$lib/utils/cadastre';
@@ -71,6 +76,16 @@ export async function lookupCadastreForCoords(
 			return lookupCadastreNz(latitude, longitude, options);
 		case 'PT':
 			return cached('pt', () => lookupCadastrePt(latitude, longitude, options));
+		case 'IE':
+			return cached('ie', () => lookupCadastreIe(latitude, longitude, options));
+		case 'AU':
+			return lookupCadastreAu(latitude, longitude, options);
+		case 'DK':
+			return cached('dk', () => lookupCadastreDk(latitude, longitude, options));
+		case 'FI':
+			return cached('fi', () => lookupCadastreFi(latitude, longitude, options));
+		case 'JP':
+			return cached('jp', () => lookupCadastreJp(latitude, longitude, options));
 		default:
 			return null;
 	}

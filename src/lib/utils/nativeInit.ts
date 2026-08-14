@@ -1,7 +1,6 @@
 import { App } from '@capacitor/app';
 import { Keyboard, KeyboardResize } from '@capacitor/keyboard';
-import { StatusBar, Style } from '@capacitor/status-bar';
-import type { PluginListenerHandle } from '@capacitor/core';
+import { SystemBars, SystemBarsStyle, type PluginListenerHandle } from '@capacitor/core';
 import { isAndroidApp, isNativeApp } from '$lib/utils/platform';
 import { SafeAreaInsets, type SafeAreaInsetsPayload } from '$lib/utils/safeAreaInsetsPlugin';
 
@@ -90,7 +89,7 @@ function updateViewportInsets(): void {
 	}
 
 	if (nativeInsetsBound) {
-		applyNavInsets({ bottom: nativeBottomInset, mode: nativeNavMode });
+		applyNavInsets({ top: 0, bottom: nativeBottomInset, mode: nativeNavMode });
 		return;
 	}
 
@@ -152,25 +151,18 @@ export function initViewportInsets(): () => void {
 
 export async function applyStatusBarForAppearance(
 	outdoorMode: boolean,
-	darkMode: boolean
+	_darkMode: boolean
 ): Promise<void> {
 	if (!isNativeApp()) {
 		return;
 	}
 
 	try {
-		if (outdoorMode) {
-			await StatusBar.setStyle({ style: Style.Light });
-			await StatusBar.setBackgroundColor({ color: '#ffffff' });
-		} else if (darkMode) {
-			await StatusBar.setStyle({ style: Style.Light });
-			await StatusBar.setBackgroundColor({ color: '#000000' });
-		} else {
-			await StatusBar.setStyle({ style: Style.Dark });
-			await StatusBar.setBackgroundColor({ color: '#1a2e1a' });
-		}
+		await SystemBars.setStyle({
+			style: outdoorMode ? SystemBarsStyle.Light : SystemBarsStyle.Dark
+		});
 	} catch {
-		// Status bar plugin unavailable.
+		// System Bars API unavailable.
 	}
 }
 

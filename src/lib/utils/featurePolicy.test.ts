@@ -8,6 +8,7 @@ import {
 	canAddTree,
 	canViewYrsDetails,
 	getAccessibleTrees,
+	getFreeSlotsRemaining,
 	getHiddenTreeCount,
 	hasProFeatureAccess,
 	isTreeAccessible,
@@ -25,12 +26,14 @@ function makeTree(id: string, capturedAt: string, isFavorite = false): Tree {
 			nebari: null,
 			trunkDiameterCm: null,
 			bark: null,
-			deadwood: null,
+			deadwood: [],
 			sizeClass: null,
 			caliber: null,
 			potentialScore: null,
 			observedPhenologyStage: null,
-			cernageStatus: null
+			cernageStatus: null,
+			aoutementStatus: null,
+			leafFallPct: null
 		},
 		voiceNote: null,
 		latitude: null,
@@ -73,6 +76,14 @@ describe('featurePolicy', () => {
 		expect(canAddTree(0)).toBe(true);
 		expect(canAddTree(2)).toBe(true);
 		expect(canAddTree(3)).toBe(false);
+	});
+
+	it('reports remaining free slots for free users', () => {
+		expect(getFreeSlotsRemaining(0)).toBe(3);
+		expect(getFreeSlotsRemaining(2)).toBe(1);
+		expect(getFreeSlotsRemaining(3)).toBe(0);
+		setPro(true);
+		expect(getFreeSlotsRemaining(10)).toBe(Number.POSITIVE_INFINITY);
 	});
 
 	it('allows unlimited trees when Pro is unlocked', () => {

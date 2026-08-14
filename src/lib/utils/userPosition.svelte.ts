@@ -506,6 +506,11 @@ export function getPublishedUserPosition(): UserPosition | null {
 	return userPositionState.position;
 }
 
+/** Wall-clock ms when the published position was last updated, or null. */
+export function getPublishedUserPositionUpdatedAt(): number | null {
+	return lastPublishedAt;
+}
+
 
 
 export function onUserPositionChange(listener: (position: UserPosition) => void): () => void {

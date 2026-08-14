@@ -1,4 +1,5 @@
 import { Preferences } from '@capacitor/preferences';
+import { clearLegalDisclaimerAck } from '$lib/utils/legalDisclaimer';
 import { isNativeApp } from '$lib/utils/platform';
 
 const ONBOARDING_KEY = 'onboardingComplete';
@@ -56,4 +57,5 @@ export async function resetOnboarding(): Promise<void> {
 
 	await Preferences.remove({ key: ONBOARDING_KEY });
 	await Preferences.remove({ key: ONBOARDING_PHASE_KEY });
+	await clearLegalDisclaimerAck();
 }

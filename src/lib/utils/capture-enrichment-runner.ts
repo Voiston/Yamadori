@@ -1,6 +1,8 @@
 import type { EnvironmentExposure } from '$lib/types/environment';
 import type { CadastreInfo } from '$lib/types/cadastre';
 import type { ClimateHistory } from '$lib/types/climate';
+import type { PhenologyStageId } from '$lib/types/gdd';
+import type { AoutementStatus, CernageStatus, LeafFallPct } from '$lib/types/yrs';
 import { loadAgriData } from '$lib/stores/agriData.svelte';
 import { fetchClimateHistory } from '$lib/utils/climate';
 import { reverseGeocode } from '$lib/utils/geocoding';
@@ -46,6 +48,10 @@ export type CaptureEnrichmentRunInput = {
 	online: boolean;
 	species: string;
 	environmentExposure: EnvironmentExposure;
+	observedPhenologyStage?: PhenologyStageId | null;
+	cernageStatus?: CernageStatus | null;
+	aoutementStatus?: AoutementStatus | null;
+	leafFallPct?: LeafFallPct | null;
 	signal: AbortSignal;
 	shouldRefetchClimate: (position: CaptureEnrichmentPosition) => boolean;
 	shouldRefetchLocation: (position: CaptureEnrichmentPosition) => boolean;
@@ -167,7 +173,14 @@ export async function runCaptureEnrichmentWave(
 
 	if (!simpleMode) {
 		const tasks: Promise<void>[] = [];
-		const inputsKey = `${input.species}|${input.environmentExposure}`;
+		const inputsKey = [
+			input.species,
+			input.environmentExposure,
+			input.observedPhenologyStage ?? '',
+			input.cernageStatus ?? '',
+			input.aoutementStatus ?? '',
+			input.leafFallPct ?? ''
+		].join('|');
 		const movedEnough = input.shouldRefetchAgri(position);
 
 		if (movedEnough || inputsKey !== input.agri.lastInputsKey) {
@@ -181,7 +194,11 @@ export async function runCaptureEnrichmentWave(
 			tasks.push(
 				loadAgriData(position.latitude, position.longitude, false, {
 					species: input.species,
-					environmentExposure: input.environmentExposure
+					environmentExposure: input.environmentExposure,
+					observedPhenologyStage: input.observedPhenologyStage,
+					cernageStatus: input.cernageStatus,
+					aoutementStatus: input.aoutementStatus,
+					leafFallPct: input.leafFallPct
 				}).then(() => undefined)
 			);
 		}

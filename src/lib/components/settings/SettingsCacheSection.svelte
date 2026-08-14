@@ -53,7 +53,7 @@
 		</ul>
 	</div>
 
-	<div class="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+	<div class="app-section-list">
 		<div class="px-4 py-3">
 			<p class="text-sm font-medium text-forest-900">{m.settings_offline_map()}</p>
 			{#if tileCacheCount !== null}

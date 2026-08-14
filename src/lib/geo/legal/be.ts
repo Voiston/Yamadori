@@ -7,8 +7,7 @@ import {
 /**
  * Justel / Moniteur belge (SPF Justice) — textes consolidés via ELI.
  * - Code civil Livre 3 (biens) : voisinage / plantations / fruits.
- * - Forêt et nature : largement régionalisées (VL / WA / BXL) — liens Justel
- *   + renvoi aux décrets régionaux.
+ * - Forêt et nature : largement régionalisées (VL / WA / BXL).
  */
 export const beLegalPack: LegalContentPack = {
 	country: 'BE',
@@ -27,17 +26,25 @@ export const beLegalPack: LegalContentPack = {
 			id: 'be_foret_regionale',
 			group: 'forest',
 			url: 'https://www.ejustice.just.fgov.be/eli/decret/2008/07/15/2008203215/justel',
-			title: 'Forêt — compétences régionales (ex. Code forestier wallon)',
+			title: 'Wallonie — Code forestier',
 			summary:
-				'La gestion et l’accès aux forêts sont surtout régionaux (Wallonie, Flandre, Bruxelles). Vérifier le décret ou le code forestier de la région concernée avant toute activité en forêt.'
+				'En Wallonie, le Code forestier cadre la gestion et l’accès aux forêts. Vérifier aussi les règles locales avant toute activité en forêt.'
+		},
+		{
+			id: 'be_bosdecreet',
+			group: 'forest',
+			url: 'https://codex.vlaanderen.be/zoeken/Document.aspx?DID=1003183',
+			title: 'Flandre — Bosdecreet',
+			summary:
+				'En Flandre, le Bosdecreet (décret forestier) régit la conservation, la gestion et l’usage des forêts. Contacter Agentschap voor Natuur en Bos pour les autorisations.'
 		},
 		{
 			id: 'be_nature_especes',
 			group: 'environment',
-			url: 'https://www.ejustice.just.fgov.be/cgi_loi/loi_a1.pl?language=fr&caller=list&cn=1973011031&table_name=loi&F=&fromtab=loi&la=F&sql=dt+%3D+%27loi%27+and+pd+%3D+1973-01-10',
-			title: 'Conservation de la nature — cadre fédéral / régional',
+			url: 'https://www.ejustice.just.fgov.be/eli/loi/1973/07/12/1973A71207/justel',
+			title: 'Conservation de la nature — cadre (loi 12 juillet 1973)',
 			summary:
-				'La protection des espèces et des habitats est partagée entre fédéral et régions. L’enlèvement de plantes sauvages peut être interdit en zone protégée ou pour les espèces protégées — consulter la réglementation régionale applicable.'
+				'La protection des espèces et des habitats est surtout régionale (Flandre Soortenbesluit, Wallonie loi 1973 / annexes, Bruxelles ordonnance 2012). L’enlèvement de plantes sauvages peut être interdit — consulter la réglementation de la région.'
 		}
 	],
 	speciesSearchBase: SPECIES_SEARCH_BASE.waarnemingenBe,

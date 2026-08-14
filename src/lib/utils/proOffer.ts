@@ -86,7 +86,20 @@ export function createPromoBannerOffer(
 	};
 }
 
-/** Purchase button enabled once promo state is loaded; billing validates on click. */
-export function canEnableProPurchase(loaded: boolean): boolean {
-	return loaded;
+/**
+ * Purchase button enabled once promo state is loaded.
+ * During an active promo window, also require a Play-confirmed promo price.
+ */
+export function canEnableProPurchase(
+	loaded: boolean,
+	showPromo: boolean = false,
+	pricesReady: boolean = true
+): boolean {
+	if (!loaded) {
+		return false;
+	}
+	if (showPromo && !pricesReady) {
+		return false;
+	}
+	return true;
 }

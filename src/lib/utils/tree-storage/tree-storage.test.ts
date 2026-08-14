@@ -55,8 +55,8 @@ function sampleTree(): Tree {
 				id: 'visit-1',
 				visitedAt: capturedAt,
 				note: 'Visit',
-				photoBase64: tinyJpeg,
-				photoThumbBase64: tinyJpeg
+				photos: [tinyJpeg],
+				photoThumbs: [tinyJpeg]
 			}
 		],
 		assessment: { ...DEFAULT_ASSESSMENT },
@@ -83,12 +83,13 @@ describe('tree-storage codec', () => {
 		const mediaById = new Map<string, StoredMediaRecord>();
 		const stored = treeToStoredRecord(tree, mediaById);
 
-		expect(stored.visits[0]?.photoFullId).toBeTruthy();
+		expect(stored.visits[0]?.photoFullIds[0]).toBeTruthy();
 		expect(mediaById.size).toBeGreaterThan(0);
 
 		const hydrated = storedRecordToTree(stored, mediaById, 'full');
 		expect(hydrated.photos[0]).toBe(tree.photos[0]);
-		expect(hydrated.visits[0]?.photoBase64).toBe(tinyJpeg);
+		expect(hydrated.visits[0]?.photos[0]).toBe(tinyJpeg);
+		expect(hydrated.mediaHydration).toBe('full');
 	});
 
 	it('loads thumbs without full photo bytes in memory', () => {
@@ -96,7 +97,7 @@ describe('tree-storage codec', () => {
 		const mediaById = new Map<string, StoredMediaRecord>();
 		const stored = treeToStoredRecord(tree, mediaById);
 		const thumbOnly = new Map<string, StoredMediaRecord>();
-		const thumbId = stored.visits[0]?.photoThumbId;
+		const thumbId = stored.visits[0]?.photoThumbIds[0];
 		if (thumbId) {
 			const record = mediaById.get(thumbId);
 			if (record) thumbOnly.set(thumbId, record);
@@ -105,6 +106,7 @@ describe('tree-storage codec', () => {
 		const hydrated = storedRecordToTree(stored, thumbOnly, 'thumbs');
 		expect(hydrated.photos).toEqual([]);
 		expect(hydrated.photoThumbs?.[0]).toBe(tinyJpeg);
+		expect(hydrated.mediaHydration).toBe('thumbs');
 	});
 
 	it('collects only thumb media ids for list hydration', () => {
@@ -113,14 +115,48 @@ describe('tree-storage codec', () => {
 		const stored = treeToStoredRecord(tree, mediaById);
 		const ids = collectMediaIdsForTree(stored, 'thumbs');
 		expect(ids.length).toBeGreaterThan(0);
-		expect(ids).toContain(stored.visits[0]?.photoThumbId);
+		expect(ids).toContain(stored.visits[0]?.photoThumbIds[0]);
+	});
+
+	it('round-trips multiple photos on a single visit', () => {
+		const tree = sampleTree();
+		const second = tinyJpeg;
+		const third = tinyJpeg;
+		tree.visits[0] = {
+			...tree.visits[0]!,
+			photos: [tinyJpeg, second, third],
+			photoThumbs: [tinyJpeg, second, third]
+		};
+		tree.photos = [tinyJpeg, second, third];
+		const mediaById = new Map<string, StoredMediaRecord>();
+		const stored = treeToStoredRecord(tree, mediaById);
+		expect(stored.visits[0]?.photoFullIds).toHaveLength(3);
+		const hydrated = storedRecordToTree(stored, mediaById, 'full');
+		expect(hydrated.visits[0]?.photos).toHaveLength(3);
+		expect(hydrated.photos.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('reads legacy single-photo stored visits', () => {
+		const tree = sampleTree();
+		const mediaById = new Map<string, StoredMediaRecord>();
+		const stored = treeToStoredRecord(tree, mediaById);
+		const legacyVisit = {
+			...stored.visits[0]!,
+			photoFullId: stored.visits[0]!.photoFullIds[0],
+			photoThumbId: stored.visits[0]!.photoThumbIds[0],
+			photoFullIds: undefined as unknown as string[],
+			photoThumbIds: undefined as unknown as string[]
+		};
+		const legacyStored = { ...stored, visits: [legacyVisit] };
+		const hydrated = storedRecordToTree(legacyStored, mediaById, 'full');
+		expect(hydrated.visits[0]?.photos[0]).toBe(tinyJpeg);
 	});
 
 	it('normalizes number[] media bytes after JSON round-trip', () => {
 		const tree = sampleTree();
 		const mediaById = new Map<string, StoredMediaRecord>();
 		const stored = treeToStoredRecord(tree, mediaById);
-		const thumbId = stored.visits[0]?.photoThumbId;
+		const thumbId = stored.visits[0]?.photoThumbIds[0];
 		expect(thumbId).toBeTruthy();
 		const record = mediaById.get(thumbId!)!;
 		const jsonRoundTripped = toStorable(record);
@@ -148,6 +184,9 @@ describe('tree-storage repository', () => {
 			idbStore.set(key, value);
 		});
 		mockGet.mockImplementation(async (key: string) => idbStore.get(key));
+		mockDel.mockImplementation(async (key: string) => {
+			idbStore.delete(key);
+		});
 	});
 
 	it('persists only dirty trees incrementally', async () => {
@@ -182,7 +221,7 @@ describe('tree-storage repository', () => {
 						isFavorite: false,
 						latitude: tree.latitude,
 						longitude: tree.longitude,
-						coverThumbId: stored.visits[0]?.photoThumbId ?? null
+						coverThumbId: stored.visits[0]?.photoThumbIds[0] ?? null
 					}
 				];
 			}
@@ -216,7 +255,7 @@ describe('tree-storage repository', () => {
 						isFavorite: false,
 						latitude: tree.latitude,
 						longitude: tree.longitude,
-						coverThumbId: stored.visits[0]?.photoThumbId ?? null
+						coverThumbId: stored.visits[0]?.photoThumbIds[0] ?? null
 					}
 				];
 			}
@@ -231,12 +270,12 @@ describe('tree-storage repository', () => {
 		const thumbsLoaded = await loadTreesFromStorage('thumbs');
 		expect(thumbsLoaded[0]?.photos).toEqual([]);
 		expect(thumbsLoaded[0]?.photoThumbs?.[0]).toBe(tinyJpeg);
-		expect(thumbsLoaded[0]?.visits[0]?.photoBase64).toBe('');
+		expect(thumbsLoaded[0]?.visits[0]?.photos[0]).toBe('');
 
 		const full = await hydrateTreeMedia(tree.id);
 		expect(full?.photos[0]).toBe(tinyJpeg);
 		expect(full?.photoThumbs?.[0]).toBe(tinyJpeg);
-		expect(full?.visits[0]?.photoBase64).toBe(tinyJpeg);
+		expect(full?.visits[0]?.photos[0]).toBe(tinyJpeg);
 	});
 
 	it('round-trips persist and reload with thumb hydration', async () => {
@@ -248,7 +287,7 @@ describe('tree-storage repository', () => {
 		const loaded = await loadTreesFromStorage('thumbs');
 		expect(loaded).toHaveLength(1);
 		expect(loaded[0]?.photoThumbs?.[0]).toBe(tinyJpeg);
-		expect(loaded[0]?.visits[0]?.photoThumbBase64).toBe(tinyJpeg);
+		expect(loaded[0]?.visits[0]?.photoThumbs?.[0]).toBe(tinyJpeg);
 	});
 
 	it('writes index coverThumbId matching persisted tree media refs', async () => {
@@ -265,8 +304,42 @@ describe('tree-storage repository', () => {
 
 		expect(storedOnDisk).toBeTruthy();
 		expect(index).toHaveLength(1);
-		expect(index[0]?.coverThumbId).toBe(storedOnDisk.visits[0]?.photoThumbId);
-		expect(idbStore.has(mediaStorageKey(storedOnDisk.visits[0]!.photoThumbId))).toBe(true);
+		expect(index[0]?.coverThumbId).toBe(storedOnDisk.visits[0]?.photoThumbIds[0]);
+		expect(idbStore.has(mediaStorageKey(storedOnDisk.visits[0]!.photoThumbIds[0]!))).toBe(true);
+	});
+
+	it('purges orphaned media when visit photos are replaced', async () => {
+		idbStore.set('yamadori-trees-storage-version', 2);
+		const tree = sampleTree();
+		const firstStored = await persistTreeRecord(tree);
+		const oldFullId = firstStored.visits[0]!.photoFullIds[0]!;
+		const oldThumbId = firstStored.visits[0]!.photoThumbIds[0]!;
+
+		const updated = {
+			...tree,
+			visits: [
+				{
+					...tree.visits[0]!,
+					photos: [tinyJpeg + 'A'],
+					photoThumbs: [tinyJpeg + 'A']
+				}
+			],
+			photos: [tinyJpeg + 'A'],
+			photoThumbs: [tinyJpeg + 'A']
+		};
+		// Use a distinct valid-looking data URL for the second photo
+		const altJpeg =
+			'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwBB//2Q==';
+		updated.visits[0]!.photos = [altJpeg];
+		updated.visits[0]!.photoThumbs = [altJpeg];
+		updated.photos = [altJpeg];
+		updated.photoThumbs = [altJpeg];
+
+		await persistTreeRecord(updated);
+		expect(idbStore.has(mediaStorageKey(oldFullId))).toBe(false);
+		if (oldThumbId !== oldFullId) {
+			expect(idbStore.has(mediaStorageKey(oldThumbId))).toBe(false);
+		}
 	});
 
 	it('builds index from persisted records without re-reading each tree record', async () => {
@@ -276,10 +349,57 @@ describe('tree-storage repository', () => {
 		mockGet.mockClear();
 
 		await persistTreeIndexFromTrees([tree], new Map([[tree.id, stored]]));
+		expect(
+			mockGet.mock.calls.some(([key]) => typeof key === 'string' && key.startsWith('yamadori-tree-'))
+		).toBe(false);
+	});
 
-		const treeRecordReads = mockGet.mock.calls.filter(
-			([key]) => typeof key === 'string' && key.startsWith('yamadori-tree-')
-		);
-		expect(treeRecordReads).toHaveLength(0);
+	it('preserves media refs when persisting a thumbs-only tree', async () => {
+		idbStore.set('yamadori-trees-storage-version', 2);
+		const tree = sampleTree();
+		const firstStored = await persistTreeRecord(tree);
+		const fullId = firstStored.visits[0]!.photoFullIds[0]!;
+		const thumbId = firstStored.visits[0]!.photoThumbIds[0]!;
+		await persistTreeIndexFromTrees([tree], new Map([[tree.id, firstStored]]));
+
+		const loaded = await loadTreesFromStorage('thumbs');
+		const thumbsOnly = loaded[0]!;
+		expect(thumbsOnly.mediaHydration).toBe('thumbs');
+
+		await persistTreeRecord({
+			...thumbsOnly,
+			locationLabel: null,
+			species: 'Beech'
+		});
+
+		const after = idbStore.get(treeStorageKey(tree.id)) as StoredTreeRecord;
+		expect(after.species).toBe('Beech');
+		expect(after.visits[0]?.photoFullIds[0]).toBe(fullId);
+		expect(after.visits[0]?.photoThumbIds[0]).toBe(thumbId);
+		expect(idbStore.has(mediaStorageKey(fullId))).toBe(true);
+		expect(idbStore.has(mediaStorageKey(thumbId))).toBe(true);
+	});
+
+	it('still purges media when a fully hydrated tree removes photos', async () => {
+		idbStore.set('yamadori-trees-storage-version', 2);
+		const tree = sampleTree();
+		const firstStored = await persistTreeRecord({ ...tree, mediaHydration: 'full' });
+		const oldFullId = firstStored.visits[0]!.photoFullIds[0]!;
+
+		await persistTreeRecord({
+			...tree,
+			mediaHydration: 'full',
+			photos: [],
+			photoThumbs: undefined,
+			visits: [
+				{
+					...tree.visits[0]!,
+					photos: [],
+					photoThumbs: undefined
+				}
+			]
+		});
+
+		expect(idbStore.has(mediaStorageKey(oldFullId))).toBe(false);
 	});
 });

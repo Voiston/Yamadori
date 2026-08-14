@@ -11,19 +11,23 @@
 	} from '$lib/utils/cameraCaptureSession';
 	import { encodePhotoFile, type PhotoEncoding } from '$lib/utils/photo';
 	import * as m from '$lib/paraglide/messages.js';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let {
 		previewUrl = '',
 		photoFile = null,
 		frontLabel = null,
 		onfile,
-		onprocessingchange
+		onprocessingchange,
+		onbeforeopen
 	}: {
 		previewUrl?: string;
 		photoFile?: File | null;
 		frontLabel?: string | null;
 		onfile?: (file: File, previewUrl: string, encoding: PhotoEncoding) => void;
 		onprocessingchange?: (busy: boolean) => void;
+		/** Return false to cancel opening the camera (e.g. show a permission prompt first). */
+		onbeforeopen?: () => boolean | Promise<boolean>;
 	} = $props();
 
 	let inputEl: HTMLInputElement | undefined = $state();
@@ -132,8 +136,14 @@
 		return processingPhoto;
 	}
 
-	export async function openCamera() {
+	export async function openCamera(options?: { bypassBeforeOpen?: boolean }) {
 		if (photoBusy) return;
+
+		if (!options?.bypassBeforeOpen && onbeforeopen) {
+			const allowed = await onbeforeopen();
+			if (!allowed) return;
+		}
+
 		picking = true;
 		error = '';
 		blurActiveField();
@@ -200,22 +210,8 @@
 	>
 		{#if processingPhoto}
 			<div class="flex flex-col items-center gap-3 px-6 py-8 text-center">
-				<svg
-					class="h-8 w-8 animate-spin text-forest-800"
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					aria-hidden="true"
-				>
-					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-					></circle>
-					<path
-						class="opacity-75"
-						fill="currentColor"
-						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-					></path>
-				</svg>
-				<span class="text-sm text-muted">{m.action_saving()}</span>
+				<Skeleton class="h-16 w-full max-w-[12rem] rounded-xl" decorative />
+				<span class="text-sm text-muted" role="status" aria-live="polite">{m.action_saving()}</span>
 			</div>
 		{:else if displayUrl}
 			<img

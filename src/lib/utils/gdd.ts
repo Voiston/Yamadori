@@ -1,22 +1,25 @@
 import {
 	isEvergreenSpecies,
-	PHENOLOGY_LOGISTIC_PARAMS,
 	getPhenologyStages,
 	resolveGddBaseTemp
 } from '$lib/constants/gdd-config';
+import {
+	resolvePhenologyLogisticParams,
+	resolveSpeciesGddProfile
+} from '$lib/constants/species-gdd-profiles';
 import * as m from '$lib/paraglide/messages.js';
 import type {
 	GddDailyPoint,
 	GddPhenologyEstimate,
+	GddPhenologyStageId,
 	GddSnapshot,
-	GddStageProbability,
-	PhenologyStageId
+	GddStageProbability
 } from '$lib/types/gdd';
 import { dailyMeanForDate } from '$lib/utils/agri';
 import {
 	fetchGddArchiveDailyMeans,
 	getArchiveEndDate,
-	getJan1Date
+	getGddSeasonStartDate
 } from '$lib/utils/openMeteoArchive';
 
 type DailyMeanTemp = { date: string; meanTempC: number | null };
@@ -46,15 +49,16 @@ export function computeDailyGdd(meanTempC: number, baseTempC: number): number {
 export function buildGddDailySeries(
 	dailyMeans: DailyMeanTemp[],
 	baseTempC: number,
-	referenceDate = new Date()
+	referenceDate = new Date(),
+	latitude = 0
 ): GddDailyPoint[] {
-	const jan1 = getJan1Date(referenceDate);
+	const seasonStart = getGddSeasonStartDate(referenceDate, latitude);
 	const today = formatIsoDate(referenceDate);
 	let cumulative = 0;
 	const series: GddDailyPoint[] = [];
 
 	for (const { date, meanTempC } of dailyMeans) {
-		if (date < jan1 || date > today) continue;
+		if (date < seasonStart || date > today) continue;
 		const dailyGdd = meanTempC !== null ? computeDailyGdd(meanTempC, baseTempC) : 0;
 		cumulative = round1(cumulative + dailyGdd);
 		series.push({ date, meanTempC, dailyGdd, cumulativeGdd: cumulative });
@@ -80,28 +84,29 @@ function logisticProbability(gdd: number, midpoint: number, steepness: number): 
 function cumulativeStageProbability(
 	gdd: number,
 	category: GddSnapshot['baseCategory'],
-	stageId: PhenologyStageId
+	stageId: GddPhenologyStageId,
+	species?: string | null
 ): number {
-	const { midpoint, steepness } = PHENOLOGY_LOGISTIC_PARAMS[category][stageId];
+	const { midpoint, steepness } = resolvePhenologyLogisticParams(category, species)[stageId];
 	return logisticProbability(gdd, midpoint, steepness);
 }
 
 /** Sequential model: each stage occupies the GDD window between adjacent cumulative thresholds. */
 function computeSequentialStageProbabilities(
 	gdd: number,
-	category: GddSnapshot['baseCategory']
+	category: GddSnapshot['baseCategory'],
+	species?: string | null
 ): GddStageProbability[] {
 	const stages = getPhenologyStages();
 	const cumulative = stages.map((stage) =>
-		cumulativeStageProbability(gdd, category, stage.id)
+		cumulativeStageProbability(gdd, category, stage.id, species)
 	);
-	const fractions = [
-		1 - cumulative[1],
-		cumulative[1] - cumulative[2],
-		cumulative[2] - cumulative[3],
-		cumulative[3] - cumulative[4],
-		cumulative[4]
-	];
+	const lastIndex = stages.length - 1;
+	const fractions = stages.map((_, index) => {
+		if (index === 0) return 1 - (cumulative[1] ?? 0);
+		if (index === lastIndex) return cumulative[index] ?? 0;
+		return (cumulative[index] ?? 0) - (cumulative[index + 1] ?? 0);
+	});
 
 	return stages.map((stage, index) => ({
 		id: stage.id,
@@ -112,15 +117,55 @@ function computeSequentialStageProbabilities(
 
 export function estimatePhenology(
 	cumulativeGdd: number,
-	category: GddSnapshot['baseCategory']
+	category: GddSnapshot['baseCategory'],
+	species?: string | null
 ): GddPhenologyEstimate {
-	const stages = computeSequentialStageProbabilities(cumulativeGdd, category);
+	const stages = computeSequentialStageProbabilities(cumulativeGdd, category, species);
 	const transitionLabel = buildTransitionLabel(stages);
 
 	return {
 		transitionLabel,
 		stages,
 		disclaimer: m.gdd_probabilistic_disclaimer()
+	};
+}
+
+/**
+ * Advance a GDD snapshot by summing daily GDD for forecast days after `fromDate` through `throughDate`.
+ * Used by weekly viability so phenology/climate layers progress across the chart.
+ */
+export function projectGddSnapshotForward(
+	gdd: GddSnapshot,
+	dailyMeanTemps: readonly { date: string; meanTempC: number | null }[],
+	fromDate: string,
+	throughDate: string,
+	options: { refreshPhenology?: boolean } = {}
+): GddSnapshot {
+	const { refreshPhenology = true } = options;
+	if (throughDate <= fromDate) {
+		return gdd;
+	}
+
+	let added = 0;
+	const meansByDate = new Map(dailyMeanTemps.map((row) => [row.date, row.meanTempC]));
+	for (const { date, meanTempC } of dailyMeanTemps) {
+		if (date <= fromDate || date > throughDate) continue;
+		const temp = meanTempC ?? meansByDate.get(date) ?? null;
+		if (temp === null) continue;
+		added = round1(added + computeDailyGdd(temp, gdd.baseTempC));
+	}
+
+	const cumulativeSinceJan1 = round1(gdd.cumulativeSinceJan1 + added);
+	const evergreen = Boolean(gdd.phenologyUnavailableReason);
+	const phenology =
+		refreshPhenology && !evergreen
+			? estimatePhenology(cumulativeSinceJan1, gdd.baseCategory, gdd.speciesLabel)
+			: gdd.phenology;
+
+	return {
+		...gdd,
+		cumulativeSinceJan1,
+		phenology
 	};
 }
 
@@ -172,19 +217,20 @@ export function mergeDailyMeanTemps(
 
 export function extractForecastDailyMeans(
 	body: ForecastHourlyBody,
-	referenceDate = new Date()
+	referenceDate = new Date(),
+	latitude = 0
 ): DailyMeanTemp[] {
 	const hourlyTimes = body.hourly?.time ?? [];
 	const temps = body.hourly?.temperature_2m ?? [];
 	if (hourlyTimes.length === 0) return [];
 
-	const jan1 = getJan1Date(referenceDate);
+	const seasonStart = getGddSeasonStartDate(referenceDate, latitude);
 	const today = formatIsoDate(referenceDate);
 	const dates = new Set<string>();
 
 	for (const time of hourlyTimes) {
 		const date = time.slice(0, 10);
-		if (date >= jan1 && date <= today) {
+		if (date >= seasonStart && date <= today) {
 			dates.add(date);
 		}
 	}
@@ -207,24 +253,25 @@ async function fetchArchiveDailyMeans(
 	return fetchGddArchiveDailyMeans(latitude, longitude, referenceDate);
 }
 
+/** Daily means since agro-season start (1 Jan NH / 1 Jul SH). */
 export async function fetchDailyMeanTempsSinceJan1(
 	latitude: number,
 	longitude: number,
 	forecastBody: ForecastHourlyBody,
 	referenceDate = new Date()
 ): Promise<DailyMeanTemp[]> {
-	const jan1 = getJan1Date(referenceDate);
+	const seasonStart = getGddSeasonStartDate(referenceDate, latitude);
 	const archiveEnd = getArchiveEndDate(referenceDate);
-	const forecastMeans = extractForecastDailyMeans(forecastBody, referenceDate);
+	const forecastMeans = extractForecastDailyMeans(forecastBody, referenceDate, latitude);
 
-	if (jan1 > archiveEnd) {
+	if (seasonStart > archiveEnd) {
 		return forecastMeans;
 	}
 
 	const archiveMeans = await fetchArchiveDailyMeans(
 		latitude,
 		longitude,
-		jan1,
+		seasonStart,
 		archiveEnd,
 		referenceDate
 	);
@@ -239,20 +286,25 @@ export async function computeGddSnapshot(
 	referenceDate = new Date()
 ): Promise<GddSnapshot> {
 	const trimmedSpecies = species.trim();
-	const { baseTempC, category } = resolveGddBaseTemp(trimmedSpecies, latitude, longitude);
+	const profile = resolveSpeciesGddProfile(trimmedSpecies);
+	const resolved = resolveGddBaseTemp(trimmedSpecies, latitude, longitude);
+	const category = profile?.category ?? resolved.category;
+	const baseTempC = profile?.baseTempC ?? resolved.baseTempC;
 	const dailyMeans = await fetchDailyMeanTempsSinceJan1(
 		latitude,
 		longitude,
 		forecastBody,
 		referenceDate
 	);
-	const dailySeries = buildGddDailySeries(dailyMeans, baseTempC, referenceDate);
+	const dailySeries = buildGddDailySeries(dailyMeans, baseTempC, referenceDate, latitude);
 	const cumulativeSinceJan1 =
 		dailySeries.length > 0 ? dailySeries[dailySeries.length - 1].cumulativeGdd : 0;
 	const last7dSum = computeGddLast7dSum(dailySeries, referenceDate);
 
 	const evergreen = trimmedSpecies ? isEvergreenSpecies(trimmedSpecies) : false;
-	const phenology = evergreen ? null : estimatePhenology(cumulativeSinceJan1, category);
+	const phenology = evergreen
+		? null
+		: estimatePhenology(cumulativeSinceJan1, category, trimmedSpecies || null);
 	const phenologyUnavailableReason = evergreen ? m.gdd_evergreen_reason() : null;
 
 	return {
@@ -271,7 +323,7 @@ export async function computeGddSnapshot(
 export function getStageProbabilityAtGdd(
 	gdd: number,
 	category: GddSnapshot['baseCategory'],
-	stageId: PhenologyStageId
+	stageId: GddPhenologyStageId
 ): number {
 	const stages = computeSequentialStageProbabilities(gdd, category);
 	return stages.find((stage) => stage.id === stageId)?.probabilityPct ?? 0;

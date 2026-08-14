@@ -4,6 +4,8 @@
  * Editorial guidance — not a legal or agronomic guarantee.
  */
 
+import { matchHarvestSpecies } from '$lib/geo/matchHarvestSpecies';
+
 export type NzMacroRegion =
 	| 'nz_northland'
 	| 'nz_central_ni'
@@ -15,6 +17,7 @@ export type NzMacroRegion =
 
 export type NzHarvestWindow = {
 	species: string;
+	aliases?: readonly string[];
 	macroRegion: NzMacroRegion;
 	/** Inclusive start month (1 = January). */
 	startMonth: number;
@@ -26,6 +29,7 @@ export type NzHarvestWindow = {
 export const NZ_HARVEST_CALENDAR: readonly NzHarvestWindow[] = [
 	{
 		species: 'Pohutukawa',
+		aliases: ['Metrosideros excelsa'],
 		macroRegion: 'nz_northland',
 		startMonth: 6,
 		endMonth: 8,
@@ -33,6 +37,7 @@ export const NZ_HARVEST_CALENDAR: readonly NzHarvestWindow[] = [
 	},
 	{
 		species: 'Mānuka',
+		aliases: ['Leptospermum scoparium', 'Manuka'],
 		macroRegion: 'nz_northland',
 		startMonth: 6,
 		endMonth: 8
@@ -88,12 +93,14 @@ export const NZ_HARVEST_CALENDAR: readonly NzHarvestWindow[] = [
 	},
 	{
 		species: 'Southern beech',
+		aliases: ['Nothofagus', 'Fuscospora', 'Lophozonia'],
 		macroRegion: 'nz_nelson',
 		startMonth: 5,
 		endMonth: 9
 	},
 	{
 		species: 'Southern beech',
+		aliases: ['Nothofagus', 'Fuscospora', 'Lophozonia'],
 		macroRegion: 'nz_west_coast',
 		startMonth: 5,
 		endMonth: 9
@@ -122,10 +129,9 @@ export function findNzHarvestWindows(
 	species: string,
 	macroRegion?: NzMacroRegion | string | null
 ): NzHarvestWindow[] {
-	const normalized = species.trim().toLowerCase();
-	if (!normalized) return [];
+	if (!species.trim()) return [];
 	return NZ_HARVEST_CALENDAR.filter((entry) => {
-		if (entry.species.toLowerCase() !== normalized) return false;
+		if (!matchHarvestSpecies(species, entry.species, entry.aliases ?? [])) return false;
 		if (macroRegion && entry.macroRegion !== macroRegion) return false;
 		return true;
 	});

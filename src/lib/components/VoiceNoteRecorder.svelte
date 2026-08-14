@@ -20,29 +20,17 @@
 
 
 	let {
-
 		disabled = false,
-
 		compact = false,
-
 		value = $bindable(null),
-
 		sessionActive = $bindable(false),
-
 		onchange
-
 	}: {
-
 		disabled?: boolean;
-
 		compact?: boolean;
-
 		value?: VoiceNote | null;
-
 		sessionActive?: boolean;
-
 		onchange?: (note: VoiceNote | null) => void;
-
 	} = $props();
 
 
@@ -429,7 +417,7 @@
 
 			{disabled}
 
-			class="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-forest-900 transition active:scale-[0.98] disabled:opacity-50"
+			class="btn-secondary"
 
 		>
 
@@ -481,11 +469,7 @@
 
 				use:nativeTap={{ onactivate: () => void handleStop(), label: 'voice-stop' }}
 
-				class="flex w-full max-w-xs items-center justify-center gap-2 rounded-xl bg-red-700 font-semibold text-white transition active:scale-[0.98] {compact
-
-					? 'h-12 text-base'
-
-					: 'h-16 text-lg'}"
+				class="btn-danger max-w-xs {compact ? '!h-12 text-base' : '!h-16 text-lg'}"
 
 			>
 
@@ -551,11 +535,7 @@
 
 				{disabled}
 
-				class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-forest-50 font-medium text-forest-900 transition active:scale-[0.98] disabled:opacity-50 {compact
-
-					? 'h-10 text-sm'
-
-					: 'h-12 text-base'}"
+				class="btn-secondary {compact ? '!h-10 text-sm' : '!h-12 text-base'}"
 
 			>
 
@@ -623,11 +603,7 @@
 
 			{disabled}
 
-			class="flex w-full items-center justify-center gap-2 rounded-xl bg-forest-800 font-semibold text-white transition active:scale-[0.98] disabled:opacity-50 {compact
-
-				? 'h-12 text-base'
-
-				: 'h-20 gap-3 text-lg'}"
+			class="btn-secondary {compact ? '!h-12 text-base' : '!h-20 gap-3 text-lg'}"
 
 		>
 
@@ -657,7 +633,7 @@
 
 			</svg>
 
-			{m.action_save()}
+			{m.voice_note()}
 
 		</button>
 

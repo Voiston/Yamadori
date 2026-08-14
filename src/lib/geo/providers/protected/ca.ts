@@ -52,10 +52,12 @@ function zoneToCard(zone: ReturnType<typeof classifyCpcadHit>): ProtectedZoneCar
 			return 'ipca';
 		case 'wilderness':
 			return 'wilderness';
-		case 'military':
 		case 'other_federal':
-		case 'local_park':
 			return 'nwa';
+		case 'local_park':
+			return 'provincial_park';
+		case 'military':
+			return null;
 		case 'crown_unverified':
 			return 'crown_unverified';
 		default:
@@ -128,5 +130,5 @@ export async function scanProtectedAreasCa(
 }
 
 export function caZoneCardIds(): ProtectedZoneCardId[] {
-	return ['parks_canada', 'provincial_park', 'nwa', 'ipca', 'crown_unverified'];
+	return ['parks_canada', 'provincial_park', 'nwa', 'ipca', 'wilderness', 'crown_unverified'];
 }

@@ -78,4 +78,10 @@ describe('proOffer', () => {
 		expect(canEnableProPurchase(true)).toBe(true);
 		expect(canEnableProPurchase(false)).toBe(false);
 	});
+
+	it('disables purchase during promo until Play prices are ready', () => {
+		expect(canEnableProPurchase(true, true, false)).toBe(false);
+		expect(canEnableProPurchase(true, true, true)).toBe(true);
+		expect(canEnableProPurchase(true, false, false)).toBe(true);
+	});
 });

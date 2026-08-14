@@ -3,7 +3,7 @@ import { getMapProvider } from './registry';
 
 describe('getMapProvider', () => {
 	it('returns a provider tagged with the requested country for every supported country', () => {
-		for (const country of ['FR', 'ES', 'IT', 'DE', 'GB', 'CH', 'AT', 'BE', 'NL', 'SE', 'NO', 'US', 'CA', 'NZ', 'PT'] as const) {
+		for (const country of ['FR', 'ES', 'IT', 'DE', 'GB', 'CH', 'AT', 'BE', 'NL', 'SE', 'NO', 'US', 'CA', 'NZ', 'PT', 'IE', 'AU', 'DK', 'FI', 'JP'] as const) {
 			const provider = getMapProvider(country);
 			expect(provider.country).toBe(country);
 			expect(provider.plan.tiles.length).toBeGreaterThan(0);
@@ -32,6 +32,11 @@ describe('getMapProvider', () => {
 		expect(getMapProvider('CA').cadastreOverlay).toBeNull();
 		expect(getMapProvider('NZ').cadastreOverlay).toBeNull();
 		expect(getMapProvider('PT').cadastreOverlay).toBeNull();
+		expect(getMapProvider('IE').cadastreOverlay).toBeNull();
+		expect(getMapProvider('DK').cadastreOverlay).toBeNull();
+		expect(getMapProvider('FI').cadastreOverlay).toBeNull();
+		expect(getMapProvider('AU').cadastreOverlay).toBeNull();
+		expect(getMapProvider('JP').cadastreOverlay).toBeNull();
 	});
 
 	it('offers a CadGIS ArcGIS export overlay for Belgium', () => {
@@ -122,7 +127,7 @@ describe('getMapProvider', () => {
 	});
 
 	it('offers an EEA or national protected-areas overlay for EU/CH verification', () => {
-		for (const country of ['ES', 'IT', 'DE', 'BE', 'NL', 'AT', 'PT', 'SE', 'NO'] as const) {
+		for (const country of ['ES', 'IT', 'DE', 'BE', 'NL', 'AT', 'PT', 'SE', 'NO', 'IE', 'DK', 'FI'] as const) {
 			const overlay = getMapProvider(country).protectedAreasOverlay;
 			expect(overlay).not.toBeNull();
 			expect(overlay?.tiles[0]).toContain('Natura2000Sites');
@@ -149,6 +154,11 @@ describe('getMapProvider', () => {
 		expect(nz).not.toBeNull();
 		expect(nz?.tiles[0]).toContain('PublicConservationAreas');
 		expect(nz?.tiles[0]).toContain('bbox={bbox-epsg-3857}');
+
+		const au = getMapProvider('AU').protectedAreasOverlay;
+		expect(au).not.toBeNull();
+		expect(au?.tiles[0]).toContain('CAPAD');
+		expect(au?.tiles[0]).toContain('bbox={bbox-epsg-3857}');
 
 		const gb = getMapProvider('GB').protectedAreasOverlay;
 		expect(gb).not.toBeNull();

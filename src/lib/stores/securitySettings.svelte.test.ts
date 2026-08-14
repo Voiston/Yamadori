@@ -4,12 +4,14 @@ const {
 	mockIsNativeApp,
 	mockIsLocalEncryptionEnabled,
 	mockMigrateLocalEncryption,
-	mockRefreshLocalEncryptionCache
+	mockRefreshLocalEncryptionCache,
+	mockEnsureLocalEncryptionDefault
 } = vi.hoisted(() => ({
 	mockIsNativeApp: vi.fn(),
 	mockIsLocalEncryptionEnabled: vi.fn(),
 	mockMigrateLocalEncryption: vi.fn(),
-	mockRefreshLocalEncryptionCache: vi.fn()
+	mockRefreshLocalEncryptionCache: vi.fn(),
+	mockEnsureLocalEncryptionDefault: vi.fn()
 }));
 
 vi.mock('$lib/paraglide/messages.js', () => ({
@@ -26,7 +28,9 @@ vi.mock('$lib/utils/platform', () => ({
 vi.mock('$lib/utils/secure-idb', () => ({
 	isLocalEncryptionEnabled: (...args: unknown[]) => mockIsLocalEncryptionEnabled(...args),
 	migrateLocalEncryption: (...args: unknown[]) => mockMigrateLocalEncryption(...args),
-	refreshLocalEncryptionCache: (...args: unknown[]) => mockRefreshLocalEncryptionCache(...args)
+	refreshLocalEncryptionCache: (...args: unknown[]) => mockRefreshLocalEncryptionCache(...args),
+	ensureLocalEncryptionDefaultForNewInstalls: (...args: unknown[]) =>
+		mockEnsureLocalEncryptionDefault(...args)
 }));
 
 import {

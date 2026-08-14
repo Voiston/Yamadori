@@ -35,7 +35,7 @@ export const caSpeciesProtectionPack: SpeciesProtectionPack = {
 		},
 		{
 			id: 'ca_whitebark',
-			level: 'caution',
+			level: 'veto',
 			scope: 'national',
 			label: 'Whitebark pine (Pinus albicaulis)',
 			names: ['Whitebark pine', 'Pinus albicaulis', 'Pin à écorce blanche']

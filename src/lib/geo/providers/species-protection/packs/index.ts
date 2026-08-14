@@ -12,11 +12,16 @@ import {
 	nlSpeciesProtectionPack,
 	noSpeciesProtectionPack,
 	ptSpeciesProtectionPack,
+	ieSpeciesProtectionPack,
+	dkSpeciesProtectionPack,
+	fiSpeciesProtectionPack,
 	seSpeciesProtectionPack
 } from '$lib/geo/providers/species-protection/packs/intl';
 import { usSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs/us';
 import { caSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs/ca';
 import { nzSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs/nz';
+import { auSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs/au';
+import { jpSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs/jp';
 
 const PACKS: Record<CountryCode, SpeciesProtectionPack> = {
 	FR: frSpeciesProtectionPack,
@@ -33,7 +38,12 @@ const PACKS: Record<CountryCode, SpeciesProtectionPack> = {
 	US: usSpeciesProtectionPack,
 	CA: caSpeciesProtectionPack,
 	NZ: nzSpeciesProtectionPack,
-	PT: ptSpeciesProtectionPack
+	PT: ptSpeciesProtectionPack,
+	IE: ieSpeciesProtectionPack,
+	DK: dkSpeciesProtectionPack,
+	FI: fiSpeciesProtectionPack,
+	AU: auSpeciesProtectionPack,
+	JP: jpSpeciesProtectionPack
 };
 
 export function getSpeciesProtectionPack(country: CountryCode | null): SpeciesProtectionPack | null {

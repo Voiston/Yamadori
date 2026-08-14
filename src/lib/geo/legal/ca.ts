@@ -1,12 +1,13 @@
 import type { LegalContentPack } from '$lib/geo/legal/types';
 
-const SARA_BASE = 'https://www.canada.ca/en/environment-climate-change/services/species-risk-public-registry.html';
-const GBIF_SPECIES_SEARCH_BASE = 'https://www.gbif.org/species/search';
+const SARA_PORTAL =
+	'https://www.canada.ca/en/environment-climate-change/services/species-risk-public-registry.html';
+const SARA_REGISTRY = 'https://species-registry.canada.ca/index-en.html#/species';
 
 function buildSpeciesSearchUrl(species: string): string {
 	const query = species.trim();
-	if (!query) return GBIF_SPECIES_SEARCH_BASE;
-	return `${GBIF_SPECIES_SEARCH_BASE}?${new URLSearchParams({ q: query })}`;
+	if (!query) return SARA_PORTAL;
+	return `${SARA_REGISTRY}?${new URLSearchParams({ sortBy: 'commonNameSort', sortDirection: 'asc', pageSize: '10', keywords: query })}`;
 }
 
 /**
@@ -16,7 +17,7 @@ function buildSpeciesSearchUrl(species: string): string {
 export const caLegalPack: LegalContentPack = {
 	country: 'CA',
 	sourceName: 'Parks Canada / ECCC / provincial Crown',
-	speciesSourceName: 'GBIF / SARA registry',
+	speciesSourceName: 'SARA / COSEWIC',
 	articles: [
 		{
 			id: 'ca_private_property',
@@ -24,12 +25,12 @@ export const caLegalPack: LegalContentPack = {
 			url: 'https://www.justice.gc.ca/eng/csj-sjc/just/06.html',
 			title: 'Private property & trespass',
 			summary:
-				'On private land, collecting or uprooting plants requires the landowner’s permission. Trespass rules are largely provincial.'
+				'On private land, collecting or uprooting plants requires the landowner’s permission. Trespass rules are largely provincial — verify the province or territory.'
 		},
 		{
 			id: 'ca_crown_forests',
 			group: 'forest',
-			url: 'https://www.nrcan.gc.ca/our-natural-resources/forests/sustainable-forest-management/canadas-forest-laws/17595',
+			url: 'https://natural-resources.canada.ca/forests-forestry/sustainable-forest-management/canada-s-forest-laws',
 			title: 'Crown land & provincial forest law',
 			summary:
 				'Much of Canada’s forest is provincial Crown land. Collecting or transplanting trees typically requires authorization from the province or territory — CPCAD does not map all Crown land.'
@@ -45,12 +46,12 @@ export const caLegalPack: LegalContentPack = {
 		{
 			id: 'ca_sara',
 			group: 'environment',
-			url: SARA_BASE,
+			url: SARA_PORTAL,
 			title: 'Species at Risk Act (SARA)',
 			summary:
 				'Federally listed species at risk are protected. Provincial lists may add further restrictions. Always verify the species before collecting.'
 		}
 	],
-	speciesSearchBase: GBIF_SPECIES_SEARCH_BASE,
+	speciesSearchBase: SARA_REGISTRY,
 	buildSpeciesSearchUrl
 };

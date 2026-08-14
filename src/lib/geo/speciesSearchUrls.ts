@@ -10,7 +10,8 @@ const INFO_FLORA_BASE = 'https://www.infoflora.ch/fr/flore/';
 const WAARNEMINGEN_BE_BASE = 'https://waarnemingen.be/species/search/';
 const VERSPREIDINGSATLAS_BASE = 'https://www.verspreidingsatlas.nl/';
 const ARTFAKTA_BASE = 'https://artfakta.se/taxonsearch';
-const ARTSDATABANKEN_BASE = 'https://artsdatabanken.no/Taxon/Search';
+/** Artsdatabanken (Norway) — hub (legacy `/Taxon/Search` 404s). */
+const ARTSDATABANKEN_BASE = 'https://artsdatabanken.no/';
 /** Acta Plantarum search hub (Italy). */
 const ACTA_PLANTARUM_BASE = 'https://www.actaplantarum.org/cerca/cerca.php';
 /** FlorItaly — Portal to the Flora of Italy (Dryades / UniTS). */
@@ -70,7 +71,8 @@ export function buildArtfaktaSpeciesSearchUrl(species: string): string {
 export function buildArtsdatabankenSpeciesSearchUrl(species: string): string {
 	const query = species.trim();
 	if (!query) return ARTSDATABANKEN_BASE;
-	return `${ARTSDATABANKEN_BASE}?${new URLSearchParams({ Query: query })}`;
+	// Site search landing; deep Taxon/Search paths are no longer stable.
+	return `${ARTSDATABANKEN_BASE}?${new URLSearchParams({ q: query })}`;
 }
 
 /**
@@ -88,6 +90,43 @@ export function buildNbnAtlasSpeciesSearchUrl(species: string): string {
 	const query = species.trim();
 	if (!query) return NBN_ATLAS_BASE;
 	return `${NBN_ATLAS_BASE}?${new URLSearchParams({ q: query })}`;
+}
+
+/** National Biodiversity Data Centre — Biodiversity Ireland (maps search endpoint returns 500). */
+const NBDC_BASE = 'https://biodiversityireland.ie/';
+
+export function buildNbdcSpeciesSearchUrl(species: string): string {
+	const query = species.trim();
+	if (!query) return NBDC_BASE;
+	return `${NBDC_BASE}?${new URLSearchParams({ s: query })}`;
+}
+
+/** Atlas of Living Australia (Australia). */
+const ALA_BASE = 'https://bie.ala.org.au/search';
+
+export function buildAlaSpeciesSearchUrl(species: string): string {
+	const query = species.trim();
+	if (!query) return ALA_BASE;
+	return `${ALA_BASE}?${new URLSearchParams({ q: query })}`;
+}
+
+/** Arter.dk — Danish species portal. */
+/** Arter.dk taxa catalogue (SPA; `/search` 404s). */
+const ARTER_DK_BASE = 'https://arter.dk/taxa';
+
+export function buildArterDkSpeciesSearchUrl(species: string): string {
+	const query = species.trim();
+	if (!query) return ARTER_DK_BASE;
+	return `${ARTER_DK_BASE}?${new URLSearchParams({ q: query })}`;
+}
+
+/** Laji.fi / FinBIF (Finland). */
+const LAJI_FI_BASE = 'https://laji.fi/taxon/list';
+
+export function buildLajiFiSpeciesSearchUrl(species: string): string {
+	const query = species.trim();
+	if (!query) return LAJI_FI_BASE;
+	return `${LAJI_FI_BASE}?${new URLSearchParams({ target: query })}`;
 }
 
 /** Biodiversitäts-Atlas Österreich (Austria) — BIE species search. */
@@ -109,5 +148,9 @@ export const SPECIES_SEARCH_BASE = {
 	actaPlantarum: ACTA_PLANTARUM_BASE,
 	floritaly: FLORITALY_BASE,
 	nbnAtlas: NBN_ATLAS_BASE,
-	biodiversityAtlasAt: BIODIVERSITY_ATLAS_AT_BASE
+	biodiversityAtlasAt: BIODIVERSITY_ATLAS_AT_BASE,
+	nbdc: NBDC_BASE,
+	ala: ALA_BASE,
+	arterDk: ARTER_DK_BASE,
+	lajiFi: LAJI_FI_BASE
 } as const;

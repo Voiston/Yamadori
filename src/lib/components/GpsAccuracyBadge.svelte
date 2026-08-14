@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { formatAccuracy, getGpsSignalQuality, type GpsSignalQuality } from '$lib/utils/gps';
 	import * as m from '$lib/paraglide/messages.js';
 
@@ -45,7 +46,11 @@
 {/snippet}
 
 {#if loading}
-	<p class="text-base text-muted" role="status">{m.gps_locating()}</p>
+	<div class="flex items-center gap-2" role="status" aria-label={m.gps_locating()}>
+		<Skeleton class="h-4 w-4 shrink-0 rounded-full" decorative />
+		<Skeleton class="h-4 w-28 rounded-md" decorative />
+		<span class="text-base text-muted">{m.gps_locating()}</span>
+	</div>
 {:else if accuracyMeters !== null}
 	<div
 		class="mt-2 flex flex-row flex-wrap items-center gap-4"

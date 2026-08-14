@@ -4,6 +4,9 @@
  *
  * Macro-region ids match BIOTOPE_REGIONS entries in regions.ts.
  */
+
+import { matchHarvestSpecies } from '$lib/geo/matchHarvestSpecies';
+
 export type CaMacroRegion =
 	| 'ca_bc_coast'
 	| 'ca_bc_interior'
@@ -15,6 +18,7 @@ export type CaMacroRegion =
 
 export type CaHarvestWindow = {
 	species: string;
+	aliases?: readonly string[];
 	macroRegion: CaMacroRegion;
 	/** Inclusive start month (1 = January). */
 	startMonth: number;
@@ -26,6 +30,7 @@ export type CaHarvestWindow = {
 export const CA_HARVEST_CALENDAR: readonly CaHarvestWindow[] = [
 	{
 		species: 'Douglas fir',
+		aliases: ['Pseudotsuga menziesii'],
 		macroRegion: 'ca_bc_coast',
 		startMonth: 11,
 		endMonth: 3,
@@ -33,6 +38,7 @@ export const CA_HARVEST_CALENDAR: readonly CaHarvestWindow[] = [
 	},
 	{
 		species: 'Douglas fir',
+		aliases: ['Pseudotsuga menziesii'],
 		macroRegion: 'ca_bc_interior',
 		startMonth: 10,
 		endMonth: 4
@@ -194,10 +200,9 @@ export function findCaHarvestWindows(
 	species: string,
 	macroRegion?: CaMacroRegion | string | null
 ): CaHarvestWindow[] {
-	const normalized = species.trim().toLowerCase();
-	if (!normalized) return [];
+	if (!species.trim()) return [];
 	return CA_HARVEST_CALENDAR.filter((entry) => {
-		if (entry.species.toLowerCase() !== normalized) return false;
+		if (!matchHarvestSpecies(species, entry.species, entry.aliases ?? [])) return false;
 		if (macroRegion && entry.macroRegion !== macroRegion) return false;
 		return true;
 	});

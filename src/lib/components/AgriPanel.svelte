@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { AgriRiskLevel } from '$lib/types/agri';
 	import type { PhenologyStageId } from '$lib/types/gdd';
-	import type { CernageStatus, YrsDecision } from '$lib/types/yrs';
+	import type { AoutementStatus, CernageStatus, LeafFallPct, YrsConfidence, YrsDecision } from '$lib/types/yrs';
 	import type { EnvironmentExposure } from '$lib/types/environment';
 	import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
 	import { getAgriMetricHelp } from '$lib/constants/agri-metric-help';
@@ -20,11 +20,12 @@
 		formatSoilNightDropAttenuationLabel,
 		getSoilNightDropActivationWeight
 	} from '$lib/utils/soilNightDrop';
-	import { getYrsScoreBreakdown, getYrsDecisionLabels, getYrsScoreLabel, type YrsLayerKey } from '$lib/utils/yrs';
+	import { getYrsScoreBreakdown, getYrsDecisionLabels, getYrsConfidenceLabels, getYrsScoreLabel, getPrimaryYrsConfidenceGap, getYrsConfidenceGapCta, type YrsLayerKey } from '$lib/utils/yrs';
 	import { canViewYrsDetails } from '$lib/utils/featurePolicy';
 	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import AgriMetricCard from './AgriMetricCard.svelte';
 	import GddPanel from './GddPanel.svelte';
+	import Skeleton from './Skeleton.svelte';
 	import SoilTempSparkline from './SoilTempSparkline.svelte';
 	import ViabilityWeekChart from './ViabilityWeekChart.svelte';
 	import YrsLayerScoreCell from './YrsLayerScoreCell.svelte';
@@ -36,6 +37,8 @@
 		species?: string;
 		observedPhenologyStage?: PhenologyStageId | null;
 		cernageStatus?: CernageStatus | null;
+		aoutementStatus?: AoutementStatus | null;
+		leafFallPct?: LeafFallPct | null;
 		environmentExposure?: EnvironmentExposure;
 		loading?: boolean;
 		onretry?: () => void;
@@ -47,6 +50,8 @@
 		species = '',
 		observedPhenologyStage = null,
 		cernageStatus = null,
+		aoutementStatus = null,
+		leafFallPct = null,
 		environmentExposure = DEFAULT_ENVIRONMENT_EXPOSURE,
 		loading = false,
 		onretry
@@ -105,6 +110,8 @@
 		species,
 		observedPhenologyStage,
 		cernageStatus,
+		aoutementStatus,
+		leafFallPct,
 		environmentExposure
 	});
 	const showMicroclimateBadge = $derived(environmentExposure !== DEFAULT_ENVIRONMENT_EXPOSURE);
@@ -138,6 +145,11 @@
 	const yrsDecisionLabels = $derived.by(() => {
 		void appearanceSettingsState.locale;
 		return getYrsDecisionLabels();
+	});
+
+	const yrsConfidenceLabels = $derived.by((): Record<YrsConfidence, string> => {
+		void appearanceSettingsState.locale;
+		return getYrsConfidenceLabels();
 	});
 
 	const yrsLayerLabels = $derived.by(() => {
@@ -174,7 +186,7 @@
 
 	const soil18cmZoneLabel = $derived.by(() => {
 		void appearanceSettingsState.locale;
-		return data ? getSoil18cmZoneLabel(data.soilTemperature18cmC) : '';
+		return data ? getSoil18cmZoneLabel(data.soilTemperature18cmC, data.latitude, data.longitude) : '';
 	});
 
 	const allDaysRisk = $derived(
@@ -192,7 +204,7 @@
 	}));
 
 	const gddSeasonZone = $derived(
-		data?.gdd ? getGddSeasonZone(data.gdd.cumulativeSinceJan1) : null
+		data?.gdd ? getGddSeasonZone(data.gdd.cumulativeSinceJan1, data.gdd.baseCategory) : null
 	);
 
 	const gddSeasonZoneClass = $derived(
@@ -277,24 +289,19 @@
 	{#if offline && !data && !agriLoading && !fromCache}
 		<p class="mt-3 text-sm text-muted" role="status">{m.climate_online_required()}</p>
 	{:else if agriLoading}
-		<div class="mt-4 flex items-center gap-3 text-sm text-muted" role="status">
-			<svg class="h-5 w-5 animate-spin text-forest-600" viewBox="0 0 24 24" aria-hidden="true">
-				<circle
-					class="opacity-25"
-					cx="12"
-					cy="12"
-					r="10"
-					stroke="currentColor"
-					stroke-width="4"
-					fill="none"
-				/>
-				<path
-					class="opacity-75"
-					fill="currentColor"
-					d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-				/>
-			</svg>
-			{m.agri_loading()}
+		<div
+			class="mt-4 grid grid-cols-2 gap-3"
+			role="status"
+			aria-busy="true"
+			aria-label={m.agri_loading()}
+		>
+			{#each [0, 1, 2, 3] as i (i)}
+				<div class="rounded-lg border border-forest-100 bg-forest-50/40 px-3 py-3">
+					<Skeleton class="h-3 w-20" decorative />
+					<Skeleton class="mt-2 h-7 w-14" decorative />
+					<Skeleton class="mt-2 h-2.5 w-full" decorative />
+				</div>
+			{/each}
 		</div>
 	{:else if error}
 		<p class="mt-3 text-sm text-red-700" role="alert">{error}</p>
@@ -401,6 +408,22 @@
 						{yrsDecisionLabels[yrs.decision]}
 					</span>
 				</div>
+				<p
+					class="mt-1.5 text-[11px] text-muted"
+					title={m.yrs_confidence_hint()}
+				>
+					{m.yrs_confidence_label()} : {yrsConfidenceLabels[yrs.confidence]}
+					— {m.yrs_confidence_hint()}
+				</p>
+				{#if yrs.localization === 'generic'}
+					<p class="mt-1 text-[11px] text-amber-800">{m.yrs_localization_generic_hint()}</p>
+				{/if}
+				{#if yrs.confidence !== 'high' && data}
+					{@const gapCta = getYrsConfidenceGapCta(getPrimaryYrsConfidenceGap(data, plantInputs))}
+					{#if gapCta}
+						<p class="mt-1 text-[11px] text-forest-800">{gapCta}</p>
+					{/if}
+				{/if}
 				{#if yrsDetailsUnlocked && yrs.summary}
 					<p class="mt-2 text-xs text-muted" role="status">{yrs.summary}</p>
 				{/if}
@@ -663,7 +686,12 @@
 						<h6 class="text-xs font-semibold uppercase tracking-wide text-muted">
 							{yrsViabilityHeading}
 						</h6>
-						<ViabilityWeekChart viability={weeklyViability} />
+						<ViabilityWeekChart
+							viability={weeklyViability}
+							{species}
+							latitude={data?.latitude ?? 0}
+							longitude={data?.longitude ?? 0}
+						/>
 						<p class="mt-2 text-xs text-muted" role="status">
 							{#if allDaysRisk}
 								{m.yrs_decision_risk()} — {m.yrs_decision_no_go()}

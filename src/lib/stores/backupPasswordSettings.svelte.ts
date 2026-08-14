@@ -1,7 +1,7 @@
 import { secureIdbDel, secureIdbGet, secureIdbSet } from '$lib/utils/secure-idb';
 import {
 	hashPasswordForVerification,
-	verifyPassword
+	verifyPasswordCompatible
 } from '$lib/utils/archive/crypto';
 import { isNativeApp } from '$lib/utils/platform';
 
@@ -14,6 +14,8 @@ type StoredBackupPasswordConfig = {
 	configured: boolean;
 	verifierSalt: string;
 	verifierHash: string;
+	/** PBKDF2 iterations used for verifierHash (absent = legacy 100k). */
+	verifierIterations?: number;
 	hint?: string;
 };
 
@@ -80,13 +82,14 @@ export function getBackupPasswordHint(): string | null {
 }
 
 export async function setupBackupPassword(password: string, hint?: string): Promise<void> {
-	const { salt, hash } = await hashPasswordForVerification(password);
+	const { salt, hash, iterations } = await hashPasswordForVerification(password);
 	const normalizedHint = normalizeHint(hint);
 
 	const nextConfig: StoredBackupPasswordConfig = {
 		configured: true,
 		verifierSalt: salt,
 		verifierHash: hash,
+		verifierIterations: iterations,
 		hint: normalizedHint
 	};
 
@@ -99,7 +102,12 @@ export async function setupBackupPassword(password: string, hint?: string): Prom
 export async function verifyBackupPassword(password: string): Promise<boolean> {
 	const config = await readConfig();
 	if (!config?.configured) return false;
-	return verifyPassword(password, config.verifierSalt, config.verifierHash);
+	return verifyPasswordCompatible(
+		password,
+		config.verifierSalt,
+		config.verifierHash,
+		config.verifierIterations
+	);
 }
 
 export async function changeBackupPassword(
@@ -109,7 +117,7 @@ export async function changeBackupPassword(
 ): Promise<boolean> {
 	if (!(await verifyBackupPassword(oldPassword))) return false;
 
-	const { salt, hash } = await hashPasswordForVerification(newPassword);
+	const { salt, hash, iterations } = await hashPasswordForVerification(newPassword);
 	const normalizedHint =
 		hint !== undefined
 			? normalizeHint(hint)
@@ -119,6 +127,7 @@ export async function changeBackupPassword(
 		configured: true,
 		verifierSalt: salt,
 		verifierHash: hash,
+		verifierIterations: iterations,
 		hint: normalizedHint
 	};
 

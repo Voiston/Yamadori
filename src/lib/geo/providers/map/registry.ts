@@ -15,6 +15,11 @@ import { createUsMapProvider } from './us';
 import { createCaMapProvider } from './ca';
 import { createNzMapProvider } from './nz';
 import { createPtMapProvider } from './pt';
+import { createIeMapProvider } from './ie';
+import { createAuMapProvider } from './au';
+import { createDkMapProvider } from './dk';
+import { createFiMapProvider } from './fi';
+import { createJpMapProvider } from './jp';
 import type { CountryMapProvider } from './types';
 
 export type MapProviderLocation = {
@@ -67,6 +72,16 @@ export function getMapProvider(
 			return createNzMapProvider();
 		case 'PT':
 			return createPtMapProvider();
+		case 'IE':
+			return createIeMapProvider();
+		case 'AU':
+			return createAuMapProvider();
+		case 'DK':
+			return createDkMapProvider();
+		case 'FI':
+			return createFiMapProvider();
+		case 'JP':
+			return createJpMapProvider();
 		default:
 			return createInternationalMapProvider();
 	}

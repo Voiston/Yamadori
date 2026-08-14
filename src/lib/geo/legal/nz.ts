@@ -2,12 +2,12 @@ import type { LegalContentPack } from '$lib/geo/legal/types';
 
 const DOC_PERMISSIONS =
 	'https://www.doc.govt.nz/get-involved/apply-for-permits/research-and-collection/';
-const GBIF_SPECIES_SEARCH_BASE = 'https://www.gbif.org/species/search';
+const NZPCN_FLORA = 'https://www.nzpcn.org.nz/flora/';
 
 function buildSpeciesSearchUrl(species: string): string {
 	const query = species.trim();
-	if (!query) return GBIF_SPECIES_SEARCH_BASE;
-	return `${GBIF_SPECIES_SEARCH_BASE}?${new URLSearchParams({ q: query })}`;
+	if (!query) return NZPCN_FLORA;
+	return `${NZPCN_FLORA}?${new URLSearchParams({ SearchText: query })}`;
 }
 
 /**
@@ -17,7 +17,7 @@ function buildSpeciesSearchUrl(species: string): string {
 export const nzLegalPack: LegalContentPack = {
 	country: 'NZ',
 	sourceName: 'DOC / Conservation Act',
-	speciesSourceName: 'GBIF / Wildlife Act',
+	speciesSourceName: 'NZPCN / NZTCS / DOC',
 	articles: [
 		{
 			id: 'nz_private_property',
@@ -50,9 +50,17 @@ export const nzLegalPack: LegalContentPack = {
 			title: 'Wildlife Act 1953',
 			summary:
 				'Many native animals (and some plants via other schedules) are protected. Always verify species status before collecting. Iwi / Whenua Rahui areas need governing authority consent.'
+		},
+		{
+			id: 'nz_kauri_dieback',
+			group: 'environment',
+			url: 'https://www.doc.govt.nz/nature/native-plants/kauri/',
+			title: 'Kauri — DOC native plants hub',
+			summary:
+				'Kauri (Agathis australis) is highly protected and threatened by dieback disease. Do not dig, move soil, or collect without DOC authority and biosecurity precautions.'
 		}
 	],
-	speciesSearchBase: GBIF_SPECIES_SEARCH_BASE,
+	speciesSearchBase: NZPCN_FLORA,
 	buildSpeciesSearchUrl
 };
 

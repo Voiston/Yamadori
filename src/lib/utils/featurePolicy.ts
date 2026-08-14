@@ -21,6 +21,14 @@ export function canAddTree(totalCount: number): boolean {
 	return hasProFeatureAccess() || totalCount < FREE_TREE_LIMIT;
 }
 
+/** Remaining free tree slots; `0` when Pro or at/over the free limit. */
+export function getFreeSlotsRemaining(totalCount: number): number {
+	if (hasProFeatureAccess()) {
+		return Number.POSITIVE_INFINITY;
+	}
+	return Math.max(0, FREE_TREE_LIMIT - totalCount);
+}
+
 export function sortTreesForAccess(trees: Tree[]): Tree[] {
 	return [...trees].sort((a, b) => {
 		if (a.isFavorite !== b.isFavorite) {

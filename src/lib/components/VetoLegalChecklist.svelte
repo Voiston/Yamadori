@@ -11,10 +11,14 @@
 	import { getUsPermitLinks } from '$lib/geo/legal/usPermitLinks';
 	import { getCaPermitLinks } from '$lib/geo/legal/caPermitLinks';
 	import { getNzPermitLinks } from '$lib/geo/legal/nzPermitLinks';
+	import { getAuPermitLinks } from '$lib/geo/legal/auPermitLinks';
+	import { getJpPermitLinks } from '$lib/geo/legal/jpPermitLinks';
 	import { scanProtectedAreasForCoords } from '$lib/geo/providers/protected/dispatch';
 	import { usZoneCardIds } from '$lib/geo/providers/protected/us';
 	import { caZoneCardIds } from '$lib/geo/providers/protected/ca';
 	import { nzZoneCardIds } from '$lib/geo/providers/protected/nz';
+	import { auZoneCardIds } from '$lib/geo/providers/protected/au';
+	import { jpZoneCardIds } from '$lib/geo/providers/protected/jp';
 	import { lookupSpeciesProtection } from '$lib/geo/providers/species-protection/dispatch';
 	import { lookupMunicipalityNear } from '$lib/geo/providers/municipality/dispatch';
 	import { findUsHarvestWindows } from '$lib/geo/usHarvestCalendar';
@@ -23,6 +27,11 @@
 		findNzHarvestWindows,
 		formatHarvestWindowMonths
 	} from '$lib/geo/nzHarvestCalendar';
+	import { findAuHarvestWindows } from '$lib/geo/auHarvestCalendar';
+	import {
+		findJpHarvestWindows,
+		resolveJpHarvestZone
+	} from '$lib/geo/jpHarvestCalendar';
 	import { BIOTOPE_REGIONS } from '$lib/constants/regions';
 	import { getCadastreSummary } from '$lib/utils/cadastre';
 	import {
@@ -101,8 +110,24 @@
 	const isUs = $derived(country === 'US');
 	const isCa = $derived(country === 'CA');
 	const isNz = $derived(country === 'NZ');
+	const isAu = $derived(country === 'AU');
+	const isJp = $derived(country === 'JP');
+	const isEs = $derived(country === 'ES');
+	const isIt = $derived(country === 'IT');
+	const isCh = $derived(country === 'CH');
+	const isDe = $derived(country === 'DE');
+	const isBe = $derived(country === 'BE');
+	const isPt = $derived(country === 'PT');
+	const isGb = $derived(country === 'GB');
+	const isAt = $derived(country === 'AT');
+	const isNl = $derived(country === 'NL');
+	const isSe = $derived(country === 'SE');
+	const isNo = $derived(country === 'NO');
+	const isDk = $derived(country === 'DK');
+	const isFi = $derived(country === 'FI');
+	const isIe = $derived(country === 'IE');
 	const isForestRegime = $derived(
-		isCa || isNz
+		isCa || isNz || isAu
 			? cadastreInfo.zoneType === 'crown_unverified' ||
 					cadastreInfo.zoneType === 'other_federal'
 			: cadastreInfo.zoneType === 'state_forest' ||
@@ -114,6 +139,8 @@
 		!isUs &&
 			!isCa &&
 			!isNz &&
+			!isAu &&
+			!isJp &&
 			(cadastreInfo.zoneType === 'private' || cadastreInfo.zoneType === 'communal_forest')
 	);
 	const usPermitLinks = $derived(
@@ -139,9 +166,27 @@
 				})
 			: []
 	);
+	const auPermitLinks = $derived(
+		isAu
+			? getAuPermitLinks({
+					zoneType: cadastreInfo.zoneType,
+					stateCode: cadastreInfo.stateCode
+				})
+			: []
+	);
+	const jpPermitLinks = $derived(
+		isJp
+			? getJpPermitLinks({
+					zoneType: cadastreInfo.zoneType,
+					prefectureCode: cadastreInfo.codeInsee || cadastreInfo.section
+				})
+			: []
+	);
 	const usZoneCards = $derived(isUs ? usZoneCardIds() : []);
 	const caZoneCards = $derived(isCa ? caZoneCardIds() : []);
 	const nzZoneCards = $derived(isNz ? nzZoneCardIds() : []);
+	const auZoneCards = $derived(isAu ? auZoneCardIds() : []);
+	const jpZoneCards = $derived(isJp ? jpZoneCardIds() : []);
 	const usMacroRegion = $derived(
 		isUs
 			? (BIOTOPE_REGIONS.find(
@@ -178,6 +223,18 @@
 				)?.macroRegion ?? null)
 			: null
 	);
+	const auMacroRegion = $derived(
+		isAu
+			? (BIOTOPE_REGIONS.find(
+					(region) =>
+						region.macroRegion.startsWith('au_') &&
+						latitude >= region.bbox.south &&
+						latitude <= region.bbox.north &&
+						longitude >= region.bbox.west &&
+						longitude <= region.bbox.east
+				)?.macroRegion ?? null)
+			: null
+	);
 	const usHarvestWindows = $derived(
 		isUs ? findUsHarvestWindows(species, usMacroRegion) : []
 	);
@@ -187,12 +244,19 @@
 	const nzHarvestWindows = $derived(
 		isNz ? findNzHarvestWindows(species, nzMacroRegion) : []
 	);
+	const auHarvestWindows = $derived(
+		isAu ? findAuHarvestWindows(species, auMacroRegion) : []
+	);
+	const jpHarvestZone = $derived(isJp ? resolveJpHarvestZone(latitude, longitude) : null);
+	const jpHarvestWindows = $derived(
+		isJp ? findJpHarvestWindows(species, jpHarvestZone) : []
+	);
 	const collectStatus = $derived(effectiveCollectStatus(cadastreInfo));
 	const cadastreViewer = $derived(
 		getCadastreViewerLink(country, latitude, longitude, cadastreInfo)
 	);
 	const euPermitLinks = $derived(
-		!isUs && !isCa && !isNz
+		!isUs && !isCa && !isNz && !isAu && !isJp
 			? getEuPermitLinks(country, cadastreInfo.zoneType, {
 					latitude,
 					longitude,
@@ -223,11 +287,35 @@
 			case 'forbidden_or_agency':
 				return m.veto_guidance_forbidden_or_agency();
 			case 'owner_permission':
+				if (isUs) return m.veto_guidance_owner_permission_us();
+				if (isJp) return m.veto_guidance_owner_permission_jp();
+				if (isCa) return m.veto_guidance_owner_permission_ca();
+				if (isAu) return m.veto_guidance_owner_permission_au();
+				if (isGb) return m.veto_guidance_owner_permission_gb();
+				if (isBe) return m.veto_guidance_owner_permission_be();
 				return m.veto_guidance_owner_permission();
 			default:
+				if (isJp) return m.veto_guidance_unknown_jp();
+				if (isCa) return m.veto_guidance_unknown_ca();
+				if (isAu) return m.veto_guidance_unknown_au();
 				return m.veto_guidance_unknown();
 		}
 	});
+	const usPermitLinksTitle = $derived(
+		cadastreInfo.zoneType === 'private' ? m.veto_us_owner_next_steps() : m.veto_us_permit_links()
+	);
+	const isOwnerLookupZone = $derived(
+		cadastreInfo.zoneType === 'private' || cadastreInfo.zoneType === 'crown_unverified'
+	);
+	const caPermitLinksTitle = $derived(
+		isOwnerLookupZone ? m.veto_ca_owner_next_steps() : m.veto_ca_permit_links()
+	);
+	const auPermitLinksTitle = $derived(
+		isOwnerLookupZone ? m.veto_au_owner_next_steps() : m.veto_au_permit_links()
+	);
+	const jpPermitLinksTitle = $derived(
+		isOwnerLookupZone ? m.veto_jp_owner_next_steps() : m.veto_jp_permit_links()
+	);
 	const disclaimerCountryNote = $derived(vetoDisclaimerCountryNote(country));
 	const vetoActive = $derived(scan?.veto ?? false);
 	const cautionHits = $derived(scan?.hits.filter((hit) => hit.level === 'caution') ?? []);
@@ -299,6 +387,8 @@
 				return m.veto_zone_nwa();
 			case 'ipca':
 				return m.veto_zone_ipca();
+			case 'wilderness':
+				return m.veto_zone_wilderness();
 			case 'crown_unverified':
 				return m.veto_zone_crown_unverified();
 			default:
@@ -316,6 +406,8 @@
 				return m.veto_zone_nwa_hint();
 			case 'ipca':
 				return m.veto_zone_ipca_hint();
+			case 'wilderness':
+				return m.veto_zone_wilderness_hint();
 			case 'crown_unverified':
 				return m.veto_zone_crown_unverified_hint();
 			default:
@@ -352,6 +444,70 @@
 				return m.veto_zone_whenua_rahui_hint();
 			case 'outside_pcl':
 				return m.veto_zone_outside_pcl_hint();
+			default:
+				return '';
+		}
+	}
+
+	function auZoneCardTitle(cardId: ProtectedZoneCardId): string {
+		switch (cardId) {
+			case 'capad_national_park':
+				return m.veto_zone_capad_national_park();
+			case 'capad_conservation':
+				return m.veto_zone_capad_conservation();
+			case 'wilderness':
+				return m.veto_zone_wilderness();
+			case 'capad_ipa':
+				return m.veto_zone_capad_ipa();
+			case 'outside_capad':
+				return m.veto_zone_outside_capad();
+			default:
+				return cardId;
+		}
+	}
+
+	function auZoneCardHint(cardId: ProtectedZoneCardId): string {
+		switch (cardId) {
+			case 'capad_national_park':
+				return m.veto_zone_capad_national_park_hint();
+			case 'capad_conservation':
+				return m.veto_zone_capad_conservation_hint();
+			case 'wilderness':
+				return m.veto_zone_wilderness_hint();
+			case 'capad_ipa':
+				return m.veto_zone_capad_ipa_hint();
+			case 'outside_capad':
+				return m.veto_zone_outside_capad_hint();
+			default:
+				return '';
+		}
+	}
+
+	function jpZoneCardTitle(cardId: ProtectedZoneCardId): string {
+		switch (cardId) {
+			case 'ksj_national_park':
+				return m.veto_zone_ksj_national_park();
+			case 'ksj_special_zone':
+				return m.veto_zone_ksj_special_zone();
+			case 'ksj_prefectural_park':
+				return m.veto_zone_ksj_prefectural_park();
+			case 'outside_ksj':
+				return m.veto_zone_outside_ksj();
+			default:
+				return cardId;
+		}
+	}
+
+	function jpZoneCardHint(cardId: ProtectedZoneCardId): string {
+		switch (cardId) {
+			case 'ksj_national_park':
+				return m.veto_zone_ksj_national_park_hint();
+			case 'ksj_special_zone':
+				return m.veto_zone_ksj_special_zone_hint();
+			case 'ksj_prefectural_park':
+				return m.veto_zone_ksj_prefectural_park_hint();
+			case 'outside_ksj':
+				return m.veto_zone_outside_ksj_hint();
 			default:
 				return '';
 		}
@@ -537,7 +693,7 @@
 </script>
 
 <section
-	class="mt-3 rounded-xl border border-gray-200 bg-white shadow-sm {usePanelLayout
+	class="app-card mt-3 {usePanelLayout
 		? 'veto-checklist--confirmable'
 		: 'space-y-4 p-4'}"
 	aria-label={m.veto_checklist_title()}
@@ -584,15 +740,19 @@
 				<p class="text-xs font-semibold uppercase tracking-wide text-muted">{m.veto_pillar_property()}</p>
 				<p class="mt-1 text-sm text-forest-900">{m.veto_parcel_label({ parcel: parcelLabel, commune: cadastreInfo.commune })}</p>
 				<p class="mt-1 text-xs text-muted">
-					{isNz
-						? m.veto_property_intro_nz()
-						: isCa
-							? m.veto_property_intro_ca()
-							: isUs
-								? m.veto_property_intro_us()
-								: country === 'FR'
-									? m.veto_property_intro()
-									: m.veto_property_intro_generic()}
+					{isAu
+						? m.veto_property_intro_au()
+						: isJp
+							? m.veto_property_intro_jp()
+							: isNz
+								? m.veto_property_intro_nz()
+								: isCa
+									? m.veto_property_intro_ca()
+									: isUs
+										? m.veto_property_intro_us()
+										: country === 'FR'
+											? m.veto_property_intro()
+											: m.veto_property_intro_generic()}
 				</p>
 				<p
 					class="mt-1.5 inline-flex rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-950"
@@ -652,7 +812,7 @@
 		</header>
 		{#if isUs && usPermitLinks.length > 0}
 			<div class="rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-2.5 text-xs leading-relaxed text-sky-950">
-				<p class="font-semibold text-forest-900">{m.veto_us_permit_links()}</p>
+				<p class="font-semibold text-forest-900">{usPermitLinksTitle}</p>
 				<ul class="mt-2 space-y-1.5">
 					{#each usPermitLinks as link (link.id)}
 						<li>
@@ -671,7 +831,7 @@
 		{/if}
 		{#if isCa && caPermitLinks.length > 0}
 			<div class="rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-2.5 text-xs leading-relaxed text-sky-950">
-				<p class="font-semibold text-forest-900">{m.veto_ca_permit_links()}</p>
+				<p class="font-semibold text-forest-900">{caPermitLinksTitle}</p>
 				<ul class="mt-2 space-y-1.5">
 					{#each caPermitLinks as link (link.id)}
 						<li>
@@ -693,6 +853,44 @@
 				<p class="font-semibold text-forest-900">{m.veto_nz_permit_links()}</p>
 				<ul class="mt-2 space-y-1.5">
 					{#each nzPermitLinks as link (link.id)}
+						<li>
+							<a
+								href={link.url}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="font-medium text-forest-800 underline decoration-forest-600/40 underline-offset-2"
+							>
+								{link.label}
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+		{#if isAu && auPermitLinks.length > 0}
+			<div class="rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-2.5 text-xs leading-relaxed text-sky-950">
+				<p class="font-semibold text-forest-900">{auPermitLinksTitle}</p>
+				<ul class="mt-2 space-y-1.5">
+					{#each auPermitLinks as link (link.id)}
+						<li>
+							<a
+								href={link.url}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="font-medium text-forest-800 underline decoration-forest-600/40 underline-offset-2"
+							>
+								{link.label}
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+		{#if isJp && jpPermitLinks.length > 0}
+			<div class="rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-2.5 text-xs leading-relaxed text-sky-950">
+				<p class="font-semibold text-forest-900">{jpPermitLinksTitle}</p>
+				<ul class="mt-2 space-y-1.5">
+					{#each jpPermitLinks as link (link.id)}
 						<li>
 							<a
 								href={link.url}
@@ -770,8 +968,8 @@
 					<LegalArticleCard
 						articleId={article.id}
 						url={article.url}
-						title={article.title}
-						text={article.summary}
+						title={article.id.startsWith('jp_') ? undefined : article.title}
+						text={article.id.startsWith('jp_') ? undefined : article.summary}
 						sourceName={legalPack.sourceName}
 					/>
 				{/each}
@@ -782,8 +980,8 @@
 						<LegalArticleCard
 							articleId={forestArticle.id}
 							url={forestArticle.url}
-							title={forestArticle.title}
-							text={forestArticle.summary}
+							title={forestArticle.id.startsWith('jp_') ? undefined : forestArticle.title}
+							text={forestArticle.id.startsWith('jp_') ? undefined : forestArticle.summary}
 							sourceName={legalPack.sourceName}
 						/>
 					{/if}
@@ -855,6 +1053,33 @@
 						{/if}
 					</div>
 				{/each}
+			{:else if isAu}
+				{#each auZoneCards as cardId (cardId)}
+					<div class="rounded-lg border px-3 py-2 text-xs {zoneCardClasses(cardId)}">
+						<p class="font-medium">{auZoneCardTitle(cardId)}</p>
+						<p class="mt-1 text-[11px]">{auZoneCardHint(cardId)}</p>
+						{#if zoneStatusAlert(cardId)}
+							<p class="mt-1.5 text-[11px] font-semibold" role="alert">{zoneStatusAlert(cardId)}</p>
+						{/if}
+					</div>
+				{/each}
+			{:else if isJp}
+				{#if scan?.coverage !== 'unsupported'}
+					{#each jpZoneCards as cardId (cardId)}
+						<div class="rounded-lg border px-3 py-2 text-xs {zoneCardClasses(cardId)}">
+							<p class="font-medium">{jpZoneCardTitle(cardId)}</p>
+							<p class="mt-1 text-[11px]">{jpZoneCardHint(cardId)}</p>
+							{#if zoneStatusAlert(cardId)}
+								<p class="mt-1.5 text-[11px] font-semibold" role="alert">{zoneStatusAlert(cardId)}</p>
+							{/if}
+						</div>
+					{/each}
+				{:else}
+					<div class="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-950">
+						<p class="font-medium">{m.veto_zone_jp_unsupported()}</p>
+						<p class="mt-1 text-[11px]">{m.veto_zone_jp_unsupported_hint()}</p>
+					</div>
+				{/if}
 			{:else}
 				<div class="rounded-lg border px-3 py-2 text-xs {zoneCardClasses('pn')}">
 					<p class="font-medium">{m.veto_zone_pn()}</p>
@@ -1006,6 +1231,46 @@
 			</div>
 		{/if}
 
+		{#if isAu}
+			<div class="rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 text-xs leading-relaxed text-emerald-950">
+				<p class="font-medium">{m.au_harvest_calendar_title()}</p>
+				{#if auHarvestWindows.length > 0}
+					<ul class="mt-1.5 space-y-1">
+						{#each auHarvestWindows as window (window.species + window.macroRegion)}
+							<li>
+								{formatHarvestWindowMonths(window.startMonth, window.endMonth)}
+								{#if window.note}
+									<span class="text-muted"> — {window.note}</span>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="mt-1 text-muted">{m.au_harvest_calendar_none()}</p>
+				{/if}
+			</div>
+		{/if}
+
+		{#if isJp}
+			<div class="rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 text-xs leading-relaxed text-emerald-950">
+				<p class="font-medium">{m.jp_harvest_calendar_title()}</p>
+				{#if jpHarvestWindows.length > 0}
+					<ul class="mt-1.5 space-y-1">
+						{#each jpHarvestWindows as window (window.species + window.zone)}
+							<li>
+								{formatHarvestWindowMonths(window.startMonth, window.endMonth)}
+								{#if window.note}
+									<span class="text-muted"> — {window.note}</span>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="mt-1 text-muted">{m.jp_harvest_calendar_none()}</p>
+				{/if}
+			</div>
+		{/if}
+
 		{#if !speciesHit}
 			<div class="rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 text-xs leading-relaxed text-emerald-950">
 				<p class="font-medium">{m.veto_species_inpn_title()}</p>
@@ -1030,8 +1295,88 @@
 		{/if}
 
 		<details class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-forest-800">
-			<summary class="cursor-pointer font-medium">{m.veto_species_examples_title()}</summary>
-			<p class="mt-2 leading-relaxed">{m.veto_species_examples_body()}</p>
+			<summary class="cursor-pointer font-medium">
+				{isEs
+					? m.veto_species_examples_title_es()
+					: isIt
+						? m.veto_species_examples_title_it()
+						: isCh
+							? m.veto_species_examples_title_ch()
+							: isDe
+								? m.veto_species_examples_title_de()
+								: isBe
+									? m.veto_species_examples_title_be()
+									: isPt
+										? m.veto_species_examples_title_pt()
+										: isGb
+											? m.veto_species_examples_title_gb()
+											: isAt
+												? m.veto_species_examples_title_at()
+												: isNl
+													? m.veto_species_examples_title_nl()
+													: isSe
+														? m.veto_species_examples_title_se()
+														: isNo
+															? m.veto_species_examples_title_no()
+															: isDk
+																? m.veto_species_examples_title_dk()
+																: isFi
+																	? m.veto_species_examples_title_fi()
+																	: isIe
+																		? m.veto_species_examples_title_ie()
+																		: isUs
+																			? m.veto_species_examples_title_us()
+																			: isCa
+																				? m.veto_species_examples_title_ca()
+																				: isNz
+																					? m.veto_species_examples_title_nz()
+																					: isAu
+																						? m.veto_species_examples_title_au()
+																						: isJp
+																							? m.veto_species_examples_title_jp()
+																							: m.veto_species_examples_title()}
+			</summary>
+			<p class="mt-2 leading-relaxed">
+				{isEs
+					? m.veto_species_examples_body_es()
+					: isIt
+						? m.veto_species_examples_body_it()
+						: isCh
+							? m.veto_species_examples_body_ch()
+							: isDe
+								? m.veto_species_examples_body_de()
+								: isBe
+									? m.veto_species_examples_body_be()
+									: isPt
+										? m.veto_species_examples_body_pt()
+										: isGb
+											? m.veto_species_examples_body_gb()
+											: isAt
+												? m.veto_species_examples_body_at()
+												: isNl
+													? m.veto_species_examples_body_nl()
+													: isSe
+														? m.veto_species_examples_body_se()
+														: isNo
+															? m.veto_species_examples_body_no()
+															: isDk
+																? m.veto_species_examples_body_dk()
+																: isFi
+																	? m.veto_species_examples_body_fi()
+																	: isIe
+																		? m.veto_species_examples_body_ie()
+																		: isUs
+																			? m.veto_species_examples_body_us()
+																			: isCa
+																				? m.veto_species_examples_body_ca()
+																				: isNz
+																					? m.veto_species_examples_body_nz()
+																					: isAu
+																						? m.veto_species_examples_body_au()
+																						: isJp
+																							? m.veto_species_examples_body_jp()
+																							: m.veto_species_examples_body()}
+			</p>
 		</details>
 
 		{#if showInfoSpecies}
@@ -1041,8 +1386,8 @@
 					<LegalArticleCard
 						articleId={article.id}
 						url={article.url}
-						title={article.title}
-						text={article.summary}
+						title={article.id.startsWith('jp_') ? undefined : article.title}
+						text={article.id.startsWith('jp_') ? undefined : article.summary}
 						sourceName={legalPack.sourceName}
 					/>
 				{/each}
@@ -1087,8 +1432,8 @@
 				<LegalArticleCard
 					articleId={restoreArticle.id}
 					url={restoreArticle.url}
-					title={restoreArticle.title}
-					text={restoreArticle.summary}
+					title={restoreArticle.id.startsWith('jp_') ? undefined : restoreArticle.title}
+					text={restoreArticle.id.startsWith('jp_') ? undefined : restoreArticle.summary}
 					sourceName={legalPack.sourceName}
 				/>
 			{/if}
@@ -1123,8 +1468,8 @@
 					<LegalArticleCard
 						articleId={article.id}
 						url={article.url}
-						title={article.title}
-						text={article.summary}
+						title={article.id.startsWith('jp_') ? undefined : article.title}
+						text={article.id.startsWith('jp_') ? undefined : article.summary}
 						sourceName={legalPack.sourceName}
 					/>
 				{/each}
@@ -1135,8 +1480,8 @@
 					<LegalArticleCard
 						articleId={article.id}
 						url={article.url}
-						title={article.title}
-						text={article.summary}
+						title={article.id.startsWith('jp_') ? undefined : article.title}
+						text={article.id.startsWith('jp_') ? undefined : article.summary}
 						sourceName={legalPack.sourceName}
 					/>
 				{/each}
@@ -1147,8 +1492,8 @@
 					<LegalArticleCard
 						articleId={article.id}
 						url={article.url}
-						title={article.title}
-						text={article.summary}
+						title={article.id.startsWith('jp_') ? undefined : article.title}
+						text={article.id.startsWith('jp_') ? undefined : article.summary}
 						sourceName={legalPack.sourceName}
 					/>
 				{/each}

@@ -3,7 +3,7 @@ import { COUNTRY_BBOXES, pointInBbox } from '$lib/geo/countries';
 import { createTimedAbortSignal, isAbortError, throwIfAborted } from '$lib/utils/abortSignal';
 
 const FETCH_TIMEOUT_MS = 10_000;
-const USER_AGENT = 'Yamadori/0.6.4 (bonsai field app)';
+const USER_AGENT = 'Yamadori/0.7.8 (bonsai field app)';
 
 /**
  * Kartverket open Eiendom API — parcel at point (no owner data, no token).

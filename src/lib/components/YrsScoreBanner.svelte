@@ -1,23 +1,43 @@
 <script lang="ts">
 	import { agriData } from '$lib/stores/agriData.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
-	import type { YrsDecision } from '$lib/types/yrs';
+	import type { YrsConfidence, YrsDecision } from '$lib/types/yrs';
 	import { canUseApi } from '$lib/utils/apiPolicy';
 	import { resolveYrsBannerDisplayState } from '$lib/utils/yrsBannerState';
-	import { getYrsBannerAccentClasses, getYrsBannerClasses } from '$lib/utils/yrs';
+	import { getYrsBannerAccentClasses, getYrsBannerClasses, getCombinedYamadoriVerdict, getPrimaryYrsConfidenceGap, getYrsConfidenceGapCta } from '$lib/utils/yrs';
+	import { resolveHarvestCalendarPrior } from '$lib/geo/harvestWindowPrior';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let {
 		gpsReady = false,
-		locationError = ''
+		locationError = '',
+		potentialScore = null,
+		species = ''
 	}: {
 		gpsReady?: boolean;
 		locationError?: string;
+		potentialScore?: number | null;
+		species?: string;
 	} = $props();
 
 	const yrs = $derived(agriData.data?.yrs ?? null);
 	const loading = $derived(agriData.loading);
 	const fromCache = $derived(agriData.source === 'cache');
+
+	const combinedVerdict = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return getCombinedYamadoriVerdict(potentialScore, yrs);
+	});
+
+	const confidenceCta = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		const data = agriData.data;
+		if (!data?.yrs || data.yrs.confidence === 'high') return null;
+		const gap = getPrimaryYrsConfidenceGap(data, { species });
+		return getYrsConfidenceGapCta(gap);
+	});
+
+	const harvestSpecies = $derived(species.trim() || agriData.data?.gdd?.speciesLabel || '');
 
 	const displayState = $derived(
 		resolveYrsBannerDisplayState({
@@ -45,6 +65,15 @@
 		};
 	});
 
+	const yrsConfidenceLabels = $derived.by((): Record<YrsConfidence, string> => {
+		void appearanceSettingsState.locale;
+		return {
+			high: m.yrs_confidence_high(),
+			medium: m.yrs_confidence_medium(),
+			low: m.yrs_confidence_low()
+		};
+	});
+
 	const bannerBorderClass = $derived.by(() => {
 		if (yrs) return getYrsBannerClasses(yrs.score, yrs.decision);
 		if (displayState === 'pending_offline') return 'border-gray-200';
@@ -62,6 +91,24 @@
 		RISK: 'bg-orange-50 text-orange-900',
 		NO_GO: 'bg-red-50 text-red-800'
 	}));
+
+	const confidenceClass = $derived.by((): Record<YrsConfidence, string> => ({
+		high: 'text-emerald-700',
+		medium: 'text-amber-700',
+		low: 'text-orange-700'
+	}));
+
+	const harvestOutside = $derived.by(() => {
+		const data = agriData.data;
+		if (!data?.yrs || !data) return false;
+		const prior = resolveHarvestCalendarPrior(
+			harvestSpecies,
+			data.latitude,
+			data.longitude,
+			data.fetchedAt ? new Date(data.fetchedAt) : new Date()
+		);
+		return prior.applicable && !prior.inWindow;
+	});
 </script>
 
 <div
@@ -81,7 +128,31 @@
 				<p class="mt-1 text-2xl font-semibold tabular-nums leading-none text-forest-900">
 					{yrs.score}<span class="text-base font-normal text-muted">/100</span>
 				</p>
-				<p class="mt-1.5 text-[11px] leading-snug text-muted">{m.yrs_timing_hint()}</p>
+				<p
+					class="mt-1 text-[11px] leading-snug {confidenceClass[yrs.confidence]}"
+					title={m.yrs_confidence_hint()}
+				>
+					{m.yrs_confidence_label()} : {yrsConfidenceLabels[yrs.confidence]}
+					<span class="text-muted"> — {m.yrs_confidence_hint()}</span>
+				</p>
+				{#if harvestOutside}
+					<p class="mt-1 text-[11px] leading-snug text-orange-800">
+						{m.yrs_breakdown_harvest_calendar_outside()}
+					</p>
+				{/if}
+				{#if yrs.localization === 'generic'}
+					<p class="mt-1 text-[11px] leading-snug text-amber-800">
+						{m.yrs_localization_generic_hint()}
+					</p>
+				{/if}
+				{#if confidenceCta}
+					<p class="mt-1 text-[11px] leading-snug text-forest-800">{confidenceCta}</p>
+				{/if}
+				{#if combinedVerdict}
+					<p class="mt-1.5 text-[11px] font-medium leading-snug text-forest-800" role="status">
+						{combinedVerdict}
+					</p>
+				{/if}
 			{:else if displayState === 'calculating'}
 				<p class="mt-1 text-sm text-forest-700">{m.yrs_calculating()}</p>
 			{:else if displayState === 'gps_required'}

@@ -139,6 +139,15 @@ export function createNzDocPclOverlay(): MapLayerConfig {
 	);
 }
 
+/** CAPAD terrestrial protected areas (Australia / DCCEEW). */
+export function createAuCapadOverlay(): MapLayerConfig {
+	return createArcGisExportOverlay(
+		'https://gis.environment.gov.au/gispubmap/rest/services/ogc_services/CAPAD/MapServer',
+		'© DCCEEW — CAPAD',
+		{ layers: 'show:0', maxZoom: 14 }
+	);
+}
+
 /**
  * Natural England SSSI (England) — Defra WMS.
  * GB overlay is nation-specific; Scotland/Wales use NatureScot / NRW WMS.

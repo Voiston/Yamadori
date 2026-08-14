@@ -32,7 +32,7 @@ import {
 import { runBillingTask, waitForBillingIdle } from '$lib/utils/billing-native-queue';
 import { isAndroidApp } from '$lib/utils/platform';
 
-const PRODUCT_FETCH_ATTEMPTS = 3;
+const PRODUCT_FETCH_ATTEMPTS = 5;
 const PRODUCT_FETCH_RETRY_MS = 400;
 const PRODUCT_FETCH_TIMEOUT_MS = 12_000;
 const PURCHASE_TIMEOUT_MS = 45_000;
@@ -454,6 +454,8 @@ async function fetchProProductsMap(
 		return new Map();
 	}
 
+	let lastMap = new Map<string, ProProductInfo>();
+
 	for (let attempt = 0; attempt < PRODUCT_FETCH_ATTEMPTS; attempt += 1) {
 		try {
 			const { products } = await getProductsBatchWithTimeout(uniqueIds);
@@ -470,12 +472,14 @@ async function fetchProProductsMap(
 				}
 			}
 
-			if (map.size > 0 || attempt === PRODUCT_FETCH_ATTEMPTS - 1) {
+			lastMap = map;
+			const catalogComplete = uniqueIds.every((id) => map.has(id));
+			if (catalogComplete || attempt === PRODUCT_FETCH_ATTEMPTS - 1) {
 				return map;
 			}
 		} catch {
 			if (attempt === PRODUCT_FETCH_ATTEMPTS - 1) {
-				return new Map();
+				return lastMap;
 			}
 		}
 
@@ -484,7 +488,7 @@ async function fetchProProductsMap(
 		}
 	}
 
-	return new Map();
+	return lastMap;
 }
 
 export async function getProProduct(productId: string = PRO_PRODUCT_ID): Promise<ProProductInfo | null> {

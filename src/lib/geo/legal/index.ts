@@ -15,6 +15,11 @@ import { usLegalPack } from '$lib/geo/legal/us';
 import { caLegalPack } from '$lib/geo/legal/ca';
 import { nzLegalPack } from '$lib/geo/legal/nz';
 import { ptLegalPack } from '$lib/geo/legal/pt';
+import { ieLegalPack } from '$lib/geo/legal/ie';
+import { auLegalPack } from '$lib/geo/legal/au';
+import { dkLegalPack } from '$lib/geo/legal/dk';
+import { fiLegalPack } from '$lib/geo/legal/fi';
+import { jpLegalPack } from '$lib/geo/legal/jp';
 
 const LEGAL_PACKS: Record<CountryCode, LegalContentPack> = {
 	FR: frLegalPack,
@@ -31,7 +36,12 @@ const LEGAL_PACKS: Record<CountryCode, LegalContentPack> = {
 	US: usLegalPack,
 	CA: caLegalPack,
 	NZ: nzLegalPack,
-	PT: ptLegalPack
+	PT: ptLegalPack,
+	IE: ieLegalPack,
+	AU: auLegalPack,
+	DK: dkLegalPack,
+	FI: fiLegalPack,
+	JP: jpLegalPack
 };
 
 /** Country-aware legal content pack; defaults to FR when the country can't be resolved. */

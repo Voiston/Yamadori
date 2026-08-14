@@ -9,17 +9,26 @@ import {
 	nlSpeciesProtectionPack,
 	noSpeciesProtectionPack,
 	ptSpeciesProtectionPack,
+	ieSpeciesProtectionPack,
+	dkSpeciesProtectionPack,
+	fiSpeciesProtectionPack,
 	seSpeciesProtectionPack
 } from '$lib/geo/providers/species-protection/packs/intl';
 import { usSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs/us';
 import { caSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs/ca';
 import { nzSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs/nz';
+import { auSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs/au';
+import { jpSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs/jp';
 import { matchSpeciesProtectionEntry } from '$lib/geo/providers/species-protection/match';
 import { atLegalPack } from '$lib/geo/legal/at';
 import { beLegalPack } from '$lib/geo/legal/be';
 import { chLegalPack } from '$lib/geo/legal/ch';
+import { dkLegalPack } from '$lib/geo/legal/dk';
+import { fiLegalPack } from '$lib/geo/legal/fi';
 import { gbLegalPack } from '$lib/geo/legal/gb';
+import { ieLegalPack } from '$lib/geo/legal/ie';
 import { itLegalPack } from '$lib/geo/legal/it';
+import { jpLegalPack } from '$lib/geo/legal/jp';
 import { nlLegalPack } from '$lib/geo/legal/nl';
 import { noLegalPack } from '$lib/geo/legal/no';
 import { ptLegalPack } from '$lib/geo/legal/pt';
@@ -44,6 +53,27 @@ describe('EU species protection packs', () => {
 			source: /Flora-On/i,
 			urlHost: 'flora-on.pt',
 			localName: 'Medronheiro'
+		},
+		{
+			pack: ieSpeciesProtectionPack,
+			min: 8,
+			source: /NBDC|Biodiversity Ireland/i,
+			urlHost: 'biodiversityireland.ie',
+			localName: 'Caithne'
+		},
+		{
+			pack: dkSpeciesProtectionPack,
+			min: 8,
+			source: /Arter\.dk/i,
+			urlHost: 'arter.dk',
+			localName: 'Kristtorn'
+		},
+		{
+			pack: fiSpeciesProtectionPack,
+			min: 8,
+			source: /Laji\.fi|FinBIF/i,
+			urlHost: 'laji.fi',
+			localName: 'Kataja'
 		},
 		{
 			pack: chSpeciesProtectionPack,
@@ -97,6 +127,9 @@ describe('EU species protection packs', () => {
 describe('legal packs species search aligned with protection packs', () => {
 	it.each([
 		[ptLegalPack, ptSpeciesProtectionPack],
+		[ieLegalPack, ieSpeciesProtectionPack],
+		[dkLegalPack, dkSpeciesProtectionPack],
+		[fiLegalPack, fiSpeciesProtectionPack],
 		[chLegalPack, chSpeciesProtectionPack],
 		[atLegalPack, atSpeciesProtectionPack],
 		[beLegalPack, beSpeciesProtectionPack],
@@ -109,6 +142,13 @@ describe('legal packs species search aligned with protection packs', () => {
 		expect(legal.speciesSourceName).toBe(pack.sourceName);
 		expect(legal.buildSpeciesSearchUrl('Taxus baccata')).toBe(
 			pack.buildSourceUrl('Taxus baccata')
+		);
+	});
+
+	it('aligns JP legal species search with protection pack', () => {
+		expect(jpLegalPack.speciesSourceName).toBe(jpSpeciesProtectionPack.sourceName);
+		expect(jpLegalPack.buildSpeciesSearchUrl('Pinus thunbergii')).toBe(
+			jpSpeciesProtectionPack.buildSourceUrl('Pinus thunbergii')
 		);
 	});
 });
@@ -135,9 +175,24 @@ describe('GB / US / CA / NZ species protection packs', () => {
 		);
 	});
 
-	it('keeps NZ pack at least 6 curated entries with NZTCS/DOC source', () => {
+	it('keeps NZ pack at least 6 curated entries with NZPCN source', () => {
 		expect(nzSpeciesProtectionPack.entries.length).toBeGreaterThanOrEqual(6);
 		expect(nzSpeciesProtectionPack.coverage).toBe('partial');
-		expect(nzSpeciesProtectionPack.buildSourceUrl('Kauri')).toMatch(/nztcs|doc\.govt/i);
+		expect(nzSpeciesProtectionPack.buildSourceUrl('Kauri')).toMatch(/nzpcn\.org\.nz/i);
+	});
+
+	it('keeps AU pack at least 8 curated entries with ALA source', () => {
+		expect(auSpeciesProtectionPack.entries.length).toBeGreaterThanOrEqual(8);
+		expect(auSpeciesProtectionPack.coverage).toBe('partial');
+		expect(auSpeciesProtectionPack.sourceName).toMatch(/ALA|EPBC/i);
+		expect(auSpeciesProtectionPack.buildSourceUrl('Banksia')).toContain('ala.org.au');
+	});
+
+	it('keeps JP pack at least 8 curated entries with MOE source', () => {
+		expect(jpSpeciesProtectionPack.entries.length).toBeGreaterThanOrEqual(8);
+		expect(jpSpeciesProtectionPack.coverage).toBe('partial');
+		expect(jpSpeciesProtectionPack.sourceName).toMatch(/MOE|指定植物|種の保存法/i);
+		expect(jpSpeciesProtectionPack.buildSourceUrl('Pinus')).toContain('env.go.jp');
+		expect(jpSpeciesProtectionPack.buildSourceUrl('Pinus')).not.toContain('gbif.org');
 	});
 });

@@ -1,12 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { getCadastreViewerLink } from '$lib/utils/cadastreViewer';
 import {
 	buildCadastreRefsText,
+	buildCadastreRefsTextForLocale,
 	effectiveCollectStatus,
 	formatCadastreParcelRef,
+	shareCadastreAdminCodeLine,
 	shareCadastreAuthHint
 } from '$lib/utils/cadastreRefs';
 import { getEuPermitLinks } from '$lib/geo/legal/euPermitLinks';
+import { localeForCountry } from '$lib/utils/i18n/locale';
+import { setLocale } from '$lib/paraglide/runtime.js';
 import type { CadastreInfo } from '$lib/types/cadastre';
 
 const samplePrivate: CadastreInfo = {
@@ -19,11 +23,12 @@ const samplePrivate: CadastreInfo = {
 };
 
 describe('cadastreViewer', () => {
-	it('returns Géoportail link for FR', () => {
+	it('returns cartes.gouv.fr permalink for FR', () => {
 		const link = getCadastreViewerLink('FR', 47.2, -1.55, samplePrivate);
-		expect(link?.label).toBe('Géoportail');
-		expect(link?.url).toContain('geoportail.gouv.fr');
-		expect(link?.url).toContain('-1.550000,47.200000');
+		expect(link?.label).toBe('cartes.gouv.fr');
+		expect(link?.url).toContain('cartes.gouv.fr/explorer-les-cartes/');
+		expect(link?.url).toContain('c=-1.550000,47.200000');
+		expect(link?.url).toContain('CADASTRALPARCELS.PARCELLAIRE_EXPRESS');
 	});
 
 	it('returns null without country', () => {
@@ -57,19 +62,28 @@ describe('cadastreViewer', () => {
 		expect(no?.url).toContain('kommunenummer=0301');
 	});
 
-	it('deep-links AT/DE/SE/US/NZ viewers with map position', () => {
+	it('deep-links AT/DE/SE/NZ and OSM hand-off for US/CA', () => {
 		expect(getCadastreViewerLink('AT', 48.2082, 16.3738)?.url).toContain('basemap.at/#map=17/');
 		expect(getCadastreViewerLink('DE', 52.52, 13.405)?.url).toContain('geoportal.de/map.html');
 		expect(getCadastreViewerLink('SE', 59.33, 18.07)?.url).toContain('z=16');
-		expect(getCadastreViewerLink('US', 39.74, -104.99)?.url).toContain('maps.usgs.gov/padus');
+		expect(getCadastreViewerLink('US', 39.74, -104.99)?.url).toContain(
+			'openstreetmap.org/#map=17/39.740000/-104.990000'
+		);
 		expect(getCadastreViewerLink('NZ', -41.3, 174.78)?.url).toContain('doc.govt.nz/map');
-		expect(getCadastreViewerLink('CA', 45.42, -75.69)?.url).toContain('open.canada.ca');
+		expect(getCadastreViewerLink('CA', 45.42, -75.69)?.url).toContain(
+			'openstreetmap.org/#map=17/45.420000/-75.690000'
+		);
 	});
 
-	it('returns nation-aware GB registry links', () => {
-		expect(getCadastreViewerLink('GB', 53.35, -1.8)?.label).toBe('HM Land Registry');
-		expect(getCadastreViewerLink('GB', 57.13, -3.72)?.url).toContain('scotlis');
-		expect(getCadastreViewerLink('GB', 54.6, -5.93)?.url).toContain('nidirect');
+	it('returns nation-aware GB labels with OSM GPS hand-off', () => {
+		expect(getCadastreViewerLink('GB', 53.35, -1.8)?.label).toBe(
+			'HM Land Registry (GPS position)'
+		);
+		expect(getCadastreViewerLink('GB', 53.35, -1.8)?.url).toContain('openstreetmap.org');
+		expect(getCadastreViewerLink('GB', 57.13, -3.72)?.label).toContain('ScotLIS');
+		expect(getCadastreViewerLink('GB', 57.13, -3.72)?.url).toContain('openstreetmap.org');
+		expect(getCadastreViewerLink('GB', 54.6, -5.93)?.label).toContain('nidirect');
+		expect(getCadastreViewerLink('GB', 54.6, -5.93)?.url).toContain('openstreetmap.org');
 	});
 
 	it('deep-links ES Catastro with refcat or lat/lon', () => {
@@ -115,6 +129,10 @@ describe('cadastreViewer', () => {
 });
 
 describe('cadastreRefs', () => {
+	beforeEach(() => {
+		setLocale('fr', { reload: false });
+	});
+
 	it('derives collectStatus from zoneType when missing', () => {
 		expect(effectiveCollectStatus(samplePrivate)).toBe('owner_permission');
 		expect(
@@ -127,13 +145,104 @@ describe('cadastreRefs', () => {
 		expect(formatCadastreParcelRef(samplePrivate)).toContain('123');
 	});
 
+	it('maps country to share locale', () => {
+		expect(localeForCountry('FR')).toBe('fr');
+		expect(localeForCountry('ES')).toBe('es');
+		expect(localeForCountry('CH')).toBe('de');
+		expect(localeForCountry('PT')).toBe('pt');
+		expect(localeForCountry('DK')).toBe('da');
+		expect(localeForCountry('FI')).toBe('fi');
+		expect(localeForCountry('JP')).toBe('en');
+		expect(localeForCountry(null)).toBeNull();
+	});
+
 	it('uses country-aware authorization share hints', () => {
-		expect(shareCadastreAuthHint('Nantes', 'FR')).toMatch(/mairie|town hall|Gemeinde/i);
-		expect(shareCadastreAuthHint('Denver', 'US')).toMatch(/agence|agency|Behörde|instantie/i);
-		expect(shareCadastreAuthHint('Roma', 'IT')).toMatch(/propriétaire|owner|Eigentümer|autorit/i);
+		expect(shareCadastreAuthHint('Nantes', 'FR', 'fr')).toMatch(/mairie/i);
+		expect(shareCadastreAuthHint('Denver', 'US', 'en')).toMatch(/agency/i);
+		expect(shareCadastreAuthHint('Roma', 'IT', 'it')).toMatch(/comune/i);
+		expect(shareCadastreAuthHint('Unknown', null, 'fr')).toMatch(/propriétaire|autorité/i);
 		expect(buildCadastreRefsText(samplePrivate, 47.2, -1.55, 'FR')).toContain(
-			shareCadastreAuthHint('Nantes', 'FR')
+			shareCadastreAuthHint('Nantes', 'FR', 'fr')
 		);
+	});
+
+	it('uses country-aware admin code labels', () => {
+		expect(shareCadastreAdminCodeLine('44109', 'FR', 'fr')).toMatch(/INSEE/i);
+		expect(shareCadastreAdminCodeLine('REF123', 'ES', 'fr')).toMatch(/catastrale/i);
+		expect(shareCadastreAdminCodeLine('CH123', 'CH', 'de')).toMatch(/EGRID|BFS/i);
+		expect(shareCadastreAdminCodeLine('PA1', 'US', 'en')).toMatch(/Agency|unit/i);
+	});
+
+	it('avoids Parcelle: Parcelle redundancy and uses recipient owner line', () => {
+		const text = buildCadastreRefsTextForLocale(samplePrivate, 47.2, -1.55, 'FR', 'fr');
+		expect(text).toContain('Parcelle : AB n°123');
+		expect(text).not.toMatch(/Parcelle : Parcelle/i);
+		expect(text).toContain('Code INSEE');
+		expect(text).toMatch(/n’est pas inclus|n'est pas inclus/);
+		expect(text).not.toMatch(/Yamadori n’affiche|Yamadori n'affiche/);
+	});
+
+	it('emits a single FR block when UI and country share French', () => {
+		const text = buildCadastreRefsText(samplePrivate, 47.2, -1.55, 'FR');
+		expect(text).toContain('références foncières');
+		expect(text).not.toContain('\n\n');
+		expect(text.match(/Code INSEE/g)?.length).toBe(1);
+	});
+
+	it('emits FR + ES blocks for Spain with cadastral (not INSEE) labels', () => {
+		const esInfo: CadastreInfo = {
+			...samplePrivate,
+			commune: 'Madrid',
+			section: 'PC2',
+			parcelNumber: 'PC1',
+			codeInsee: 'PC1PC2'
+		};
+		const text = buildCadastreRefsText(esInfo, 40.4, -3.7, 'ES');
+		expect(text).toContain('références foncières');
+		expect(text).toContain('referencias catastrales');
+		expect(text).toContain('\n\n');
+		expect(text).toMatch(/Référence catastrale/);
+		expect(text).toMatch(/Referencia catastral/);
+		expect(text).not.toMatch(/INSEE/);
+	});
+
+	it('emits FR + DE blocks for Switzerland with BFS/EGRID', () => {
+		const chInfo: CadastreInfo = {
+			...samplePrivate,
+			commune: 'Zürich',
+			codeInsee: 'CH123456789012'
+		};
+		const text = buildCadastreRefsText(chInfo, 47.37, 8.54, 'CH');
+		expect(text).toContain('références foncières');
+		expect(text).toContain('Grundstücksreferenzen');
+		expect(text).toMatch(/BFS \/ EGRID/);
+	});
+
+	it('emits FR + EN agency hint for US', () => {
+		const usInfo: CadastreInfo = {
+			...samplePrivate,
+			commune: 'Denver',
+			section: '',
+			parcelNumber: 'unit-1',
+			codeInsee: 'PA-99',
+			unitName: 'Arapaho NF'
+		};
+		const text = buildCadastreRefsText(usInfo, 39.74, -104.99, 'US');
+		expect(text).toContain('\n\n');
+		expect(text).toMatch(/agence|Agency/i);
+		expect(text).toMatch(/land agency|Agency \/ unit/i);
+	});
+
+	it('falls back to EN for Japan when UI is French', () => {
+		const jpInfo: CadastreInfo = {
+			...samplePrivate,
+			commune: 'Kyoto',
+			codeInsee: '26100'
+		};
+		const text = buildCadastreRefsText(jpInfo, 35.0, 135.7, 'JP');
+		expect(text).toContain('références foncières');
+		expect(text).toContain('land references');
+		expect(text).toContain('\n\n');
 	});
 });
 

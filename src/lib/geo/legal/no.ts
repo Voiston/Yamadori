@@ -5,7 +5,10 @@ import {
 } from '$lib/geo/speciesSearchUrls';
 
 /**
- * Allemannsretten (Norway) — friluftsloven. Access ≠ removing living trees.
+ * Norwegian access / nature / forest law for yamadori:
+ * - Friluftsloven: allemannsretten (access ≠ uprooting living trees).
+ * - Naturmangfoldloven: vern, arter, uttak.
+ * - Skogbrukslova: forest management rules.
  */
 export const noLegalPack: LegalContentPack = {
 	country: 'NO',
@@ -29,12 +32,20 @@ export const noLegalPack: LegalContentPack = {
 				'Offisiell veiledning: vis hensyn, ikke skad vegetasjon eller eiendom. Yamadori / utgraving av trær krever alltid avtale med grunneier — også der allemannsretten gjelder.'
 		},
 		{
-			id: 'no_nature_species',
-			group: 'environment',
-			url: 'https://www.miljodirektoratet.no/ansvarsomrader/friluftsliv/friluftsliv-og-allemannsretten/allemannsretten/ofte-stilte-sporsmal-om-allemannsretten/',
-			title: 'FAQ allemannsretten — begrensninger',
+			id: 'no_skogbruksloven',
+			group: 'forest',
+			url: 'https://lovdata.no/dokument/NL/lov/2005-05-27-31',
+			title: 'Skogbrukslova (2005)',
 			summary:
-				'I verneområder og for fredede arter gjelder strengere regler. Sjekk lokale forskrifter før du plukker planter — og aldri ta hele trær uten tillatelse.'
+				'Regulerer skogbruk og hogst. Utgraving av levende trær uten grunneiers samtykke er ikke en allemannsrett — sjekk også lokale hogstregler og Statsforvalteren.'
+		},
+		{
+			id: 'no_naturmangfoldloven',
+			group: 'environment',
+			url: 'https://lovdata.no/dokument/NL/lov/2009-06-19-100',
+			title: 'Naturmangfoldloven (2009)',
+			summary:
+				'Ramme for vern av natur og arter. I verneområder og for fredede arter gjelder strengere regler — plukking eller uttak kan være forbudt. Sjekk Artsdatabanken og lokal verneforskrift.'
 		}
 	],
 	speciesSearchBase: SPECIES_SEARCH_BASE.artsdatabanken,

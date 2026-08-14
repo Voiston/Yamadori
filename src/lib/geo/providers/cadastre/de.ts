@@ -5,7 +5,7 @@ import { createTimedAbortSignal, isAbortError, throwIfAborted } from '$lib/utils
 import { nominatimReverseRaw } from '$lib/utils/geocoding';
 
 const FETCH_TIMEOUT_MS = 10_000;
-const USER_AGENT = 'Yamadori/0.6.4 (bonsai field app)';
+const USER_AGENT = 'Yamadori/0.7.8 (bonsai field app)';
 
 /** Open ALKIS WFS endpoints (no owner data) — partial DE coverage. */
 export type AlkisLandConfig = {

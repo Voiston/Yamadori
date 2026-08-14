@@ -62,6 +62,24 @@ export function getJan1Date(referenceDate = new Date()): string {
 	return `${referenceDate.getFullYear()}-01-01`;
 }
 
+/**
+ * Agro-season start for GDD accumulation:
+ * - Northern hemisphere (lat ≥ 0): 1 January of the current calendar year
+ * - Southern hemisphere (lat < 0): 1 July of the current austral agro year
+ *   (Jan–Jun → previous year's 1 July)
+ */
+export function getGddSeasonStartDate(referenceDate = new Date(), latitude = 0): string {
+	if (latitude >= 0) {
+		return getJan1Date(referenceDate);
+	}
+	const year = referenceDate.getFullYear();
+	const month = referenceDate.getMonth(); // 0-based
+	if (month < 6) {
+		return `${year - 1}-07-01`;
+	}
+	return `${year}-07-01`;
+}
+
 export async function parseOpenMeteoErrorResponse(response: Response): Promise<string> {
 	try {
 		const body = (await response.json()) as OpenMeteoErrorResponse;
@@ -161,7 +179,7 @@ export async function fetchOpenMeteoArchiveDailyBundle(
 }
 
 /**
- * GDD means since Jan 1: prefer IDB, else climate-range bundle (shared network call).
+ * GDD means since agro-season start (1 Jan NH / 1 Jul SH): prefer IDB, else climate-range bundle.
  */
 export async function fetchGddArchiveDailyMeans(
 	latitude: number,
@@ -170,14 +188,14 @@ export async function fetchGddArchiveDailyMeans(
 	options?: { signal?: AbortSignal }
 ): Promise<GddArchiveDailyMean[]> {
 	const { latitude: apiLat, longitude: apiLon } = regionalApiCoordinates(latitude, longitude);
-	const jan1 = getJan1Date(referenceDate);
+	const seasonStart = getGddSeasonStartDate(referenceDate, latitude);
 	const archiveEnd = getArchiveEndDate(referenceDate);
 
-	if (jan1 > archiveEnd) {
+	if (seasonStart > archiveEnd) {
 		return [];
 	}
 
-	const cached = await getCachedGddArchiveDailyMeans(apiLat, apiLon, jan1, archiveEnd);
+	const cached = await getCachedGddArchiveDailyMeans(apiLat, apiLon, seasonStart, archiveEnd);
 	if (cached) {
 		return cached;
 	}
@@ -194,13 +212,13 @@ export async function fetchGddArchiveDailyMeans(
 	const dailyMeans: GddArchiveDailyMean[] = [];
 	for (let i = 0; i < bundle.time.length; i++) {
 		const date = bundle.time[i];
-		if (date < jan1 || date > archiveEnd) continue;
+		if (date < seasonStart || date > archiveEnd) continue;
 		dailyMeans.push({
 			date,
 			meanTempC: bundle.temperature_2m_mean[i] ?? null
 		});
 	}
 
-	await saveCachedGddArchiveDailyMeans(apiLat, apiLon, jan1, archiveEnd, dailyMeans);
+	await saveCachedGddArchiveDailyMeans(apiLat, apiLon, seasonStart, archiveEnd, dailyMeans);
 	return dailyMeans;
 }
