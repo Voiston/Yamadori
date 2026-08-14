@@ -16,8 +16,29 @@ if (!target || !/^[a-z]{2}$/.test(target)) {
 	process.exit(1);
 }
 
-const GOOGLE_TL = { nb: 'no', sv: 'sv', nl: 'nl', de: 'de', es: 'es', it: 'it', fr: 'fr' };
-const MYMEMORY_CODE = { nb: 'no', sv: 'sv', nl: 'nl', de: 'de', es: 'es', it: 'it' };
+const GOOGLE_TL = {
+	nb: 'no',
+	sv: 'sv',
+	nl: 'nl',
+	de: 'de',
+	es: 'es',
+	it: 'it',
+	fr: 'fr',
+	pt: 'pt',
+	da: 'da',
+	fi: 'fi'
+};
+const MYMEMORY_CODE = {
+	nb: 'no',
+	sv: 'sv',
+	nl: 'nl',
+	de: 'de',
+	es: 'es',
+	it: 'it',
+	pt: 'pt',
+	da: 'da',
+	fi: 'fi'
+};
 const pairTo = MYMEMORY_CODE[target] ?? target;
 const googleTl = GOOGLE_TL[target] ?? target;
 const SLEEP_MS = Number(process.env.MT_SLEEP_MS ?? '80');

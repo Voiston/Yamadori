@@ -216,6 +216,69 @@ const locales = {
 		changesBody:
 			'Denne erklæringen kan oppdateres ved nye appversjoner. Dato for siste oppdatering står øverst på siden.',
 		langSwitchLabel: 'Språk'
+	},
+	pt: {
+		lang: 'pt',
+		filename: 'privacy-pt.html',
+		label: 'Português',
+		pageTitle: 'Política de privacidade — Yamadori Scouting',
+		policyTitle: 'Política de privacidade',
+		appLabel: 'Aplicação',
+		publisherLabel: 'Editor / contacto',
+		updatedLabel: 'Última atualização',
+		versionLabel: 'Versão da aplicação',
+		inAppTitle: 'Compras in-app',
+		inAppBody:
+			'Yamadori Pro é uma compra única gerida pelo Google Play Billing. As transações são processadas pela Google; a Yamadori não recolhe nem armazena os seus dados de pagamento. Apenas um token de compra é guardado localmente no dispositivo para ativar as funcionalidades Pro.',
+		gdprTitle: 'Os seus direitos',
+		gdprBody:
+			'A Yamadori não cria contas de utilizador e não envia os seus dados de exploração para um servidor do editor. Pode consultar, modificar e eliminar os seus dados diretamente na aplicação (árvores, fotos, notas de voz, caches). Para qualquer questão, contacte-nos no endereço acima.',
+		changesTitle: 'Alterações',
+		changesBody:
+			'Esta política pode ser atualizada com novas versões da aplicação. A data da última atualização aparece no topo desta página.',
+		langSwitchLabel: 'Idioma'
+	},
+	da: {
+		lang: 'da',
+		filename: 'privacy-da.html',
+		label: 'Dansk',
+		pageTitle: 'Privatlivspolitik — Yamadori Scouting',
+		policyTitle: 'Privatlivspolitik',
+		appLabel: 'Applikation',
+		publisherLabel: 'Udgiver / kontakt',
+		updatedLabel: 'Sidst opdateret',
+		versionLabel: 'App-version',
+		inAppTitle: 'Køb i appen',
+		inAppBody:
+			'Yamadori Pro er et engangskøb via Google Play Billing. Transaktioner behandles af Google; Yamadori indsamler eller gemmer ikke dine betalingsoplysninger. Kun en købstoken gemmes lokalt på enheden for at aktivere Pro-funktioner.',
+		gdprTitle: 'Dine rettigheder',
+		gdprBody:
+			'Yamadori opretter ikke brugerkonti og sender ikke dine inventeringsdata til en udgiverserver. Du kan se, ændre og slette dine data direkte i appen (træer, fotos, stemmenoter, caches). Ved spørgsmål: kontakt os på adressen ovenfor.',
+		changesTitle: 'Ændringer',
+		changesBody:
+			'Denne politik kan opdateres ved nye appversioner. Datoen for seneste opdatering står øverst på siden.',
+		langSwitchLabel: 'Sprog'
+	},
+	fi: {
+		lang: 'fi',
+		filename: 'privacy-fi.html',
+		label: 'Suomi',
+		pageTitle: 'Tietosuojakäytäntö — Yamadori Scouting',
+		policyTitle: 'Tietosuojakäytäntö',
+		appLabel: 'Sovellus',
+		publisherLabel: 'Julkaisija / yhteystiedot',
+		updatedLabel: 'Viimeksi päivitetty',
+		versionLabel: 'Sovellusversio',
+		inAppTitle: 'Sovelluksen sisäiset ostot',
+		inAppBody:
+			'Yamadori Pro on kertaluonteinen ostos Google Play Billingin kautta. Tapahtumat käsittelee Google; Yamadori ei kerää eikä tallenna maksutietojasi. Vain ostotunnus säilytetään paikallisesti laitteella Pro-ominaisuuksien käyttöönottoa varten.',
+		gdprTitle: 'Oikeutesi',
+		gdprBody:
+			'Yamadori ei luo käyttäjätilejä eikä lähetä inventointitietojasi julkaisijan palvelimelle. Voit tarkastella, muokata ja poistaa tietojasi suoraan sovelluksessa (puut, valokuvat, äänimuistiinpanot, välimuistit). Kysymyksissä ota yhteyttä yllä olevaan osoitteeseen.',
+		changesTitle: 'Muutokset',
+		changesBody:
+			'Tätä käytäntöä voidaan päivittää uusien sovellusversioiden yhteydessä. Viimeisimmän päivityksen päivämäärä on sivun yläosassa.',
+		langSwitchLabel: 'Kieli'
 	}
 };
 
@@ -227,7 +290,10 @@ const DATE_LOCALES = {
 	it: 'it-IT',
 	nl: 'nl-NL',
 	sv: 'sv-SE',
-	nb: 'nb-NO'
+	nb: 'nb-NO',
+	pt: 'pt-PT',
+	da: 'da-DK',
+	fi: 'fi-FI'
 };
 
 function escapeHtml(value) {
@@ -465,7 +531,10 @@ const messageBundles = {
 	it: loadMessages('it'),
 	nl: loadMessages('nl'),
 	sv: loadMessages('sv'),
-	nb: loadMessages('nb')
+	nb: loadMessages('nb'),
+	pt: loadMessages('pt'),
+	da: loadMessages('da'),
+	fi: loadMessages('fi')
 };
 
 mkdirSync(docsDir, { recursive: true });

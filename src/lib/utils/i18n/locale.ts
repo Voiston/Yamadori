@@ -9,7 +9,10 @@ const INTL_LOCALE: Record<Locale, string> = {
 	es: 'es-ES',
 	nl: 'nl-NL',
 	sv: 'sv-SE',
-	nb: 'nb-NO'
+	nb: 'nb-NO',
+	pt: 'pt-PT',
+	da: 'da-DK',
+	fi: 'fi-FI'
 };
 
 const ACCEPT_LANGUAGE: Record<Locale, string> = {
@@ -20,7 +23,10 @@ const ACCEPT_LANGUAGE: Record<Locale, string> = {
 	es: 'es',
 	nl: 'nl',
 	sv: 'sv',
-	nb: 'nb'
+	nb: 'nb',
+	pt: 'pt',
+	da: 'da',
+	fi: 'fi'
 };
 
 export type AppLocale = Locale;
@@ -33,7 +39,10 @@ export const LOCALE_OPTIONS: { value: AppLocale; label: string }[] = [
 	{ value: 'es', label: 'Español' },
 	{ value: 'nl', label: 'Nederlands' },
 	{ value: 'sv', label: 'Svenska' },
-	{ value: 'nb', label: 'Norsk' }
+	{ value: 'nb', label: 'Norsk' },
+	{ value: 'pt', label: 'Português' },
+	{ value: 'da', label: 'Dansk' },
+	{ value: 'fi', label: 'Suomi' }
 ];
 
 /** Read active locale (Paraglide runtime). */
@@ -58,6 +67,7 @@ export function getIntlLocale(
 	if (locale === 'en' && country === 'CA') return 'en-CA';
 	if (locale === 'fr' && country === 'CA') return 'fr-CA';
 	if (locale === 'en' && country === 'NZ') return 'en-NZ';
+	if (locale === 'en' && country === 'AU') return 'en-AU';
 	return INTL_LOCALE[locale];
 }
 
@@ -72,4 +82,47 @@ export function compareLocalized(
 	country?: CountryCode | null
 ): number {
 	return a.localeCompare(b, getIntlLocale(locale, country));
+}
+
+/**
+ * Primary app locale for a GPS country (for bilingual share text, etc.).
+ * Countries without a dedicated UI language fall back to English.
+ */
+export function localeForCountry(country: CountryCode | null): AppLocale | null {
+	if (!country) return null;
+	switch (country) {
+		case 'FR':
+		case 'BE':
+			return 'fr';
+		case 'ES':
+			return 'es';
+		case 'IT':
+			return 'it';
+		case 'DE':
+		case 'AT':
+		case 'CH':
+			return 'de';
+		case 'NL':
+			return 'nl';
+		case 'SE':
+			return 'sv';
+		case 'NO':
+			return 'nb';
+		case 'PT':
+			return 'pt';
+		case 'DK':
+			return 'da';
+		case 'FI':
+			return 'fi';
+		case 'GB':
+		case 'US':
+		case 'CA':
+		case 'NZ':
+		case 'AU':
+		case 'IE':
+		case 'JP':
+			return 'en';
+		default:
+			return 'en';
+	}
 }

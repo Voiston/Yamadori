@@ -101,14 +101,14 @@
 </head>
 <body>
 	<main>
-		<div class="lang-switch">Langue : <span aria-current="page">Français</span> · <a href="privacy-en.html">English</a> · <a href="privacy-de.html">Deutsch</a> · <a href="privacy-es.html">Español</a> · <a href="privacy-it.html">Italiano</a> · <a href="privacy-nl.html">Nederlands</a> · <a href="privacy-sv.html">Svenska</a> · <a href="privacy-nb.html">Norsk</a></div>
+		<div class="lang-switch">Langue : <span aria-current="page">Français</span> · <a href="privacy-en.html">English</a> · <a href="privacy-de.html">Deutsch</a> · <a href="privacy-es.html">Español</a> · <a href="privacy-it.html">Italiano</a> · <a href="privacy-nl.html">Nederlands</a> · <a href="privacy-sv.html">Svenska</a> · <a href="privacy-nb.html">Norsk</a> · <a href="privacy-pt.html">Português</a> · <a href="privacy-da.html">Dansk</a> · <a href="privacy-fi.html">Suomi</a></div>
 		<header>
 			<h1>Politique de confidentialité</h1>
 			<div class="meta">
 				<p><strong>Application :</strong> Yamadori Scouting (fr.yamadori.scouting)</p>
 				<p><strong>Éditeur / contact :</strong> <a href="mailto:david.voisard2@gmail.com">david.voisard2@gmail.com</a></p>
-				<p><strong>Dernière mise à jour :</strong> 19 juillet 2026</p>
-				<p><strong>Version de l’application :</strong> 0.6.4</p>
+				<p><strong>Dernière mise à jour :</strong> 13 août 2026</p>
+				<p><strong>Version de l’application :</strong> 0.7.8</p>
 			</div>
 		</header>
 
@@ -123,16 +123,16 @@
 			<p class="intro">Yamadori ne synchronise pas vos repérages dans le cloud. Votre carnet de terrain tient dans votre poche.</p>
 		</section>
 
-		<section class="section"><h3>Sur votre appareil</h3><article class="card"><h4>Votre carnet, votre téléphone</h4><p>Pas de compte, pas de serveur Yamadori. Vos repérages, photos, notes vocales et point de départ restent sur cet appareil. Par défaut, ces données sont stockées en clair dans la mémoire locale ; vous pouvez activer le chiffrement local dans Réglages (optionnel, Android) — il protège arbres, parking, mot de passe d'export et réglages GPS, mais pas les caches météo ni carte.</p></article>
+		<section class="section"><h3>Sur votre appareil</h3><article class="card"><h4>Votre carnet, votre téléphone</h4><p>Pas de compte, pas de serveur Yamadori. Vos repérages, photos, notes vocales et point de départ restent sur cet appareil. Par défaut, les données sont stockées sans chiffrement dans le stockage local ; vous pouvez activer le chiffrement local dans Réglages (optionnel, Android) — il protège arbres, parking, mot de passe d’export et réglages GPS, mais pas les caches météo ou carte.</p></article>
 <article class="card"><h4>Pensé pour la forêt</h4><p>Carte, météo et cadastre se mettent en cache localement. Le GPS fonctionne sans réseau — même au fond du bois.</p></article>
-<article class="card"><h4>Protégez votre carnet</h4><p>Exportez régulièrement une sauvegarde (clé USB, cloud personnel). Sans mot de passe d'export, le fichier n'assure que l'intégrité (contrôles de cohérence) — pas la confidentialité : toute personne ayant le fichier peut en extraire les données. Avec un mot de passe, l'archive entière est chiffrée (PBKDF2 + AES-GCM). L'indice mémorise un rappel ; il ne permet pas de récupérer le mot de passe.</p></article>
-<article class="card"><h4>En toute transparence</h4><p>Comme un carnet papier dans votre sac, vos repérages restent lisibles sur l'appareil déverrouillé. Yamadori n'utilise pas la sauvegarde automatique Android vers Google. Nous recommandons un code de verrouillage et des exports protégés par mot de passe.</p></article>
-<article class="card"><h4>Autorisations Android</h4><p>Caméra : photos d'arbres uniquement, quand vous appuyez sur Capturer. Micro : notes vocales (30 s max), sur votre action. Position : repérage, carte et météo, uniquement lorsque l'application est au premier plan. Boussole : cap lors de la capture, traité localement. L'assistant permissions au premier lancement vous guide — rien n'est demandé sans raison.</p></article></section>
-<section class="section"><h3>En ligne</h3><article class="card"><h4>Connexion minimale</h4><p>En ligne, seules vos coordonnées GPS sont envoyées à des services publics (météo, agronomie, carte, cadastre, zones protégées, géocodage) — jamais vos photos ni notes. Services utilisés selon le pays : Open-Meteo, IGN / CNIG / basemap.de / OS / swisstopo / basemap.at / OpenTopo (BE) / PDOK BRT (NL) / OpenTopo (SE) / Kartverket (NO), EEA, Natural England, OFEV, CadGIS, Nominatim (OpenStreetMap), etc.</p></article>
-<article class="card"><h4>Services tiers consultés</h4><p>Open-Meteo (prévisions et historique climatique ; usage commercial sous abonnement éditeur), cartes nationales (IGN FR, CNIG ES, basemap.de, Ordnance Survey / fallback OSM, swisstopo CH, basemap.at AT, OpenTopo BE, PDOK BRT NL, OpenTopo SE, Kartverket NO), cadastre (IGN Apicarto, Catastro ES, Catasto IT, ALKIS DE partiel, HMLR GB, AV/EGRID CH + AVWFS ZH, commune AT, CadGIS BE, BRK NL, kommun SE, matrikkel NO), zones protégées (IGN FR, EEA, Natural England, OFEV/Pro Natura CH), Nominatim/OpenStreetMap (libellés de lieux), annuaires municipaux selon le pays. Yamadori n’a pas de serveur intermédiaire : vos coordonnées vont directement à ces services publics, chacun avec sa propre politique. Photos et notes ne quittent jamais l’appareil ainsi.</p></article>
+<article class="card"><h4>Protégez votre carnet</h4><p>Exportez régulièrement une sauvegarde (clé USB, cloud personnel). Sans mot de passe d’export, le fichier garantit seulement l’intégrité (sommes de contrôle), pas la confidentialité : quiconque a le fichier peut extraire les données. Avec un mot de passe, l’archive entière est chiffrée (PBKDF2 + AES-GCM). L’indice n’est qu’un aide-mémoire ; il ne permet pas de récupérer le mot de passe.</p></article>
+<article class="card"><h4>En toute transparence</h4><p>Comme un carnet papier dans votre sac, vos repérages restent lisibles sur l’appareil déverrouillé. Yamadori n’utilise pas la sauvegarde automatique Android vers Google. Nous recommandons un code de verrouillage et des exports protégés par mot de passe.</p></article>
+<article class="card"><h4>Autorisations Android</h4><p>Caméra : photos d'arbres uniquement, quand vous appuyez sur Capturer. Micro : notes vocales (30 s max), sur votre action. Position : repérage, carte et météo, uniquement lorsque l'application est au premier plan. Boussole : affichage du cap lors de la capture, traité localement. L'assistant permissions au premier lancement vous guide — rien n'est demandé sans raison.</p></article></section>
+<section class="section"><h3>En ligne</h3><article class="card"><h4>Connexion minimale</h4><p>En ligne, seules vos coordonnées GPS partent vers des services publics pour la météo, l’agronomie, les cartes, le cadastre, les zones protégées et le géocodage — jamais vos photos ni vos notes. Selon le pays : Open-Meteo, IGN / CNIG / basemap.de / OS / swisstopo / basemap.at / OpenTopo (BE, SE, JP, AU, DK, FI, IE, CA, NZ) / PDOK BRT (NL) / Kartverket (NO) / USGS (US), EEA, Natural England, OFEV, CadGIS, Nominatim (OpenStreetMap), et d’autres.</p></article>
+<article class="card"><h4>Services tiers consultés</h4><p>Open-Meteo (prévisions et historique climatique ; usage commercial sous abonnement éditeur), cartes nationales (IGN FR, CNIG ES, basemap.de, Ordnance Survey / fallback OSM, swisstopo CH, basemap.at AT, OpenTopo BE/SE/JP/AU/DK/FI/IE/CA/NZ, PDOK BRT NL, Kartverket NO, USGS US), cadastre (IGN Apicarto, Catastro ES, Catasto IT, ALKIS DE partiel, HMLR GB, AV/EGRID CH + AVWFS ZH, commune AT, CadGIS BE, BRK NL, kommun SE, matrikkel NO, DGT PT, Nominatim DK/FI/IE/JP, CAPAD AU, PAD-US, CPCAD CA, DOC NZ), zones protégées (IGN FR, EEA, Natural England, OFEV/Pro Natura CH, CAPAD AU, MOE/KSJ A10 JP, PAD-US, CPCAD CA, DOC NZ), Nominatim/OpenStreetMap (libellés de lieux), annuaires municipaux selon le pays. Yamadori n’a pas de serveur intermédiaire : vos coordonnées vont directement à ces services publics, chacun avec sa propre politique. Photos et notes ne quittent jamais l’appareil ainsi.</p></article>
 <article class="card"><h4>Aucun pistage</h4><p>Pas de compte Yamadori, pas de publicité, pas d'analytique (Firebase, crash reporters, etc.). Pas de revente de données. Pas de cookies tiers : l'app tourne en local dans une WebView Android.</p></article></section>
 <section class="section"><h3>Vous contrôlez</h3><article class="card"><h4>Vous décidez qui voit vos spots</h4><p>Partager un arbre ou exporter une sauvegarde, c'est une action volontaire de votre part. Rien n'est envoyé automatiquement à un tiers.</p></article>
-<article class="card"><h4>GPS transparent</h4><p>En premier plan, le GPS sert à repérer un arbre, afficher la carte et contextualiser la météo. Le suivi s'arrête lorsque l'application est en arrière-plan. Aucune position n'est envoyée à un serveur.</p></article>
+<article class="card"><h4>GPS transparent</h4><p>En premier plan, le GPS sert à repérer un arbre, afficher la carte et contextualiser la météo. Le suivi s’arrête lorsque l’application est en arrière-plan. Aucune position n’est envoyée à un serveur Yamadori.</p></article>
 <article class="card"><h4>Vous coupez le réseau</h4><p>Chaque connexion réseau est désactivable individuellement dans Réglages. Si vous coupez une API, plus aucune requête en direct ; le cache déjà téléchargé reste consultable hors ligne.</p></article></section>
 
 		<section class="inventory">
@@ -148,7 +148,7 @@
 <article class="card"><h4>Cadastre et zones protégées</h4><p>Mise en cache locale. Coordonnées envoyées aux services nationaux (cadastre / zones protégées) lorsqu’ils sont activés. Non partagé. Suppression : Réglages → vider le cache cadastre.</p></article>
 		</section>
 
-		<footer>Manifeste Yamadori — version 0.6.4</footer>
+		<footer>Manifeste Yamadori — version 0.7.8</footer>
 	</main>
 </body>
 </html>

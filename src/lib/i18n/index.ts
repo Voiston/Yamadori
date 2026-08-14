@@ -6,6 +6,7 @@ export {
 	getAcceptLanguage,
 	compareLocalized,
 	localeDependency,
+	localeForCountry,
 	LOCALE_OPTIONS,
 	type AppLocale
 } from '$lib/utils/i18n/locale';

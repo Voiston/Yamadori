@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 
-const locales = ['fr', 'en', 'de', 'it', 'es', 'nl', 'sv', 'nb'];
+const locales = ['fr', 'en', 'de', 'it', 'es', 'nl', 'sv', 'nb', 'pt', 'da', 'fi'];
 const baseLocale = 'fr';
 
 /** Locales where leftover English is tracked as a quality signal. */
-const ENGLISH_LEFTOVER_LOCALES = ['nl', 'sv', 'nb'];
+const ENGLISH_LEFTOVER_LOCALES = ['nl', 'sv', 'nb', 'pt', 'da', 'fi'];
 
 /**
  * Soft fail if too many strings still match English while French differs.

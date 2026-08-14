@@ -3,7 +3,7 @@ import { getActiveLocale } from '$lib/utils/i18n/locale';
 
 type LocaleNames = Record<AppLocale, string>;
 
-/** French canonical name → localized common names (fr, en, de, it, es, nl, sv, nb). */
+/** French canonical name → localized common names (fr, en, de, it, es, nl, sv, nb, pt, da, fi). */
 export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 	'Pin sylvestre': {
 		fr: 'Pin sylvestre',
@@ -13,7 +13,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino silvestre',
 		nl: 'Grove den',
 		sv: 'Tall',
-		nb: 'Furu'
+		nb: 'Furu',
+		pt: 'Pinheiro-silvestre',
+		da: 'Skovfyr',
+		fi: 'Mänty'
 	},
 	'Genévrier commun': {
 		fr: 'Genévrier commun',
@@ -23,7 +26,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Enebro común',
 		nl: 'Jeneverbes',
 		sv: 'En',
-		nb: 'Einer'
+		nb: 'Einer',
+		pt: 'Zimbro-comum',
+		da: 'Ene',
+		fi: 'Kataja'
 	},
 	'Charme commun': {
 		fr: 'Charme commun',
@@ -33,7 +39,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Carpe común',
 		nl: 'Haagbeuk',
 		sv: 'Avenbok',
-		nb: 'Agnbøk'
+		nb: 'Agnbøk',
+		pt: 'Carpa',
+		da: 'Avnbøg',
+		fi: 'Euroopanvalkopyökki'
 	},
 	'Hêtre commun': {
 		fr: 'Hêtre commun',
@@ -43,7 +52,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Haya común',
 		nl: 'Beuk',
 		sv: 'Bok',
-		nb: 'Bøk'
+		nb: 'Bøk',
+		pt: 'Faia-europeia',
+		da: 'Bøg',
+		fi: 'Euroopanpyökki'
 	},
 	'Pin noir': {
 		fr: 'Pin noir',
@@ -53,7 +65,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino negro',
 		nl: 'Oostenrijkse den',
 		sv: 'Svarttall',
-		nb: 'Svartfuru'
+		nb: 'Svartfuru',
+		pt: 'Pinheiro-negro',
+		da: 'Østrigsk fyr',
+		fi: 'Mustamänty'
 	},
 	'Pin maritime': {
 		fr: 'Pin maritime',
@@ -63,7 +78,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino marítimo',
 		nl: 'Zeeden',
 		sv: 'Strandtall',
-		nb: 'Strandfuru'
+		nb: 'Strandfuru',
+		pt: 'Pinheiro-bravo',
+		da: 'Strandfyr',
+		fi: 'Rannikkomänty'
 	},
 	'Chêne pubescent': {
 		fr: 'Chêne pubescent',
@@ -73,7 +91,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Quejigo',
 		nl: 'Donzige eik',
 		sv: 'Luden ek',
-		nb: 'Dunneik'
+		nb: 'Dunneik',
+		pt: 'Carvalho-pubescente',
+		da: 'Duneg',
+		fi: 'Nukkatammi'
 	},
 	'Chêne sessile': {
 		fr: 'Chêne sessile',
@@ -83,7 +104,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Roble albar',
 		nl: 'Wintereik',
 		sv: 'Bergek',
-		nb: 'Vintereik'
+		nb: 'Vintereik',
+		pt: 'Carvalho-roble',
+		da: 'Vintereg',
+		fi: 'Talvitammi'
 	},
 	'Chêne pédonculé': {
 		fr: 'Chêne pédonculé',
@@ -93,7 +117,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Roble común',
 		nl: 'Zomereik',
 		sv: 'Skogsek',
-		nb: 'Sommereik'
+		nb: 'Sommereik',
+		pt: 'Carvalho-alvarinho',
+		da: 'Stilkeg',
+		fi: 'Kesätammi'
 	},
 	'Érable sycomore': {
 		fr: 'Érable sycomore',
@@ -103,7 +130,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Arce blanco',
 		nl: 'Gewone esdoorn',
 		sv: 'Tysklönn',
-		nb: 'Platanlønn'
+		nb: 'Platanlønn',
+		pt: 'Bordo-sicómoro',
+		da: 'Ahorn',
+		fi: 'Vuorivaahtera'
 	},
 	If: {
 		fr: 'If',
@@ -113,7 +143,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Tejo',
 		nl: 'Taxus',
 		sv: 'Idegran',
-		nb: 'Barlind'
+		nb: 'Barlind',
+		pt: 'Teixo',
+		da: 'Taks',
+		fi: 'Marjakuusi'
 	},
 	Buis: {
 		fr: 'Buis',
@@ -123,7 +156,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Boj',
 		nl: 'Buxus',
 		sv: 'Buxbom',
-		nb: 'Buksbom'
+		nb: 'Buksbom',
+		pt: 'Buxo',
+		da: 'Buksbom',
+		fi: 'Puksipuu'
 	},
 	Noyer: {
 		fr: 'Noyer',
@@ -133,7 +169,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Nogal',
 		nl: 'Walnoot',
 		sv: 'Valnöt',
-		nb: 'Valnøtt'
+		nb: 'Valnøtt',
+		pt: 'Nogueira',
+		da: 'Valnød',
+		fi: 'Saksanpähkinä'
 	},
 	'Érable champêtre': {
 		fr: 'Érable champêtre',
@@ -143,7 +182,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Arce de Campos',
 		nl: 'Veldesdoorn',
 		sv: 'Naverlönn',
-		nb: 'Naverlønn'
+		nb: 'Naverlønn',
+		pt: 'Bordo-campestre',
+		da: 'Navr',
+		fi: 'Naavavaahtera'
 	},
 	Bouleau: {
 		fr: 'Bouleau',
@@ -153,7 +195,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Abedul',
 		nl: 'Berk',
 		sv: 'Björk',
-		nb: 'Bjørk'
+		nb: 'Bjørk',
+		pt: 'Bétula',
+		da: 'Birk',
+		fi: 'Koivu'
 	},
 	'Bouleau nain': {
 		fr: 'Bouleau nain',
@@ -163,7 +208,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Abedul enano',
 		nl: 'Dwergberk',
 		sv: 'Dvärgbjörk',
-		nb: 'Dvergbjørk'
+		nb: 'Dvergbjørk',
+		pt: 'Bétula-anã',
+		da: 'Dværgbirk',
+		fi: 'Vaivaiskoivu'
 	},
 	Mélèze: {
 		fr: 'Mélèze',
@@ -173,7 +221,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Alerce',
 		nl: 'Lariks',
 		sv: 'Lärk',
-		nb: 'Lerk'
+		nb: 'Lerk',
+		pt: 'Lariço',
+		da: 'Lærk',
+		fi: 'Lehtikuusi'
 	},
 	'Chêne vert': {
 		fr: 'Chêne vert',
@@ -183,7 +234,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Encina',
 		nl: 'Steeneik',
 		sv: 'Stenek',
-		nb: 'Steineik'
+		nb: 'Steineik',
+		pt: 'Azinheira',
+		da: 'Korkeg',
+		fi: 'Iberiantammi'
 	},
 	'Pin à crochets': {
 		fr: 'Pin à crochets',
@@ -193,7 +247,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino de escamas',
 		nl: 'Bergden',
 		sv: 'Bergtall',
-		nb: 'Fjellfuru'
+		nb: 'Fjellfuru',
+		pt: 'Pinheiro-da-montanha',
+		da: 'Bjergfyr',
+		fi: 'Vuorimänty'
 	},
 	"Pin d'Alep": {
 		fr: "Pin d'Alep",
@@ -203,7 +260,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino carrasco',
 		nl: 'Aleppoden',
 		sv: 'Aleppotall',
-		nb: 'Aleppofuru'
+		nb: 'Aleppofuru',
+		pt: 'Pinheiro-de-Alepo',
+		da: 'Aleppofyr',
+		fi: 'Alepponmänty'
 	},
 	'Genévrier de Phénice': {
 		fr: 'Genévrier de Phénice',
@@ -213,7 +273,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Enebro de Fenicia',
 		nl: 'Fenicische jeneverbes',
 		sv: 'Fenicisk en',
-		nb: 'Fønikisk einer'
+		nb: 'Fønikisk einer',
+		pt: 'Zimbro-fenício',
+		da: 'Fønikisk ene',
+		fi: 'Foinikialainen kataja'
 	},
 	'Érable de Montpellier': {
 		fr: 'Érable de Montpellier',
@@ -223,7 +286,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Arce montpellierano',
 		nl: 'Montpellier-esdoorn',
 		sv: 'Montpellierslönn',
-		nb: 'Montpellierlønn'
+		nb: 'Montpellierlønn',
+		pt: 'Bordo-de-Montpellier',
+		da: 'Montpellier-ahorn',
+		fi: 'Montpellierinvaahtera'
 	},
 	Tamaris: {
 		fr: 'Tamaris',
@@ -233,7 +299,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Tamarisco',
 		nl: 'Tamarisk',
 		sv: 'Tamarisk',
-		nb: 'Tamarisk'
+		nb: 'Tamarisk',
+		pt: 'Tamargueira',
+		da: 'Tamarisk',
+		fi: 'Tamariski'
 	},
 	Saule: {
 		fr: 'Saule',
@@ -243,7 +312,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Sauce',
 		nl: 'Wilg',
 		sv: 'Pil',
-		nb: 'Selje'
+		nb: 'Selje',
+		pt: 'Salgueiro',
+		da: 'Pil',
+		fi: 'Paju'
 	},
 	'Aulne glutineux': {
 		fr: 'Aulne glutineux',
@@ -253,7 +325,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Aliso común',
 		nl: 'Zwarte els',
 		sv: 'Klibbal',
-		nb: 'Svartor'
+		nb: 'Svartor',
+		pt: 'Amieiro',
+		da: 'Rødel',
+		fi: 'Tervaleppä'
 	},
 	'Rhododendron ferrugineux': {
 		fr: 'Rhododendron ferrugineux',
@@ -263,7 +338,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Rododendro ferruginoso',
 		nl: 'Alpenroos',
 		sv: 'Alpros',
-		nb: 'Alperose'
+		nb: 'Alperose',
+		pt: 'Rosa-dos-Alpes',
+		da: 'Alperose',
+		fi: 'Alppiruusu'
 	},
 	Châtaignier: {
 		fr: 'Châtaignier',
@@ -273,7 +351,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Castaño',
 		nl: 'Tamme kastanje',
 		sv: 'Äkta kastanj',
-		nb: 'Edelkastanje'
+		nb: 'Edelkastanje',
+		pt: 'Castanheiro',
+		da: 'Ægte kastanje',
+		fi: 'Aito kastanja'
 	},
 	Cyprès: {
 		fr: 'Cyprès',
@@ -283,7 +364,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Ciprés',
 		nl: 'Cipres',
 		sv: 'Cypress',
-		nb: 'Sypress'
+		nb: 'Sypress',
+		pt: 'Cipreste',
+		da: 'Cypres',
+		fi: 'Sypressi'
 	},
 	Olivier: {
 		fr: 'Olivier',
@@ -293,7 +377,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Olivo',
 		nl: 'Olijfboom',
 		sv: 'Olivträd',
-		nb: 'Oliventre'
+		nb: 'Oliventre',
+		pt: 'Oliveira',
+		da: 'Oliven',
+		fi: 'Oliivipuu'
 	},
 	Frêne: {
 		fr: 'Frêne',
@@ -303,7 +390,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Fresno',
 		nl: 'Es',
 		sv: 'Ask',
-		nb: 'Ask'
+		nb: 'Ask',
+		pt: 'Freixo',
+		da: 'Ask',
+		fi: 'Saarni'
 	},
 	Orme: {
 		fr: 'Orme',
@@ -313,7 +403,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Olmo',
 		nl: 'Iep',
 		sv: 'Alm',
-		nb: 'Alm'
+		nb: 'Alm',
+		pt: 'Ulmeiro',
+		da: 'Elm',
+		fi: 'Jalava'
 	},
 	Tilleul: {
 		fr: 'Tilleul',
@@ -323,7 +416,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Tilo',
 		nl: 'Linde',
 		sv: 'Lind',
-		nb: 'Lind'
+		nb: 'Lind',
+		pt: 'Tília',
+		da: 'Lind',
+		fi: 'Lehmus'
 	},
 	Cornouiller: {
 		fr: 'Cornouiller',
@@ -333,7 +429,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Cornejo',
 		nl: 'Kornoelje',
 		sv: 'Kornell',
-		nb: 'Kornell'
+		nb: 'Kornell',
+		pt: 'Sanguinho',
+		da: 'Kornel',
+		fi: 'Kanukka'
 	},
 	Troène: {
 		fr: 'Troène',
@@ -343,7 +442,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Ligustro',
 		nl: 'Liguster',
 		sv: 'Liguster',
-		nb: 'Liguster'
+		nb: 'Liguster',
+		pt: 'Alfeneiro',
+		da: 'Liguster',
+		fi: 'Ligusteri'
 	},
 	Prunellier: {
 		fr: 'Prunellier',
@@ -353,7 +455,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Endrino',
 		nl: 'Sleedoorn',
 		sv: 'Slån',
-		nb: 'Slåpetorn'
+		nb: 'Slåpetorn',
+		pt: 'Abrunheiro',
+		da: 'Slåen',
+		fi: 'Oratuomi'
 	},
 	'Pommier sauvage': {
 		fr: 'Pommier sauvage',
@@ -363,7 +468,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Manzano silvestre',
 		nl: 'Wilde appel',
 		sv: 'Vildapel',
-		nb: 'Villeple'
+		nb: 'Villeple',
+		pt: 'Macieira-brava',
+		da: 'Vildæble',
+		fi: 'Metsäomena'
 	},
 	'Pin cembro': {
 		fr: 'Pin cembro',
@@ -373,7 +481,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino cembra',
 		nl: 'Alpenden',
 		sv: 'Cembratall',
-		nb: 'Cembrafuru'
+		nb: 'Cembrafuru',
+		pt: 'Pinheiro-cembro',
+		da: 'Cembra-fyr',
+		fi: 'Sembra'
 	},
 	'Utah juniper': {
 		fr: 'Genévrier d’Utah',
@@ -383,7 +494,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Enebro de Utah',
 		nl: 'Utah-jeneverbes',
 		sv: 'Utahen',
-		nb: 'Utah-einer'
+		nb: 'Utah-einer',
+		pt: 'Zimbro-de-Utah',
+		da: 'Utah-ene',
+		fi: 'Utahin kataja'
 	},
 	'Rocky Mountain juniper': {
 		fr: 'Genévrier des Rocheuses',
@@ -393,7 +507,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Enebro de las Rocosas',
 		nl: 'Rocky Mountain-jeneverbes',
 		sv: 'Klippbergsen',
-		nb: 'Rocky Mountain-einer'
+		nb: 'Rocky Mountain-einer',
+		pt: 'Zimbro-das-Montanhas-Rochosas',
+		da: 'Rocky Mountain-ene',
+		fi: 'Kalliovuorten kataja'
 	},
 	'Ponderosa pine': {
 		fr: 'Pin ponderosa',
@@ -403,7 +520,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino ponderosa',
 		nl: 'Ponderosaden',
 		sv: 'Ponderosatall',
-		nb: 'Ponderosafuru'
+		nb: 'Ponderosafuru',
+		pt: 'Pinheiro-ponderosa',
+		da: 'Ponderosa-fyr',
+		fi: 'Ponderosamänty'
 	},
 	'Bristlecone pine': {
 		fr: 'Pin à cônes hérissés',
@@ -413,7 +533,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino longevo',
 		nl: 'Borstelkegelden',
 		sv: 'Borstkottetall',
-		nb: 'Bustkonglefuru'
+		nb: 'Bustkonglefuru',
+		pt: 'Pinheiro-de-escamas',
+		da: 'Børstekoglefyr',
+		fi: 'Harjakäpymänty'
 	},
 	'Eastern hemlock': {
 		fr: 'Pruche du Canada',
@@ -423,7 +546,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Tsuga del Canadá',
 		nl: 'Oostelijke hemlockspar',
 		sv: 'Östlig hemlock',
-		nb: 'Østlig hemlock'
+		nb: 'Østlig hemlock',
+		pt: 'Tsuga-oriental',
+		da: 'Østlig hemlock',
+		fi: 'Itäinen hemlokki'
 	},
 	'Red maple': {
 		fr: 'Érable rouge',
@@ -433,7 +559,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Arce rojo',
 		nl: 'Rode esdoorn',
 		sv: 'Röd lönn',
-		nb: 'Rød lønn'
+		nb: 'Rød lønn',
+		pt: 'Bordo-vermelho',
+		da: 'Rød ahorn',
+		fi: 'Punavaahtera'
 	},
 	'Coast live oak': {
 		fr: 'Chêne de Californie',
@@ -443,7 +572,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Encino costero',
 		nl: 'Californische steeneik',
 		sv: 'Kalifornisk stenek',
-		nb: 'Kalifornisk steineik'
+		nb: 'Kalifornisk steineik',
+		pt: 'Carvalho-da-costa',
+		da: 'Californisk stedsegrøn eg',
+		fi: 'Kaliforniantammi'
 	},
 	'California juniper': {
 		fr: 'Genévrier de Californie',
@@ -453,7 +585,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Enebro de California',
 		nl: 'Californische jeneverbes',
 		sv: 'Kalifornisk en',
-		nb: 'Kalifornisk einer'
+		nb: 'Kalifornisk einer',
+		pt: 'Zimbro-da-Califórnia',
+		da: 'Californisk ene',
+		fi: 'Kalifornian kataja'
 	},
 	'Douglas fir': {
 		fr: 'Douglas',
@@ -463,7 +598,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Abeto de Douglas',
 		nl: 'Douglas',
 		sv: 'Douglasgran',
-		nb: 'Douglasgran'
+		nb: 'Douglasgran',
+		pt: 'Abeto-de-Douglas',
+		da: 'Douglasgran',
+		fi: 'Douglaskuusi'
 	},
 	'Lodgepole pine': {
 		fr: 'Pin tordu',
@@ -473,7 +611,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino contorta',
 		nl: 'Contortaden',
 		sv: 'Contortatall',
-		nb: 'Contortafuru'
+		nb: 'Contortafuru',
+		pt: 'Pinheiro-contorta',
+		da: 'Contorta-fyr',
+		fi: 'Kontortamänty'
 	},
 	'Quaking aspen': {
 		fr: 'Peuplier faux-tremble',
@@ -483,7 +624,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Álamo temblón',
 		nl: 'Amerikaanse esp',
 		sv: 'Asp',
-		nb: 'Osp'
+		nb: 'Osp',
+		pt: 'Álamo-tremedor',
+		da: 'Bævreasp',
+		fi: 'Haapa'
 	},
 	'Western larch': {
 		fr: 'Mélèze de l’Ouest',
@@ -493,7 +637,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Alerce occidental',
 		nl: 'Westelijke lariks',
 		sv: 'Västlig lärk',
-		nb: 'Vestlig lerk'
+		nb: 'Vestlig lerk',
+		pt: 'Lariço-ocidental',
+		da: 'Vestlig lærk',
+		fi: 'Lännenlehtikuusi'
 	},
 	'Engelmann spruce': {
 		fr: 'Épicéa d’Engelmann',
@@ -503,7 +650,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Picea de Engelmann',
 		nl: 'Engelmann-spar',
 		sv: 'Engelmannsgran',
-		nb: 'Engelmannsgran'
+		nb: 'Engelmannsgran',
+		pt: 'Pícea-de-Engelmann',
+		da: 'Engelmannsgran',
+		fi: 'Engelmanninkuusi'
 	},
 	'Eastern white cedar': {
 		fr: 'Thuya occidental',
@@ -513,7 +663,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Tuya occidental',
 		nl: 'Oostelijke witte ceder',
 		sv: 'Östlig vitceder',
-		nb: 'Østlig hvitceder'
+		nb: 'Østlig hvitceder',
+		pt: 'Cedro-branco-oriental',
+		da: 'Østlig hvidceder',
+		fi: 'Lännentuja'
 	},
 	'White spruce': {
 		fr: 'Épinette blanche',
@@ -523,7 +676,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Picea blanca',
 		nl: 'Witte spar',
 		sv: 'Vitgran',
-		nb: 'Hvitgran'
+		nb: 'Hvitgran',
+		pt: 'Pícea-branca',
+		da: 'Hvidgran',
+		fi: 'Valkokuusi'
 	},
 	'Jack pine': {
 		fr: 'Pin gris',
@@ -533,7 +689,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino de Banks',
 		nl: 'Banksden',
 		sv: 'Banksianatall',
-		nb: 'Banksfuru'
+		nb: 'Banksfuru',
+		pt: 'Pinheiro-de-Banks',
+		da: 'Banks-fyr',
+		fi: 'Banksinmänty'
 	},
 	'Sugar maple': {
 		fr: 'Érable à sucre',
@@ -543,7 +702,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Arce azucarero',
 		nl: 'Suikeresdoorn',
 		sv: 'Sockerlönn',
-		nb: 'Sukkerlønn'
+		nb: 'Sukkerlønn',
+		pt: 'Bordo-açucareiro',
+		da: 'Sukkerahorn',
+		fi: 'Sokerivaahtera'
 	},
 	Tamarack: {
 		fr: 'Mélèze laricin',
@@ -553,7 +715,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Alerce americano',
 		nl: 'Amerikaanse lariks',
 		sv: 'Amerikansk lärk',
-		nb: 'Amerikansk lerk'
+		nb: 'Amerikansk lerk',
+		pt: 'Lariço-americano',
+		da: 'Amerikansk lærk',
+		fi: 'Amerikanlehtikuusi'
 	},
 	'Paper birch': {
 		fr: 'Bouleau à papier',
@@ -563,7 +728,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Abedul de papel',
 		nl: 'Papierberk',
 		sv: 'Pappersbjörk',
-		nb: 'Papirbjørk'
+		nb: 'Papirbjørk',
+		pt: 'Bétula-de-papel',
+		da: 'Papirbirk',
+		fi: 'Paperikoivu'
 	},
 	'Yellow birch': {
 		fr: 'Bouleau jaune',
@@ -573,7 +741,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Abedul amarillo',
 		nl: 'Gele berk',
 		sv: 'Gulbjörk',
-		nb: 'Gulbjørk'
+		nb: 'Gulbjørk',
+		pt: 'Bétula-amarela',
+		da: 'Gul birk',
+		fi: 'Keltakoivu'
 	},
 	Pohutukawa: {
 		fr: 'Pohutukawa',
@@ -583,7 +754,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pohutukawa',
 		nl: 'Pohutukawa',
 		sv: 'Pohutukawa',
-		nb: 'Pohutukawa'
+		nb: 'Pohutukawa',
+		pt: 'Pohutukawa',
+		da: 'Pohutukawa',
+		fi: 'Pohutukawa'
 	},
 	Mānuka: {
 		fr: 'Mānuka',
@@ -593,7 +767,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Mānuka',
 		nl: 'Mānuka',
 		sv: 'Mānuka',
-		nb: 'Mānuka'
+		nb: 'Mānuka',
+		pt: 'Mānuka',
+		da: 'Mānuka',
+		fi: 'Mānuka'
 	},
 	Kānuka: {
 		fr: 'Kānuka',
@@ -603,7 +780,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Kānuka',
 		nl: 'Kānuka',
 		sv: 'Kānuka',
-		nb: 'Kānuka'
+		nb: 'Kānuka',
+		pt: 'Kānuka',
+		da: 'Kānuka',
+		fi: 'Kānuka'
 	},
 	Rimu: {
 		fr: 'Rimu',
@@ -613,7 +793,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Rimu',
 		nl: 'Rimu',
 		sv: 'Rimu',
-		nb: 'Rimu'
+		nb: 'Rimu',
+		pt: 'Rimu',
+		da: 'Rimu',
+		fi: 'Rimu'
 	},
 	Tōtara: {
 		fr: 'Tōtara',
@@ -623,7 +806,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Tōtara',
 		nl: 'Tōtara',
 		sv: 'Tōtara',
-		nb: 'Tōtara'
+		nb: 'Tōtara',
+		pt: 'Tōtara',
+		da: 'Tōtara',
+		fi: 'Tōtara'
 	},
 	Lancewood: {
 		fr: 'Horoeka / Lancewood',
@@ -633,7 +819,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Lancewood',
 		nl: 'Lancewood',
 		sv: 'Lancewood',
-		nb: 'Lancewood'
+		nb: 'Lancewood',
+		pt: 'Lancewood',
+		da: 'Lancewood',
+		fi: 'Lancewood'
 	},
 	'Southern beech': {
 		fr: 'Hêtre de Nouvelle-Zélande',
@@ -643,7 +832,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Haya austral',
 		nl: 'Zuidelijke beuk',
 		sv: 'Sydbok',
-		nb: 'Sørbøk'
+		nb: 'Sørbøk',
+		pt: 'Faia-do-sul',
+		da: 'Sydbøg',
+		fi: 'Etelänpyökki'
 	},
 	Kahikatea: {
 		fr: 'Kahikatea',
@@ -653,7 +845,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Kahikatea',
 		nl: 'Kahikatea',
 		sv: 'Kahikatea',
-		nb: 'Kahikatea'
+		nb: 'Kahikatea',
+		pt: 'Kahikatea',
+		da: 'Kahikatea',
+		fi: 'Kahikatea'
 	},
 	Kauri: {
 		fr: 'Kauri',
@@ -663,7 +858,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Kauri',
 		nl: 'Kauri',
 		sv: 'Kauri',
-		nb: 'Kauri'
+		nb: 'Kauri',
+		pt: 'Kauri',
+		da: 'Kauri',
+		fi: 'Kauri'
 	},
 	Sobreiro: {
 		fr: 'Chêne-liège',
@@ -673,7 +871,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Alcornoque',
 		nl: 'Kurkeik',
 		sv: 'Korkek',
-		nb: 'Korkeik'
+		nb: 'Korkeik',
+		pt: 'Sobreiro',
+		da: 'Korkeg',
+		fi: 'Korkkitammi'
 	},
 	Azinheira: {
 		fr: 'Chêne vert ibérique',
@@ -683,7 +884,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Encina',
 		nl: 'Steeneik',
 		sv: 'Stenek',
-		nb: 'Steineik'
+		nb: 'Steineik',
+		pt: 'Azinheira',
+		da: 'Korkeg',
+		fi: 'Iberiantammi'
 	},
 	Oliveira: {
 		fr: 'Olivier',
@@ -693,7 +897,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Olivo',
 		nl: 'Olijf',
 		sv: 'Oliv',
-		nb: 'Oliven'
+		nb: 'Oliven',
+		pt: 'Oliveira',
+		da: 'Oliven',
+		fi: 'Oliivi'
 	},
 	'Pinheiro-bravo': {
 		fr: 'Pin maritime',
@@ -703,7 +910,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Pino marítimo',
 		nl: 'Zeeden',
 		sv: 'Strandtall',
-		nb: 'Strandfuru'
+		nb: 'Strandfuru',
+		pt: 'Pinheiro-bravo',
+		da: 'Strandfyr',
+		fi: 'Rannikkomänty'
 	},
 	Medronheiro: {
 		fr: 'Arbousier',
@@ -713,7 +923,10 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Madroño',
 		nl: 'Aardbeiboom',
 		sv: 'Smultronträd',
-		nb: 'Jordbærtre'
+		nb: 'Jordbærtre',
+		pt: 'Medronheiro',
+		da: 'Jordbærtræ',
+		fi: 'Mansikkapuu'
 	},
 	'Carvalho-português': {
 		fr: 'Chêne portugais',
@@ -723,7 +936,205 @@ export const SPECIES_DISPLAY: Record<string, LocaleNames> = {
 		es: 'Roble portugués',
 		nl: 'Portugese eik',
 		sv: 'Portugisisk ek',
-		nb: 'Portugisisk eik'
+		nb: 'Portugisisk eik',
+		pt: 'Carvalho-português',
+		da: 'Portugisisk eg',
+		fi: 'Portugalintammi'
+	},
+	Banksia: {
+		fr: 'Banksia',
+		en: 'Banksia',
+		de: 'Banksia',
+		it: 'Banksia',
+		es: 'Banksia',
+		nl: 'Banksia',
+		sv: 'Banksia',
+		nb: 'Banksia',
+		pt: 'Banksia',
+		da: 'Banksia',
+		fi: 'Banksia'
+	},
+	Waratah: {
+		fr: 'Waratah',
+		en: 'Waratah',
+		de: 'Waratah',
+		it: 'Waratah',
+		es: 'Waratah',
+		nl: 'Waratah',
+		sv: 'Waratah',
+		nb: 'Waratah',
+		pt: 'Waratah',
+		da: 'Waratah',
+		fi: 'Waratah'
+	},
+	Bottlebrush: {
+		fr: 'Callistemon / Bottlebrush',
+		en: 'Bottlebrush',
+		de: 'Zylinderputzer',
+		it: 'Callistemon',
+		es: 'Cepillo de botella',
+		nl: 'Flesborstel',
+		sv: 'Flaskborste',
+		nb: 'Flaskebørste',
+		pt: 'Escova-de-garrafa',
+		da: 'Flaskebørste',
+		fi: 'Pulloharja'
+	},
+	Sheoak: {
+		fr: 'Casuarina / Sheoak',
+		en: 'Sheoak',
+		de: 'Kasuarine',
+		it: 'Casuarina',
+		es: 'Casuarina',
+		nl: 'Casuarina',
+		sv: 'Casuarina',
+		nb: 'Casuarina',
+		pt: 'Casuarina',
+		da: 'Casuarina',
+		fi: 'Casuarina'
+	},
+	'Moreton Bay fig': {
+		fr: 'Figuier de la baie Moreton',
+		en: 'Moreton Bay fig',
+		de: 'Moreton-Bay-Feige',
+		it: 'Fico di Moreton Bay',
+		es: 'Higuera de Moreton Bay',
+		nl: 'Moreton Bay-vijg',
+		sv: 'Moreton Bay-fikon',
+		nb: 'Moreton Bay-fiken',
+		pt: 'Figueira da baía Moreton',
+		da: 'Moreton Bay-figen',
+		fi: 'Moreton Bayn viikuna'
+	},
+	'Huon pine': {
+		fr: 'Pin Huon',
+		en: 'Huon pine',
+		de: 'Huon-Zeder',
+		it: 'Pino Huon',
+		es: 'Pino Huon',
+		nl: 'Huon-den',
+		sv: 'Huontall',
+		nb: 'Huonfuru',
+		pt: 'Pinheiro Huon',
+		da: 'Huonfyr',
+		fi: 'Huonmänty'
+	},
+	'Celery-top pine': {
+		fr: 'Phylloclade / Celery-top pine',
+		en: 'Celery-top pine',
+		de: 'Sellerietannen',
+		it: 'Pino celery-top',
+		es: 'Pino celery-top',
+		nl: 'Selderijtopden',
+		sv: 'Selleritall',
+		nb: 'Selleritopp-furu',
+		pt: 'Pinheiro-de-folhas-de-aipo',
+		da: 'Selleritopfyr',
+		fi: 'Sellerimänty'
+	},
+	'Japanese black pine': {
+		fr: 'Pin noir du Japon',
+		en: 'Japanese black pine',
+		de: 'Japanische Schwarzkiefer',
+		it: 'Pino nero giapponese',
+		es: 'Pino negro japonés',
+		nl: 'Japanse zwarte den',
+		sv: 'Japansk svarttall',
+		nb: 'Japansk svartfuru',
+		pt: 'Pinheiro-negro-japonês',
+		da: 'Japansk sortfyr',
+		fi: 'Japaninmustamänty'
+	},
+	'Japanese red pine': {
+		fr: 'Pin rouge du Japon',
+		en: 'Japanese red pine',
+		de: 'Japanische Rotkiefer',
+		it: 'Pino rosso giapponese',
+		es: 'Pino rojo japonés',
+		nl: 'Japanse rode den',
+		sv: 'Japansk röd tall',
+		nb: 'Japansk rødfuru',
+		pt: 'Pinheiro-vermelho-japonês',
+		da: 'Japansk rødfyr',
+		fi: 'Japaninpunamänty'
+	},
+	'Japanese white pine': {
+		fr: 'Pin blanc du Japon',
+		en: 'Japanese white pine',
+		de: 'Japanische Weißkiefer',
+		it: 'Pino bianco giapponese',
+		es: 'Pino blanco japonés',
+		nl: 'Japanse witte den',
+		sv: 'Japansk vit tall',
+		nb: 'Japansk hvitfuru',
+		pt: 'Pinheiro-branco-japonês',
+		da: 'Japansk hvidfyr',
+		fi: 'Japaninvalkomänty'
+	},
+	Zelkova: {
+		fr: 'Zelkova / Keyaki',
+		en: 'Zelkova',
+		de: 'Zelkove',
+		it: 'Zelkova',
+		es: 'Zelkova',
+		nl: 'Zelkova',
+		sv: 'Zelkova',
+		nb: 'Zelkova',
+		pt: 'Zelkova',
+		da: 'Zelkova',
+		fi: 'Zelkova'
+	},
+	'Japanese maple': {
+		fr: 'Érable du Japon',
+		en: 'Japanese maple',
+		de: 'Fächer-Ahorn',
+		it: 'Acero palmato',
+		es: 'Arce japonés',
+		nl: 'Japanse esdoorn',
+		sv: 'Japansk lönn',
+		nb: 'Japansk lønn',
+		pt: 'Ácer-do-Japão',
+		da: 'Japansk løn',
+		fi: 'Japaninvaahtera'
+	},
+	'Japanese juniper': {
+		fr: 'Genévrier de Chine',
+		en: 'Japanese juniper',
+		de: 'Chinesischer Wacholder',
+		it: 'Ginepro cinese',
+		es: 'Enebro chino',
+		nl: 'Chinese jeneverbes',
+		sv: 'Kinesisk en',
+		nb: 'Kinesisk einer',
+		pt: 'Zimbro-da-China',
+		da: 'Kinesisk ene',
+		fi: 'Kiinankataja'
+	},
+	'Japanese beech': {
+		fr: 'Hêtre du Japon',
+		en: 'Japanese beech',
+		de: 'Japanische Buche',
+		it: 'Faggio giapponese',
+		es: 'Haya japonesa',
+		nl: 'Japanse beuk',
+		sv: 'Japansk bok',
+		nb: 'Japansk bøk',
+		pt: 'Faia-japonesa',
+		da: 'Japansk bøg',
+		fi: 'Japaninpyökki'
+	},
+	'Konara oak': {
+		fr: 'Chêne konara',
+		en: 'Konara oak',
+		de: 'Konara-Eiche',
+		it: 'Quercia konara',
+		es: 'Roble konara',
+		nl: 'Konara-eik',
+		sv: 'Konaraek',
+		nb: 'Konaraeik',
+		pt: 'Carvalho konara',
+		da: 'Konaraeg',
+		fi: 'Konaratammi'
 	}
 };
 
