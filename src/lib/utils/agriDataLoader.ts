@@ -1,6 +1,7 @@
 import * as m from '$lib/paraglide/messages.js';
 import type { AgriData } from '$lib/types/agri';
 import type { YrsPlantInputs } from '$lib/types/yrs';
+import { getApiDisabledError, isApiEnabled } from '$lib/utils/apiPolicy';
 import { enrichAgriData } from '$lib/utils/agriCache';
 import { fetchAgriDataBase } from '$lib/utils/agri';
 import {
@@ -33,7 +34,12 @@ export async function resolveAgriData(
 	plantInputs: YrsPlantInputs,
 	online: boolean
 ): Promise<AgriLoadResult> {
-	if (online) {
+	const canFetchLive = online && isApiEnabled('openMeteoForecast');
+
+	if (canFetchLive) {
+		const cachedFresh = await loadCachedAgriData(latitude, longitude, plantInputs, false);
+		if (cachedFresh) return cachedFresh;
+
 		try {
 			const { baseData, forecastBody } = await fetchAgriDataBase(latitude, longitude, plantInputs);
 			await saveCachedForecast(latitude, longitude, baseData, forecastBody);
@@ -68,6 +74,17 @@ export async function resolveAgriData(
 
 	const stale = await loadCachedAgriData(latitude, longitude, plantInputs, true);
 	if (stale) return stale;
+
+	if (online && !isApiEnabled('openMeteoForecast')) {
+		return {
+			data: null,
+			source: null,
+			cachedAt: null,
+			cacheDistanceM: null,
+			cacheStale: false,
+			error: getApiDisabledError('openMeteoForecast')
+		};
+	}
 
 	return {
 		data: null,

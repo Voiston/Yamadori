@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const memoryStore = new Map<string, unknown>();
 
@@ -14,6 +14,7 @@ vi.mock('idb-keyval', () => ({
 	keys: vi.fn(async () => [...memoryStore.keys()])
 }));
 
+import { apiSettingsState } from '$lib/stores/apiSettings.svelte';
 import {
 	aggregateClimateData,
 	fetchClimateHistory,
@@ -65,23 +66,32 @@ describe('parseOpenMeteoErrorResponse', () => {
 });
 
 describe('fetchClimateHistory', () => {
+	beforeEach(() => {
+		memoryStore.clear();
+		apiSettingsState.loaded = true;
+		apiSettingsState.openMeteoArchive = true;
+	});
+
 	afterEach(() => {
 		vi.unstubAllGlobals();
 	});
 
 	it('throws parsed Open-Meteo error on HTTP 400', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue(
-				new Response(
-					JSON.stringify({ error: true, reason: 'End date is after last available date' }),
-					{ status: 400 }
-				)
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(
+				JSON.stringify({ error: true, reason: 'End date is after last available date' }),
+				{ status: 400 }
 			)
 		);
+		vi.stubGlobal('fetch', fetchMock);
 
-		await expect(fetchClimateHistory(47.26, -1.52)).rejects.toThrow(
+		await expect(fetchClimateHistory(47.269, -1.529)).rejects.toThrow(
 			'Open-Meteo (400) : End date is after last available date'
 		);
+
+		const calledUrl = String(fetchMock.mock.calls[0]?.[0]);
+		expect(calledUrl).toContain('latitude=47.26');
+		expect(calledUrl).toContain('longitude=-1.52');
+		expect(calledUrl).toContain('temperature_2m_mean');
 	});
 });

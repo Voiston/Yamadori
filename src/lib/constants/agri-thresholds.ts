@@ -1,6 +1,9 @@
 import type { PhenologyStageId } from '$lib/types/gdd';
 
-/** Seuils Yamadori — Oneshot (Jour J) et tendances 3–7 jours. */
+/** Seuils Yamadori — Oneshot (Jour J) et tendances 3–7 jours.
+ *  Base = climat tempéré océanique (Europe de l’Ouest).
+ *  Overrides par profil : `resolveYamadoriRiskThresholds` dans climate-profiles.ts.
+ */
 export const YAMADORI_RISK_THRESHOLDS = {
 	windSpeedKmh: { passableMin: 25, dangerousMin: 35 },
 	airTempC: { dangerousLow: 5, dangerousHigh: 32, passableLow: 8, passableHigh: 28 },
@@ -13,18 +16,44 @@ export const YAMADORI_RISK_THRESHOLDS = {
 	soilTrend7dMinDeltaC: 0.3,
 	soil18cmTempC: { excellentMin: 9, excellentMax: 13, passableMax: 17, stressMin: 18 },
 	frostDangerousC: -3,
+	/** Daily max air temperature (°C) counted as a heat-stress day. */
+	heatMaxC: 30,
 	et0TodayMm: { excellentMax: 1.0, passableMax: 5.0 },
 	et0Trend7dMeanMm: { excellentMax: 1.0, passableMax: 5.0 },
 	shortwaveRadiationMaxTodayWm2: { passableMin: 400, dangerousMin: 600 }
 } as const;
 
+/** Provenance tags for YRS / agri threshold constants (transparency, not runtime logic). */
+export type ThresholdSourceKind = 'editorial' | 'fao56' | 'open-meteo' | 'literature';
+
+export const THRESHOLD_SOURCES: Record<string, ThresholdSourceKind> = {
+	'et0.input': 'fao56',
+	'et0.excellentMax': 'editorial',
+	'soil18cmTempC': 'editorial',
+	'soilStableTempC': 'editorial',
+	'frostDangerousC': 'editorial',
+	'heatMaxC': 'editorial',
+	'windSpeedKmh': 'editorial',
+	'airTempC': 'editorial',
+	'hydric.awcMm': 'editorial',
+	'hydric.ks': 'fao56',
+	'openMeteo.soilMoisture': 'open-meteo',
+	'openMeteo.soilTemp': 'open-meteo',
+	'gdd.degreeDayForm': 'literature',
+	'gdd.windows.category': 'editorial',
+	'harvestCalendar.months': 'editorial'
+};
+
 /** Poids du malus chute nocturne selon le stade phénologique (0–1). */
 export const SOIL_NIGHT_DROP_PHENOLOGY_WEIGHT: Record<PhenologyStageId, number> = {
 	dormance: 1,
 	bourgeon_gonfle: 1,
+	pointe_verte: 0.9,
 	debourrement: 0.75,
 	feuillaison: 0.25,
-	croissance_active: 0
+	croissance_active: 0,
+	chandelle: 0.75,
+	pinceau: 0.25
 };
 
 /** Ancres GDD → poids du malus chute nocturne (score 0–100, converti en 0–1). */

@@ -1,4 +1,5 @@
 import { getBonsaiPriorityRank } from '$lib/constants/bonsai-species';
+import { getSpeciesSearchKey } from '$lib/constants/species-i18n';
 import { compareLocalized } from '$lib/utils/i18n/locale';
 
 const MAX_RESULTS = 8;
@@ -30,9 +31,10 @@ export function filterSpeciesDictionary(
 
 	for (const name of dictionary) {
 		const normalizedName = normalizeSpeciesQuery(name);
-		if (normalizedName.startsWith(normalized)) {
+		const searchKey = getSpeciesSearchKey(name);
+		if (normalizedName.startsWith(normalized) || searchKey.startsWith(normalized)) {
 			prefixMatches.push(name);
-		} else if (normalizedName.includes(normalized)) {
+		} else if (normalizedName.includes(normalized) || searchKey.includes(normalized)) {
 			containsMatches.push(name);
 		}
 	}

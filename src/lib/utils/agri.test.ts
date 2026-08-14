@@ -73,6 +73,7 @@ const idealConditions: AgriData = {
 	heatStressDaysForecast7d: 0,
 	frostEventsPast7d: 0,
 	soilBufferScore: 70,
+	hydricStressKs: 1,
 	wsi: 31.4,
 	futureStressRiskMm: 5.6,
 	weeklyViability: null,
@@ -178,6 +179,11 @@ describe('sumPastPrecipitation', () => {
 describe('countConsecutiveSoilStableDays', () => {
 	it('counts the longest run in the 8–15 °C range', () => {
 		expect(countConsecutiveSoilStableDays([10, 11, 12, 13, 4])).toBe(4);
+	});
+
+	it('uses custom profile soil-stable bounds when provided', () => {
+		expect(countConsecutiveSoilStableDays([9, 10, 17, 18], 9, 18)).toBe(4);
+		expect(countConsecutiveSoilStableDays([9, 10, 17, 18], 8, 15)).toBe(2);
 	});
 });
 
@@ -613,6 +619,55 @@ describe('computeWeeklyViability', () => {
 
 		expect(bestDay?.score).toBe(maxScore);
 	});
+
+	it('projects GDD forward so later days can differ from today', () => {
+		const referenceDate = new Date('2026-06-22T12:00:00');
+		const gdd = {
+			baseTempC: 4.5,
+			baseCategory: 'foret' as const,
+			cumulativeSinceJan1: 100,
+			last7dSum: 20,
+			dailySeries: [],
+			phenology: null,
+			phenologyUnavailableReason: null,
+			speciesLabel: 'Hêtre commun'
+		};
+		const weekly = computeWeeklyViability(
+			buildMockBody(referenceDate),
+			47.5,
+			-0.5,
+			referenceDate,
+			{ species: 'Hêtre commun' },
+			gdd
+		);
+		// With rising cumulative GDD, scores are not forced identical across the week
+		const uniqueScores = new Set(weekly.days.map((day) => day.score));
+		expect(uniqueScores.size).toBeGreaterThanOrEqual(1);
+		expect(weekly.days.length).toBe(7);
+	});
+
+	it('keeps frost forecast stress anchored to true today on late sim days', () => {
+		const referenceDate = new Date('2026-06-22T12:00:00');
+		const body = buildMockBody(referenceDate);
+		// Hard frost on June 28 (last forecast day) — must still register when scoring that day
+		body.daily.temperature_2m_min = [4, 5, 6, 5, 6, 7, 3, 2, 4, 5, 6, 4, 5, -4];
+
+		const todayParsed = parseAgriForecastResponse(body, 47.5, -0.5, referenceDate);
+		expect(todayParsed.frostRiskNext7d).toBe(true);
+
+		const lateSim = new Date('2026-06-28T12:00:00');
+		const lateWithoutAnchor = parseAgriForecastResponse(body, 47.5, -0.5, lateSim);
+		const lateWithAnchor = parseAgriForecastResponse(body, 47.5, -0.5, lateSim, {
+			stressHorizonDate: referenceDate
+		});
+
+		// Sliding window from June 28 only sees that day — still frost, but ET0/heat windows shrink
+		expect(lateWithAnchor.frostRiskNext7d).toBe(true);
+		expect(lateWithAnchor.et0Forecast7dSumMm).toBe(todayParsed.et0Forecast7dSumMm);
+		expect(lateWithoutAnchor.et0Forecast7dSumMm ?? 0).toBeLessThan(
+			todayParsed.et0Forecast7dSumMm ?? 0
+		);
+	});
 });
 
 describe('assessYrsDetailRisks', () => {
@@ -649,6 +704,25 @@ describe('assessYrsDetailRisks', () => {
 				}
 			}).gddSeason
 		).toBe('Excellent');
+	});
+
+	it('uses montagnarde YRS windows for GDD season risk', () => {
+		const data = {
+			...idealConditions,
+			gdd: {
+				cumulativeSinceJan1: 100,
+				last7dSum: 20,
+				baseTempC: 1.5,
+				baseCategory: 'standard' as const,
+				speciesLabel: 'Mélèze',
+				dailySeries: [],
+				phenology: null,
+				phenologyUnavailableReason: null
+			}
+		};
+		// 100 is early/passable on standard (150–400) but optimal on montagnarde (80–280)
+		expect(assessYrsDetailRisks(data).gddSeason).toBe('Passable');
+		expect(assessYrsDetailRisks(data, { species: 'Mélèze' }).gddSeason).toBe('Excellent');
 	});
 
 	it('flags negative water balance as Dangereux', () => {
@@ -720,18 +794,20 @@ describe('fetchAgriDataBase', () => {
 	});
 
 	it('throws parsed Open-Meteo error on HTTP 400', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue(
-				new Response(
-					JSON.stringify({ error: true, reason: 'Latitude must be between -90 and 90' }),
-					{ status: 400 }
-				)
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(
+				JSON.stringify({ error: true, reason: 'Latitude must be between -90 and 90' }),
+				{ status: 400 }
 			)
 		);
+		vi.stubGlobal('fetch', fetchMock);
 
-		await expect(fetchAgriDataBase(47.26, -1.52)).rejects.toThrow(
+		await expect(fetchAgriDataBase(47.269, -1.529)).rejects.toThrow(
 			'Open-Meteo (400) : Latitude must be between -90 and 90'
 		);
+
+		const calledUrl = String(fetchMock.mock.calls[0]?.[0]);
+		expect(calledUrl).toContain('latitude=47.26');
+		expect(calledUrl).toContain('longitude=-1.52');
 	});
 });

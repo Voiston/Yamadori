@@ -1,6 +1,7 @@
 import * as m from '$lib/paraglide/messages.js';
 import type { Tree } from '$lib/types/tree';
 import type { ParkingPosition } from '$lib/types/parking';
+import { MAX_LEGACY_BACKUP_BYTES } from './types';
 
 export const LEGACY_BACKUP_VERSION = 1;
 
@@ -11,7 +12,14 @@ export type YamadoriLegacyBackup = {
 	parking: ParkingPosition | null;
 };
 
-export function parseLegacyBackup(raw: string): YamadoriLegacyBackup {
+export function parseLegacyBackup(raw: string, byteLength?: number): YamadoriLegacyBackup {
+	if (byteLength !== undefined && byteLength > MAX_LEGACY_BACKUP_BYTES) {
+		throw new Error(m.archive_too_large());
+	}
+	if (raw.length > MAX_LEGACY_BACKUP_BYTES) {
+		throw new Error(m.archive_too_large());
+	}
+
 	const parsed = JSON.parse(raw) as Partial<YamadoriLegacyBackup>;
 	if (!parsed || parsed.version !== LEGACY_BACKUP_VERSION || !Array.isArray(parsed.trees)) {
 		throw new Error(m.archive_unsupported_version());
@@ -25,8 +33,11 @@ export function parseLegacyBackup(raw: string): YamadoriLegacyBackup {
 }
 
 export async function readLegacyBackupFile(file: File): Promise<YamadoriLegacyBackup> {
+	if (file.size > MAX_LEGACY_BACKUP_BYTES) {
+		throw new Error(m.archive_too_large());
+	}
 	const raw = await file.text();
-	return parseLegacyBackup(raw);
+	return parseLegacyBackup(raw, file.size);
 }
 
 export function isLegacyJsonBackupFile(file: File): boolean {

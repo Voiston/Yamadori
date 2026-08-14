@@ -1,12 +1,16 @@
 import * as m from '$lib/paraglide/messages.js';
-import { unzip } from 'fflate';
+import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate';
 import { sha256Hex } from './checksums';
 import { base64ToBytes, decryptEnvelope, decryptPayload, isPasswordProtectedArchive } from './crypto';
 import { bytesToDataUrl, mimeTypeForExtension } from './media';
 import {
+	ARCHIVE_DONNEES_ENC_PATH,
+	ARCHIVE_DONNEES_JSON_PATH,
 	ARCHIVE_FORMAT_VERSION,
+	ARCHIVE_MANIFEST_PATH,
 	ArchiveError,
 	MAX_ARCHIVE_BYTES,
+	MAX_DECOMPRESSED_BYTES,
 	type ArchiveParseOptions,
 	type ArchiveImportPreview,
 	type ArchiveManifest,
@@ -19,13 +23,22 @@ import {
 	type ZipEntryMap
 } from './types';
 import type { Tree, TreeVisit, VoiceNote } from '$lib/types/tree';
+import { DEFAULT_ASSESSMENT, clampVisitPhotos } from '$lib/types/tree';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
+import { normalizeDeadwood } from '$lib/constants/assessment';
+import { sanitizeTreeId } from '$lib/utils/id';
+import { parseArchivePayload } from './payloadSchema';
 
-const MANIFEST_PATH = 'manifest.json';
-const DONNEES_PATH = 'donnees.enc';
-
-function normalizeZipPath(path: string): string {
-	return path.replaceAll('\\', '/').replace(/^\.\//, '');
+export function normalizeZipPath(path: string): string {
+	const n = path.replaceAll('\\', '/').replace(/^\.\//, '');
+	if (n.startsWith('/') || n.includes('://')) {
+		throw new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_entry_path());
+	}
+	const segments = n.split('/');
+	if (segments.includes('..') || segments.includes('')) {
+		throw new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_entry_path());
+	}
+	return n;
 }
 
 export function normalizeZipEntries(entries: ZipEntryMap): ZipEntryMap {
@@ -79,15 +92,88 @@ function readBlobBytesWithFileReader(blob: Blob): Promise<Uint8Array> {
 	});
 }
 
+function concatUnzipChunks(chunks: Uint8Array[]): Uint8Array {
+	const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+	const merged = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		merged.set(chunk, offset);
+		offset += chunk.length;
+	}
+	return merged;
+}
+
 function unzipToMap(data: Uint8Array): Promise<ZipEntryMap> {
 	return new Promise((resolve, reject) => {
-		unzip(data, (error, result) => {
-			if (error) {
-				reject(new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_zip()));
+		const entries: ZipEntryMap = {};
+		let totalUncompressed = 0;
+		let failed = false;
+		let openFiles = 0;
+		let pushComplete = false;
+
+		const checkDone = () => {
+			if (!failed && pushComplete && openFiles === 0) {
+				resolve(normalizeZipEntries(entries));
+			}
+		};
+
+		const unzipper = new Unzip((file) => {
+			if (failed) return;
+
+			const rawName = file.name.replaceAll('\\', '/');
+			if (rawName.endsWith('/')) return;
+
+			let name: string;
+			try {
+				name = normalizeZipPath(file.name);
+			} catch (error) {
+				failed = true;
+				reject(error instanceof ArchiveError ? error : new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_zip()));
 				return;
 			}
-			resolve(normalizeZipEntries(result));
+
+			openFiles += 1;
+			const chunks: Uint8Array[] = [];
+
+			file.ondata = (err, chunk, final) => {
+				if (failed) return;
+
+				if (err) {
+					failed = true;
+					reject(new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_zip()));
+					return;
+				}
+
+				totalUncompressed += chunk.length;
+				if (totalUncompressed > MAX_DECOMPRESSED_BYTES) {
+					failed = true;
+					reject(new ArchiveError('ARCHIVE_TOO_LARGE', m.archive_too_large()));
+					return;
+				}
+
+				chunks.push(chunk);
+				if (final) {
+					entries[name] = concatUnzipChunks(chunks);
+					openFiles -= 1;
+					checkDone();
+				}
+			};
+
+			file.start();
 		});
+
+		unzipper.register(UnzipInflate);
+		unzipper.register(UnzipPassThrough);
+
+		try {
+			unzipper.push(data, true);
+			pushComplete = true;
+			checkDone();
+		} catch {
+			if (!failed) {
+				reject(new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_zip()));
+			}
+		}
 	});
 }
 
@@ -97,8 +183,15 @@ function parseManifest(bytes: Uint8Array): ArchiveManifest {
 		if (!manifest || manifest.formatVersion !== ARCHIVE_FORMAT_VERSION) {
 			throw new ArchiveError('ARCHIVE_UNSUPPORTED_VERSION', m.archive_unsupported_version());
 		}
-		if (!manifest.files?.length || !manifest.encryption?.iv) {
+		if (!manifest.files?.length) {
 			throw new ArchiveError('ARCHIVE_MANIFEST_MISSING', m.archive_invalid_manifest());
+		}
+		if (manifest.encryption !== null && manifest.encryption !== undefined) {
+			if (!manifest.encryption.iv) {
+				throw new ArchiveError('ARCHIVE_MANIFEST_MISSING', m.archive_invalid_manifest());
+			}
+		} else {
+			manifest.encryption = null;
 		}
 		return manifest;
 	} catch (error) {
@@ -155,23 +248,49 @@ function voiceNoteFromArchive(
 }
 
 function visitFromArchive(entries: ZipEntryMap, visit: TreeVisitArchive): TreeVisit {
+	const pathList =
+		visit.photoPaths && visit.photoPaths.length > 0
+			? visit.photoPaths
+			: visit.photoPath
+				? [visit.photoPath]
+				: [];
+	const photos = clampVisitPhotos(
+		pathList.map((path) => loadMediaAsDataUrl(entries, path)).filter(Boolean)
+	);
+
 	return {
 		id: visit.id,
 		visitedAt: visit.visitedAt,
 		note: visit.note,
-		photoBase64: loadMediaAsDataUrl(entries, visit.photoPath),
-		voiceNote: voiceNoteFromArchive(entries, visit.voiceNote)
+		photos,
+		voiceNote: voiceNoteFromArchive(entries, visit.voiceNote),
+		yrsSnapshot: visit.yrsSnapshot ?? null
 	};
+}
+
+function resolvePayloadKeyMaterial(manifest: ArchiveManifest): Uint8Array | undefined {
+	if (!manifest.encryption) return undefined;
+	if (manifest.encryption.keyScope === 'archive') {
+		if (!manifest.encryption.keyMaterial) {
+			throw new ArchiveError('ARCHIVE_MANIFEST_MISSING', m.archive_invalid_manifest());
+		}
+		return base64ToBytes(manifest.encryption.keyMaterial);
+	}
+	return undefined;
 }
 
 function treeFromArchive(entries: ZipEntryMap, archive: TreeArchive): Tree {
 	return {
-		id: archive.id,
+		id: sanitizeTreeId(archive.id),
 		species: archive.species,
 		notes: archive.notes,
 		photos: archive.photos.map((path) => loadMediaAsDataUrl(entries, path)),
 		visits: archive.visits.map((visit) => visitFromArchive(entries, visit)),
-		assessment: archive.assessment,
+		assessment: {
+			...DEFAULT_ASSESSMENT,
+			...archive.assessment,
+			deadwood: normalizeDeadwood(archive.assessment?.deadwood)
+		},
 		voiceNote: voiceNoteFromArchive(entries, archive.voiceNote),
 		latitude: archive.latitude,
 		longitude: archive.longitude,
@@ -197,7 +316,15 @@ function collectMediaPaths(data: YamadoriArchiveData): string[] {
 		}
 		if (tree.voiceNote?.mediaPath) paths.push(normalizeZipPath(tree.voiceNote.mediaPath));
 		for (const visit of tree.visits) {
-			if (visit.photoPath) paths.push(normalizeZipPath(visit.photoPath));
+			const visitPhotoPaths =
+				visit.photoPaths && visit.photoPaths.length > 0
+					? visit.photoPaths
+					: visit.photoPath
+						? [visit.photoPath]
+						: [];
+			for (const path of visitPhotoPaths) {
+				if (path) paths.push(normalizeZipPath(path));
+			}
 			if (visit.voiceNote?.mediaPath) paths.push(normalizeZipPath(visit.voiceNote.mediaPath));
 		}
 	}
@@ -214,6 +341,40 @@ function validatePayload(data: YamadoriArchiveData, entries: ZipEntryMap): void 
 		if (!getZipEntry(entries, path)) {
 			throw new ArchiveError('ARCHIVE_MEDIA_MISSING', m.archive_media_ref_missing({ path }));
 		}
+	}
+}
+
+async function loadPayloadJson(
+	manifest: ArchiveManifest,
+	entries: ZipEntryMap
+): Promise<unknown> {
+	if (manifest.encryption === null) {
+		const plaintextEntry = getZipEntry(entries, ARCHIVE_DONNEES_JSON_PATH);
+		if (!plaintextEntry) {
+			throw new ArchiveError('ARCHIVE_MANIFEST_MISSING', m.archive_payload_missing());
+		}
+		try {
+			return JSON.parse(new TextDecoder().decode(plaintextEntry)) as unknown;
+		} catch {
+			throw new ArchiveError('ARCHIVE_INVALID_PAYLOAD', m.archive_invalid_payload());
+		}
+	}
+
+	const encrypted = getZipEntry(entries, ARCHIVE_DONNEES_ENC_PATH);
+	if (!encrypted) {
+		throw new ArchiveError('ARCHIVE_MANIFEST_MISSING', m.archive_encrypted_missing());
+	}
+
+	const plaintext = await decryptPayload(
+		encrypted,
+		base64ToBytes(manifest.encryption.iv),
+		resolvePayloadKeyMaterial(manifest)
+	);
+
+	try {
+		return JSON.parse(plaintext) as unknown;
+	} catch {
+		throw new ArchiveError('ARCHIVE_INVALID_PAYLOAD', m.archive_invalid_payload());
 	}
 }
 
@@ -269,7 +430,7 @@ async function parseArchiveZip(
 		throw new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_zip());
 	}
 
-	const manifestBytes = getZipEntry(entries, MANIFEST_PATH);
+	const manifestBytes = getZipEntry(entries, ARCHIVE_MANIFEST_PATH);
 	if (!manifestBytes) {
 		throw new ArchiveError('ARCHIVE_MANIFEST_MISSING', m.archive_manifest_missing());
 	}
@@ -280,22 +441,10 @@ async function parseArchiveZip(
 	await verifyChecksums(manifest, entries);
 	onProgress?.('validate', 50);
 
-	const encrypted = getZipEntry(entries, DONNEES_PATH);
-	if (!encrypted) {
-		throw new ArchiveError('ARCHIVE_MANIFEST_MISSING', m.archive_encrypted_missing());
-	}
-
 	onProgress?.('decrypt', 70);
 
-	const plaintext = await decryptPayload(encrypted, base64ToBytes(manifest.encryption.iv));
-
-	let data: YamadoriArchiveData;
-	try {
-		data = JSON.parse(plaintext) as YamadoriArchiveData;
-	} catch {
-		throw new ArchiveError('ARCHIVE_INVALID_PAYLOAD', m.archive_invalid_payload());
-	}
-
+	const raw = await loadPayloadJson(manifest, entries);
+	const data = parseArchivePayload(raw);
 	validatePayload(data, entries);
 	onProgress?.('decrypt', 90);
 
@@ -313,18 +462,20 @@ async function parseArchiveZip(
 		trees,
 		parking: data.parking,
 		appearanceSettings: data.appearanceSettings ?? { outdoorMode: false, darkMode: false, simpleMode: false },
-		locationSettings: data.locationSettings ?? { backgroundTrackingEnabled: false },
+		apiSettings: data.apiSettings,
 		preview
 	};
 }
 
-/** Scan non-encrypted zip text entries for GPS-like patterns (used in tests). */
+/** Scan non-payload zip text entries for GPS-like patterns (used in tests). */
 export function scanEntriesForGpsLeak(entries: ZipEntryMap): string[] {
 	const leaks: string[] = [];
 	const gpsPattern = /"latitude"\s*:\s*-?\d+\.?\d*|"longitude"\s*:\s*-?\d+\.?\d*/;
+	const payloadNames = new Set([ARCHIVE_DONNEES_ENC_PATH, ARCHIVE_DONNEES_JSON_PATH]);
 
 	for (const [path, data] of Object.entries(entries)) {
-		if (normalizeZipPath(path) === DONNEES_PATH) continue;
+		const normalized = normalizeZipPath(path);
+		if (payloadNames.has(normalized)) continue;
 		const text = new TextDecoder().decode(data);
 		if (gpsPattern.test(text)) {
 			leaks.push(path);
@@ -336,4 +487,37 @@ export function scanEntriesForGpsLeak(entries: ZipEntryMap): string[] {
 
 export async function readArchiveFile(file: File): Promise<Blob> {
 	return file;
+}
+
+export type ArchiveManifestKeyScope = 'app' | 'archive' | 'plaintext';
+
+export async function readArchiveManifestKeyScope(
+	blob: Blob,
+	options?: { password?: string }
+): Promise<ArchiveManifestKeyScope | undefined> {
+	if (blob.size > MAX_ARCHIVE_BYTES) {
+		throw new ArchiveError('ARCHIVE_TOO_LARGE', m.archive_too_large());
+	}
+
+	const buffer = await readBlobBytes(blob);
+	let zipBuffer = buffer;
+
+	if (isPasswordProtectedArchive(buffer)) {
+		if (!options?.password) {
+			throw new ArchiveError('ARCHIVE_PASSWORD_REQUIRED', m.archive_password_required());
+		}
+		zipBuffer = await decryptEnvelope(buffer, options.password);
+	}
+
+	const entries = await unzipToMap(zipBuffer);
+	const manifestBytes = getZipEntry(entries, ARCHIVE_MANIFEST_PATH);
+	if (!manifestBytes) {
+		return undefined;
+	}
+
+	const manifest = parseManifest(manifestBytes);
+	if (manifest.encryption === null) {
+		return 'plaintext';
+	}
+	return manifest.encryption.keyScope === 'archive' ? 'archive' : 'app';
 }

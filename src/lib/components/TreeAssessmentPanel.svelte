@@ -6,13 +6,14 @@
 		getCernageOptions,
 		getDeadwoodOptions,
 		getNebariOptions,
-		getPhenologyObservedOptions,
 		getSizeOptions
 	} from '$lib/constants/assessment';
+	import AssessmentFieldHelp from '$lib/components/AssessmentFieldHelp.svelte';
+	import PhenologyChecklist from '$lib/components/PhenologyChecklist.svelte';
 	import { loadAgriData } from '$lib/stores/agriData.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import { updateAssessment } from '$lib/stores/trees.svelte';
-	import type { Tree, TreeAssessment } from '$lib/types/tree';
+	import type { DeadwoodFeature, Tree, TreeAssessment } from '$lib/types/tree';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let { tree }: { tree: Tree } = $props();
@@ -39,13 +40,14 @@
 		void appearanceSettingsState.locale;
 		return getCaliberOptions();
 	});
-	const phenologyOptions = $derived.by(() => {
-		void appearanceSettingsState.locale;
-		return getPhenologyObservedOptions();
-	});
 	const cernageOptions = $derived.by(() => {
 		void appearanceSettingsState.locale;
 		return getCernageOptions();
+	});
+
+	const potentialLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return `${m.assessment_potential()} : ${tree.assessment.potentialScore ?? '—'}/10`;
 	});
 
 	async function saveAssessment(assessment: TreeAssessment) {
@@ -53,18 +55,23 @@
 	}
 
 	async function updateField<K extends keyof TreeAssessment>(key: K, value: TreeAssessment[K]) {
-		await saveAssessment({ ...tree.assessment, [key]: value });
+		const assessment = { ...tree.assessment, [key]: value };
+		await saveAssessment(assessment);
 
 		if (
-			(key === 'observedPhenologyStage' || key === 'cernageStatus') &&
+			(key === 'observedPhenologyStage' ||
+				key === 'cernageStatus' ||
+				key === 'aoutementStatus' ||
+				key === 'leafFallPct') &&
 			tree.latitude !== null &&
 			tree.longitude !== null
 		) {
-			const assessment = { ...tree.assessment, [key]: value };
 			void loadAgriData(tree.latitude, tree.longitude, false, {
 				species: tree.species,
 				observedPhenologyStage: assessment.observedPhenologyStage,
 				cernageStatus: assessment.cernageStatus,
+				aoutementStatus: assessment.aoutementStatus,
+				leafFallPct: assessment.leafFallPct,
 				environmentExposure: tree.environmentExposure
 			});
 		}
@@ -75,7 +82,15 @@
 		value: TreeAssessment[K],
 		current: TreeAssessment[K]
 	) {
-		await updateField(key, current === value ? null : value);
+		await updateField(key, (current === value ? null : value) as TreeAssessment[K]);
+	}
+
+	async function toggleDeadwood(feature: DeadwoodFeature) {
+		const current = tree.assessment.deadwood ?? [];
+		const next = current.includes(feature)
+			? current.filter((entry) => entry !== feature)
+			: [...current, feature];
+		await updateField('deadwood', next);
 	}
 
 	let summary = $derived.by(() => {
@@ -84,7 +99,7 @@
 	});
 </script>
 
-<section class="rounded-xl border border-gray-100 bg-white shadow-sm">
+<section class="app-card">
 	<button
 		type="button"
 		class="flex w-full items-center justify-between gap-3 p-4 text-left"
@@ -114,8 +129,25 @@
 
 	{#if open}
 		<div class="flex flex-col gap-5 border-t border-gray-100 p-4">
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">{m.assessment_nebari()}</span>
+			<PhenologyChecklist
+				assessment={tree.assessment}
+				species={tree.species}
+				onChange={async (next) => {
+					await saveAssessment(next);
+					if (tree.latitude !== null && tree.longitude !== null) {
+						void loadAgriData(tree.latitude, tree.longitude, false, {
+							species: tree.species,
+							observedPhenologyStage: next.observedPhenologyStage,
+							cernageStatus: next.cernageStatus,
+							aoutementStatus: next.aoutementStatus,
+							leafFallPct: next.leafFallPct,
+							environmentExposure: tree.environmentExposure
+						});
+					}
+				}}
+			/>
+
+			<AssessmentFieldHelp label={m.assessment_nebari()} helpText={m.assessment_help_nebari()}>
 				<div class="flex flex-wrap gap-2">
 					{#each nebariOptions as option (option.value)}
 						<button
@@ -130,12 +162,12 @@
 						</button>
 					{/each}
 				</div>
-			</div>
+			</AssessmentFieldHelp>
 
-			<div class="flex flex-col gap-2">
-				<label for="trunk-diameter" class="text-sm font-medium text-forest-900">
-					{m.assessment_trunk_diameter()}
-				</label>
+			<AssessmentFieldHelp
+				label={m.assessment_trunk_diameter()}
+				helpText={m.assessment_help_trunk_diameter()}
+			>
 				<input
 					id="trunk-diameter"
 					type="number"
@@ -151,10 +183,9 @@
 					}}
 					class="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-base text-forest-900 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20"
 				/>
-			</div>
+			</AssessmentFieldHelp>
 
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">{m.assessment_bark()}</span>
+			<AssessmentFieldHelp label={m.assessment_bark()} helpText={m.assessment_help_bark()}>
 				<div class="flex flex-wrap gap-2">
 					{#each barkOptions as option (option.value)}
 						<button
@@ -169,17 +200,17 @@
 						</button>
 					{/each}
 				</div>
-			</div>
+			</AssessmentFieldHelp>
 
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">{m.assessment_deadwood()}</span>
+			<AssessmentFieldHelp label={m.assessment_deadwood()} helpText={m.assessment_help_deadwood()}>
 				<div class="flex flex-wrap gap-2">
 					{#each deadwoodOptions as option (option.value)}
 						<button
 							type="button"
-							onclick={() => toggleChip('deadwood', option.value, tree.assessment.deadwood)}
-							class="rounded-full px-3 py-2 text-sm transition active:scale-[0.98] {tree.assessment.deadwood ===
-							option.value
+							onclick={() => void toggleDeadwood(option.value)}
+							class="rounded-full px-3 py-2 text-sm transition active:scale-[0.98] {(tree.assessment
+								.deadwood ?? []
+							).includes(option.value)
 								? 'bg-forest-800 text-white'
 								: 'border border-gray-200 bg-white text-forest-900'}"
 						>
@@ -187,10 +218,9 @@
 						</button>
 					{/each}
 				</div>
-			</div>
+			</AssessmentFieldHelp>
 
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">{m.assessment_size()}</span>
+			<AssessmentFieldHelp label={m.assessment_size()} helpText={m.assessment_help_size()}>
 				<div class="flex flex-wrap gap-2">
 					{#each sizeOptions as option (option.value)}
 						<button
@@ -205,10 +235,9 @@
 						</button>
 					{/each}
 				</div>
-			</div>
+			</AssessmentFieldHelp>
 
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">{m.assessment_caliber()}</span>
+			<AssessmentFieldHelp label={m.assessment_caliber()} helpText={m.assessment_help_caliber()}>
 				<div class="flex flex-wrap gap-2">
 					{#each caliberOptions as option (option.value)}
 						<button
@@ -223,34 +252,9 @@
 						</button>
 					{/each}
 				</div>
-			</div>
+			</AssessmentFieldHelp>
 
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">{m.assessment_phenology()}</span>
-				<p class="text-xs text-muted">{m.assessment_phenology_hint()}</p>
-				<div class="flex flex-wrap gap-2">
-					{#each phenologyOptions as option (option.value)}
-						<button
-							type="button"
-							onclick={() =>
-								toggleChip(
-									'observedPhenologyStage',
-									option.value,
-									tree.assessment.observedPhenologyStage
-								)}
-							class="rounded-full px-3 py-2 text-sm transition active:scale-[0.98] {tree.assessment.observedPhenologyStage ===
-							option.value
-								? 'bg-forest-800 text-white'
-								: 'border border-gray-200 bg-white text-forest-900'}"
-						>
-							{option.label}
-						</button>
-					{/each}
-				</div>
-			</div>
-
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">{m.assessment_cernage()}</span>
+			<AssessmentFieldHelp label={m.assessment_cernage()} helpText={m.assessment_help_cernage()}>
 				<div class="flex flex-wrap gap-2">
 					{#each cernageOptions as option (option.value)}
 						<button
@@ -266,18 +270,15 @@
 						</button>
 					{/each}
 				</div>
-			</div>
+			</AssessmentFieldHelp>
 
-			<div class="flex flex-col gap-2">
-				<span class="text-sm font-medium text-forest-900">
-					{m.assessment_potential()} : {tree.assessment.potentialScore ?? '—'}/10
-				</span>
-				<div class="grid grid-cols-5 gap-2">
+			<AssessmentFieldHelp label={potentialLabel} helpText={m.assessment_help_potential()}>
+				<div class="grid grid-cols-5 gap-2 narrow:gap-1">
 					{#each Array.from({ length: 10 }, (_, i) => i + 1) as score (score)}
 						<button
 							type="button"
 							onclick={() => toggleChip('potentialScore', score, tree.assessment.potentialScore)}
-							class="flex h-10 items-center justify-center rounded-lg text-sm font-medium transition active:scale-[0.98] {tree.assessment.potentialScore ===
+							class="flex h-10 items-center justify-center rounded-lg text-sm font-medium transition active:scale-[0.98] narrow:text-xs {tree.assessment.potentialScore ===
 							score
 								? 'bg-forest-800 text-white'
 								: 'border border-gray-200 bg-white text-forest-900'}"
@@ -286,7 +287,7 @@
 						</button>
 					{/each}
 				</div>
-			</div>
+			</AssessmentFieldHelp>
 		</div>
 	{/if}
 </section>

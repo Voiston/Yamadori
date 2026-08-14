@@ -24,20 +24,6 @@ import {
 
 import {
 
-	isBackgroundLocationSupported,
-
-	isBackgroundWatching,
-
-	startBackgroundWatching,
-
-	stopBackgroundWatching
-
-} from '$lib/utils/backgroundLocation';
-
-import { locationSettingsState } from '$lib/stores/locationSettings.svelte';
-
-import {
-
 	createAltitudeSmootherState,
 
 	getTrimmedMeanAltitude,
@@ -66,21 +52,21 @@ import {
 
 	acquireConsumer,
 
+	capProfileForPowerSaving,
+
 	clearConsumers,
 
+	COMPASS_GPS_CONSUMER_ID,
+
 	isCaptureProfile,
-
 	releaseConsumer,
-
 	resolveActiveProfile,
-
 	shouldSuspendForAppBackground,
-
-	shouldUseBackgroundWatch,
-
+	resolveGpsLiveRefreshThresholdMs,
 	resolveGpsStaleRecovery,
-
-	GPS_NAVIGATION_STALE_MS,
+	resolveGpsStaleThresholdMs,
+	shouldRunGpsStaleWatchdog,
+	shouldRunLiveGpsRefresh,
 
 	type GpsConsumerMap
 
@@ -88,11 +74,20 @@ import {
 
 import { haversineBearingDeg, haversineDistanceM, normalizeHeading360 } from '$lib/utils/haversine';
 
-import { debugCounters, debugLog } from '$lib/utils/debug-log';
+import * as m from '$lib/paraglide/messages.js';
+
+import {
+	shouldDeferGpsSyncForCamera,
+	registerCameraSessionDeferredHandlers
+} from '$lib/utils/cameraCaptureSession';
 
 import { isNativeApp } from '$lib/utils/platform';
 
+import { powerSavingModeState } from '$lib/stores/powerSavingMode.svelte';
+
 import { App } from '@capacitor/app';
+
+import { shouldSkipPositionPublish } from '$lib/utils/positionPublishPolicy';
 
 
 
@@ -132,7 +127,7 @@ const LEGACY_CONSUMER_ID = '_legacy';
 
 let watchHandle: LocationWatchHandle | null = null;
 
-let backgroundWatchId: string | null = null;
+const positionListeners = new Set<(position: UserPosition) => void>();
 
 let lastWatchCoords: { latitude: number; longitude: number } | null = null;
 
@@ -146,15 +141,24 @@ let consumers: GpsConsumerMap = new Map();
 
 let appPaused = false;
 
+let syncHardwareWatchInFlight: Promise<void> | null = null;
+let syncHardwareWatchPending = false;
+
 let appLifecycleInitialized = false;
 
 let lastGpsUpdateAt: number | null = null;
 
+let lastPublishedAt: number | null = null;
+
+let lastPublishedCoords: { latitude: number; longitude: number } | null = null;
+
 let staleRecoveryStage: 'none' | 'requested-fix' = 'none';
 
 let watchdogTimer: ReturnType<typeof setInterval> | null = null;
+let liveRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
 const GPS_STALE_CHECK_MS = 5_000;
+const GPS_LIVE_REFRESH_CHECK_MS = 4_000;
 
 
 
@@ -178,12 +182,13 @@ function resolveProfile(profileOrPurpose: GpsProfile | GpsPurpose): GpsProfile {
 
 
 
-function touchLastGpsUpdate(): void {
-
+function touchLastGpsWatchUpdate(): void {
 	lastGpsUpdateAt = Date.now();
-
 	staleRecoveryStage = 'none';
+}
 
+function touchLastGpsFixUpdate(): void {
+	lastGpsUpdateAt = Date.now();
 }
 
 
@@ -204,24 +209,78 @@ function stopWatchdog(): void {
 	watchdogTimer = null;
 }
 
-function ensureWatchdogRunning(): void {
-	if (activeProfile !== 'navigation') {
+function stopLiveRefresh(): void {
+	if (!liveRefreshTimer) {
+		return;
+	}
+	clearInterval(liveRefreshTimer);
+	liveRefreshTimer = null;
+}
+
+function syncGpsTimers(profile: GpsProfile, consumerMap: GpsConsumerMap): void {
+	if (shouldRunGpsStaleWatchdog(profile, consumerMap)) {
+		if (!watchdogTimer) {
+			watchdogTimer = setInterval(() => {
+				void checkNavigationGpsStale();
+			}, GPS_STALE_CHECK_MS);
+		}
+	} else {
 		stopWatchdog();
+	}
+
+	if (shouldRunLiveGpsRefresh(profile, consumerMap)) {
+		if (!liveRefreshTimer) {
+			liveRefreshTimer = setInterval(() => {
+				void checkLiveGpsRefresh();
+			}, GPS_LIVE_REFRESH_CHECK_MS);
+		}
+	} else {
+		stopLiveRefresh();
+	}
+}
+
+function resolveGpsTimerPolicyKey(
+	profile: GpsProfile | null,
+	consumerMap: GpsConsumerMap
+): string {
+	if (!profile) {
+		return 'off';
+	}
+	return `${shouldRunLiveGpsRefresh(profile, consumerMap)}:${shouldRunGpsStaleWatchdog(profile, consumerMap)}`;
+}
+
+async function checkLiveGpsRefresh(): Promise<void> {
+	if (
+		!shouldRunLiveGpsRefresh(activeProfile, consumers) ||
+		consumers.size === 0 ||
+		!userPositionState.watching
+	) {
 		return;
 	}
-	if (watchdogTimer) {
+
+	if (lastGpsUpdateAt === null) {
 		return;
 	}
-	watchdogTimer = setInterval(() => {
-		void checkNavigationGpsStale();
-	}, GPS_STALE_CHECK_MS);
+
+	const refreshThresholdMs = resolveGpsLiveRefreshThresholdMs(activeProfile ?? 'watch');
+	const elapsed = Date.now() - lastGpsUpdateAt;
+
+	if (elapsed < refreshThresholdMs) {
+		return;
+	}
+
+	await requestCurrentPosition(activeProfile ?? 'watch');
 }
 
 
 
 async function checkNavigationGpsStale(): Promise<void> {
 
-	if (activeProfile !== 'navigation' || consumers.size === 0 || !userPositionState.watching) {
+	if (
+		!shouldRunGpsStaleWatchdog(activeProfile, consumers) ||
+		consumers.size === 0 ||
+		!userPositionState.watching
+	) {
 
 		return;
 
@@ -233,16 +292,13 @@ async function checkNavigationGpsStale(): Promise<void> {
 
 	}
 
+	const staleThresholdMs = resolveGpsStaleThresholdMs(activeProfile ?? 'navigation');
 	const elapsed = Date.now() - lastGpsUpdateAt;
 
 	const action = resolveGpsStaleRecovery(
-
 		elapsed,
-
-		GPS_NAVIGATION_STALE_MS,
-
+		staleThresholdMs,
 		staleRecoveryStage === 'requested-fix'
-
 	);
 
 	if (action === 'none') {
@@ -255,7 +311,7 @@ async function checkNavigationGpsStale(): Promise<void> {
 
 		staleRecoveryStage = 'requested-fix';
 
-		await requestCurrentPosition('navigation');
+		await requestCurrentPosition(activeProfile ?? 'navigation');
 
 		return;
 
@@ -407,16 +463,75 @@ function toUserPosition(reading: LocationReading): UserPosition {
 
 
 
-function handleLocationUpdate(reading: LocationReading): void {
-
-	touchLastGpsUpdate();
-
-	userPositionState.position = toUserPosition(reading);
-
+function publishUserPosition(position: UserPosition): void {
+	userPositionState.position = position;
 	userPositionState.error = '';
+	lastPublishedAt = Date.now();
+	lastPublishedCoords = {
+		latitude: position.latitude,
+		longitude: position.longitude
+	};
 
+	for (const listener of positionListeners) {
+		listener(position);
+	}
 }
 
+function handleLocationUpdate(reading: LocationReading): void {
+	touchLastGpsWatchUpdate();
+
+	const position = toUserPosition(reading);
+
+	if (
+		shouldSkipPositionPublish({
+			profile: activeProfile,
+			published: lastPublishedCoords,
+			lastPublishedAt,
+			now: Date.now(),
+			next: {
+				latitude: position.latitude,
+				longitude: position.longitude
+			},
+			liveNavigationActive: consumers.has(COMPASS_GPS_CONSUMER_ID)
+		})
+	) {
+		return;
+	}
+
+	publishUserPosition(position);
+}
+
+/** Movement-filtered position for UI (ParkingPanel, map markers). */
+export function getPublishedUserPosition(): UserPosition | null {
+	return userPositionState.position;
+}
+
+/** Wall-clock ms when the published position was last updated, or null. */
+export function getPublishedUserPositionUpdatedAt(): number | null {
+	return lastPublishedAt;
+}
+
+
+
+export function onUserPositionChange(listener: (position: UserPosition) => void): () => void {
+	positionListeners.add(listener);
+	return () => {
+		positionListeners.delete(listener);
+	};
+}
+
+
+
+function resolveEffectiveProfile(): GpsProfile | null {
+	const profile = resolveActiveProfile(consumers);
+	if (!profile) {
+		return null;
+	}
+	if (powerSavingModeState.active) {
+		return capProfileForPowerSaving(profile);
+	}
+	return profile;
+}
 
 
 function handleLocationPermissionFailure(): void {
@@ -465,16 +580,6 @@ async function startForegroundWatch(profile: GpsProfile): Promise<void> {
 
 
 
-async function startBackgroundWatch(): Promise<void> {
-
-	const handle = await startBackgroundWatching(handleLocationUpdate, handleLocationError);
-
-	backgroundWatchId = handle.id;
-
-}
-
-
-
 let pendingStop: Promise<void> = Promise.resolve();
 
 
@@ -489,19 +594,7 @@ async function stopHardwareWatch(): Promise<void> {
 
 		watchHandle = null;
 
-
-
-		if (backgroundWatchId || isBackgroundWatching()) {
-
-			await stopBackgroundWatching();
-
-			backgroundWatchId = null;
-
-		}
-
 	})();
-
-
 
 	await pendingStop;
 
@@ -510,7 +603,7 @@ async function stopHardwareWatch(): Promise<void> {
 
 
 function shouldSuspendForBackground(): boolean {
-	return shouldSuspendForAppBackground(appPaused, locationSettingsState.backgroundTrackingEnabled);
+	return shouldSuspendForAppBackground(appPaused);
 }
 
 
@@ -529,39 +622,15 @@ async function startHardwareWatch(profile: GpsProfile): Promise<void> {
 
 
 
-	const useBackground = shouldUseBackgroundWatch(
-
-		profile,
-
-		locationSettingsState.backgroundTrackingEnabled,
-
-		isBackgroundLocationSupported()
-
-	);
-
-
-
 	try {
 
-		if (useBackground) {
-
-			await startBackgroundWatch();
-
-		} else {
-
-			await startForegroundWatch(profile);
-
-		}
+		await startForegroundWatch(profile);
 
 		userPositionState.watching = true;
 
 		userPositionState.error = '';
 
-		if (profile === 'navigation') {
-			ensureWatchdogRunning();
-		} else {
-			stopWatchdog();
-		}
+		syncGpsTimers(profile, consumers);
 
 	} catch (error) {
 
@@ -570,6 +639,7 @@ async function startHardwareWatch(profile: GpsProfile): Promise<void> {
 		userPositionState.watching = false;
 
 		stopWatchdog();
+		stopLiveRefresh();
 
 	}
 
@@ -577,100 +647,76 @@ async function startHardwareWatch(profile: GpsProfile): Promise<void> {
 
 
 
-async function syncHardwareWatch(): Promise<void> {
-
-	const nextProfile = resolveActiveProfile(consumers);
-
-
+async function runSyncHardwareWatch(): Promise<void> {
+	const nextProfile = resolveEffectiveProfile();
 
 	if (!nextProfile || shouldSuspendForBackground()) {
-
-		if (watchHandle || backgroundWatchId) {
-
+		if (watchHandle) {
 			await stopHardwareWatch();
-
 		}
 
 		stopWatchdog();
+		stopLiveRefresh();
 
 		userPositionState.watching = false;
 
 		if (!nextProfile) {
-
 			activeProfile = null;
 
 			lastWatchCoords = null;
 
 			lastSmoothedReading = null;
 
-			resetAltitudeSmootherState(altitudeSmootherState);
+			lastPublishedAt = null;
 
+			lastPublishedCoords = null;
+
+			resetAltitudeSmootherState(altitudeSmootherState);
 		}
 
 		return;
-
 	}
 
-
-
-	if (nextProfile === activeProfile && (watchHandle || backgroundWatchId)) {
-
+	if (nextProfile === activeProfile && watchHandle) {
+		syncGpsTimers(nextProfile, consumers);
 		return;
-
 	}
-
-
-
-	debugCounters.gpsWatchStarts += 1;
-
-	debugLog(
-
-		'userPosition:syncHardwareWatch',
-
-		'gps watch profile change',
-
-		{
-
-			profile: nextProfile,
-
-			consumers: consumers.size,
-
-			starts: debugCounters.gpsWatchStarts,
-
-			stops: debugCounters.gpsWatchStops
-
-		},
-
-		'H6'
-
-	);
-
-
 
 	await stopHardwareWatch();
 
-
-
 	if (nextProfile !== activeProfile) {
-
 		lastWatchCoords = null;
 
 		lastSmoothedReading = null;
 
 		if (!isCaptureProfile(nextProfile)) {
-
 			resetAltitudeSmootherState(altitudeSmootherState);
-
 		}
-
 	}
-
-
 
 	activeProfile = nextProfile;
 
 	await startHardwareWatch(nextProfile);
+}
 
+async function syncHardwareWatch(): Promise<void> {
+	if (syncHardwareWatchInFlight) {
+		syncHardwareWatchPending = true;
+		return syncHardwareWatchInFlight;
+	}
+
+	syncHardwareWatchInFlight = (async () => {
+		try {
+			do {
+				syncHardwareWatchPending = false;
+				await runSyncHardwareWatch();
+			} while (syncHardwareWatchPending);
+		} finally {
+			syncHardwareWatchInFlight = null;
+		}
+	})();
+
+	return syncHardwareWatchInFlight;
 }
 
 
@@ -687,9 +733,19 @@ function ensureAppLifecycleListener(): void {
 
 	appLifecycleInitialized = true;
 
+	registerCameraSessionDeferredHandlers({
+		onGpsSyncDeferred: () => {
+			void syncHardwareWatch();
+		}
+	});
+
 	void App.addListener('appStateChange', ({ isActive }) => {
 
 		appPaused = !isActive;
+
+		if (shouldDeferGpsSyncForCamera()) {
+			return;
+		}
 
 		void syncHardwareWatch();
 
@@ -713,7 +769,7 @@ export function acquireLocationWatch(consumerId: string, profile: GpsProfile): (
 
 	if (!isLocationSupported()) {
 
-		userPositionState.error = 'Géolocalisation non supportée';
+		userPositionState.error = m.geo_not_supported();
 
 		return () => {};
 
@@ -721,15 +777,15 @@ export function acquireLocationWatch(consumerId: string, profile: GpsProfile): (
 
 
 
-	const previousProfile = resolveActiveProfile(consumers);
+	const previousProfile = resolveEffectiveProfile();
+	const timerPolicyBefore = resolveGpsTimerPolicyKey(previousProfile, consumers);
 
 	acquireConsumer(consumers, consumerId, profile);
 
-	const nextProfile = resolveActiveProfile(consumers);
+	const nextProfile = resolveEffectiveProfile();
+	const timerPolicyAfter = resolveGpsTimerPolicyKey(nextProfile, consumers);
 
-
-
-	if (nextProfile !== previousProfile || !watchHandle) {
+	if (nextProfile !== previousProfile || !watchHandle || timerPolicyBefore !== timerPolicyAfter) {
 
 		requestWatchSync();
 
@@ -751,27 +807,17 @@ export function releaseLocationWatch(consumerId: string): void {
 
 	}
 
-
-
-	debugCounters.gpsWatchStops += 1;
-
-	debugLog(
-
-		'userPosition:releaseLocationWatch',
-
-		'gps consumer released',
-
-		{ consumerId, stops: debugCounters.gpsWatchStops },
-
-		'H6'
-
-	);
-
-
+	const previousProfile = resolveEffectiveProfile();
+	const timerPolicyBefore = resolveGpsTimerPolicyKey(previousProfile, consumers);
 
 	releaseConsumer(consumers, consumerId);
 
-	void syncHardwareWatch();
+	const nextProfile = resolveEffectiveProfile();
+	const timerPolicyAfter = resolveGpsTimerPolicyKey(nextProfile, consumers);
+
+	if (nextProfile !== previousProfile || timerPolicyBefore !== timerPolicyAfter) {
+		void syncHardwareWatch();
+	}
 
 }
 
@@ -786,13 +832,39 @@ export function startWatchingPosition(purpose: GpsPurpose = 'watch'): void {
 
 
 export function stopWatchingPosition(): Promise<void> {
-
-	debugCounters.gpsWatchStops += 1;
-
 	clearConsumers(consumers);
-
 	return syncHardwareWatch();
+}
 
+let parkingWatchResyncTimer: ReturnType<typeof setTimeout> | null = null;
+let powerSavingWatchResyncTimer: ReturnType<typeof setTimeout> | null = null;
+const PARKING_WATCH_RESYNC_DEBOUNCE_MS = 300;
+const POWER_SAVING_WATCH_RESYNC_DEBOUNCE_MS = 300;
+
+export function resyncLocationWatchAfterPowerSavingChange(): Promise<void> {
+	return new Promise((resolve) => {
+		if (powerSavingWatchResyncTimer) {
+			clearTimeout(powerSavingWatchResyncTimer);
+		}
+
+		powerSavingWatchResyncTimer = setTimeout(() => {
+			powerSavingWatchResyncTimer = null;
+			ensureAppLifecycleListener();
+			void syncHardwareWatch().then(() => resolve());
+		}, POWER_SAVING_WATCH_RESYNC_DEBOUNCE_MS);
+	});
+}
+
+export function resyncLocationWatchAfterParkingChange(): void {
+	if (parkingWatchResyncTimer) {
+		clearTimeout(parkingWatchResyncTimer);
+	}
+
+	parkingWatchResyncTimer = setTimeout(() => {
+		parkingWatchResyncTimer = null;
+		ensureAppLifecycleListener();
+		void syncHardwareWatch();
+	}, PARKING_WATCH_RESYNC_DEBOUNCE_MS);
 }
 
 
@@ -805,7 +877,7 @@ export async function requestCurrentPosition(
 
 	if (!isLocationSupported()) {
 
-		userPositionState.error = 'Géolocalisation non supportée';
+		userPositionState.error = m.geo_not_supported();
 
 		return null;
 
@@ -843,11 +915,9 @@ export async function requestCurrentPosition(
 
 		activeProfile = previousProfile;
 
-		userPositionState.position = position;
+		publishUserPosition(position);
 
-		userPositionState.error = '';
-
-		touchLastGpsUpdate();
+		touchLastGpsFixUpdate();
 
 		return position;
 
@@ -887,6 +957,10 @@ export function resetPositionSmoothing(): void {
 
 	lastSmoothedReading = null;
 
+	lastPublishedAt = null;
+
+	lastPublishedCoords = null;
+
 	resetAltitudeSmootherState(altitudeSmootherState);
 
 }
@@ -897,4 +971,41 @@ export function getSmoothedAltitudeMeters(): number | null {
 	return getTrimmedMeanAltitude(altitudeSmootherState);
 }
 
+/** @internal Test hook for stale GPS recovery. */
+export function __checkGpsStaleForTests(): Promise<void> {
+	return checkNavigationGpsStale();
+}
+
+/** @internal Test hook for proactive live GPS refresh. */
+export function __checkLiveGpsRefreshForTests(): Promise<void> {
+	return checkLiveGpsRefresh();
+}
+
+export function __resetUserPositionForTests(): void {
+	userPositionState.position = null;
+	userPositionState.watching = false;
+	userPositionState.error = '';
+	watchHandle = null;
+	positionListeners.clear();
+	lastWatchCoords = null;
+	lastSmoothedReading = null;
+	altitudeSmootherState = createAltitudeSmootherState();
+	activeProfile = null;
+	consumers = new Map();
+	appPaused = false;
+	syncHardwareWatchInFlight = null;
+	syncHardwareWatchPending = false;
+	lastGpsUpdateAt = null;
+	lastPublishedAt = null;
+	lastPublishedCoords = null;
+	staleRecoveryStage = 'none';
+	stopWatchdog();
+	stopLiveRefresh();
+	pendingStop = Promise.resolve();
+	if (parkingWatchResyncTimer) {
+		clearTimeout(parkingWatchResyncTimer);
+		parkingWatchResyncTimer = null;
+	}
+	resetPositionSmoothing();
+}
 

@@ -90,3 +90,22 @@ export async function saveCachedGddArchiveDailyMeans(
 	await set(key, entry, gddArchiveStore);
 	await pruneGddArchiveCache();
 }
+
+export async function clearGddArchiveCache(): Promise<void> {
+	const allKeys = await keys(gddArchiveStore);
+	await Promise.all(allKeys.map((key) => del(key, gddArchiveStore)));
+}
+
+export async function getGddArchiveCacheStats(): Promise<{ count: number }> {
+	const allKeys = await keys(gddArchiveStore);
+	let count = 0;
+	for (const key of allKeys) {
+		const entry = await get<CachedGddArchiveEntry>(key, gddArchiveStore);
+		if (!entry || !isGddArchiveCacheEntryValid(entry.fetchedAt)) {
+			await del(key, gddArchiveStore);
+			continue;
+		}
+		count += 1;
+	}
+	return { count };
+}

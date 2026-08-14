@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="fi">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Tietosuojakäytäntö — Yamadori Scouting</title>
+	<style>
+		:root {
+			color-scheme: light;
+			--forest-900: #1a2e1a;
+			--forest-800: #2d4a2d;
+			--muted: #5c6b5c;
+			--bg: #f4f7f4;
+			--card: #ffffff;
+			--border: #d8e0d8;
+		}
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+			background: var(--bg);
+			color: var(--forest-900);
+			line-height: 1.55;
+		}
+		main {
+			max-width: 42rem;
+			margin: 0 auto;
+			padding: 1.5rem 1rem 3rem;
+		}
+		header {
+			margin-bottom: 1.5rem;
+		}
+		h1 {
+			margin: 0 0 0.75rem;
+			font-size: 1.5rem;
+			line-height: 1.25;
+		}
+		h2 {
+			margin: 0 0 0.5rem;
+			font-size: 1.125rem;
+		}
+		h3 {
+			margin: 0 0 0.75rem;
+			font-size: 0.75rem;
+			font-weight: 600;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			color: var(--muted);
+		}
+		h4 {
+			margin: 0;
+			font-size: 0.95rem;
+		}
+		p {
+			margin: 0.5rem 0 0;
+		}
+		.meta {
+			font-size: 0.875rem;
+			color: var(--muted);
+		}
+		.meta p { margin: 0.25rem 0; }
+		.lang-switch {
+			margin-bottom: 1rem;
+			font-size: 0.875rem;
+		}
+		.lang-switch a {
+			color: var(--forest-800);
+			font-weight: 600;
+			text-decoration: none;
+		}
+		.lang-switch a:hover { text-decoration: underline; }
+		.lang-switch [aria-current="page"] {
+			font-weight: 700;
+			color: var(--forest-900);
+		}
+		.intro { font-size: 0.95rem; }
+		.section, .inventory, .legal {
+			display: flex;
+			flex-direction: column;
+			gap: 0.75rem;
+			margin-top: 1.5rem;
+		}
+		.card {
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 0.75rem;
+			padding: 0.875rem 1rem;
+		}
+		.card p {
+			color: var(--muted);
+			font-size: 0.9rem;
+		}
+		footer {
+			margin-top: 2rem;
+			text-align: center;
+			font-size: 0.75rem;
+			color: var(--muted);
+		}
+		a { color: var(--forest-800); }
+	</style>
+</head>
+<body>
+	<main>
+		<div class="lang-switch">Kieli : <a href="privacy.html">Français</a> · <a href="privacy-en.html">English</a> · <a href="privacy-de.html">Deutsch</a> · <a href="privacy-es.html">Español</a> · <a href="privacy-it.html">Italiano</a> · <a href="privacy-nl.html">Nederlands</a> · <a href="privacy-sv.html">Svenska</a> · <a href="privacy-nb.html">Norsk</a> · <a href="privacy-pt.html">Português</a> · <a href="privacy-da.html">Dansk</a> · <span aria-current="page">Suomi</span></div>
+		<header>
+			<h1>Tietosuojakäytäntö</h1>
+			<div class="meta">
+				<p><strong>Sovellus :</strong> Yamadori Scouting (fr.yamadori.scouting)</p>
+				<p><strong>Julkaisija / yhteystiedot :</strong> <a href="mailto:david.voisard2@gmail.com">david.voisard2@gmail.com</a></p>
+				<p><strong>Viimeksi päivitetty :</strong> 13. elokuuta 2026</p>
+				<p><strong>Sovellusversio :</strong> 0.7.8</p>
+			</div>
+		</header>
+
+		<section class="legal">
+			<article class="card"><h4>Sovelluksen sisäiset ostot</h4><p>Yamadori Pro on kertaluonteinen ostos Google Play Billingin kautta. Tapahtumat käsittelee Google; Yamadori ei kerää eikä tallenna maksutietojasi. Vain ostotunnus säilytetään paikallisesti laitteella Pro-ominaisuuksien käyttöönottoa varten.</p></article>
+			<article class="card"><h4>Oikeutesi</h4><p>Yamadori ei luo käyttäjätilejä eikä lähetä inventointitietojasi julkaisijan palvelimelle. Voit tarkastella, muokata ja poistaa tietojasi suoraan sovelluksessa (puut, valokuvat, äänimuistiinpanot, välimuistit). Kysymyksissä ota yhteyttä yllä olevaan osoitteeseen.</p></article>
+			<article class="card"><h4>Muutokset</h4><p>Tätä käytäntöä voidaan päivittää uusien sovellusversioiden yhteydessä. Viimeisimmän päivityksen päivämäärä on sivun yläosassa.</p></article>
+		</section>
+
+		<section>
+			<h2>Yamadorin manifesti</h2>
+			<p class="intro">Yamadori ei synkronoi tiedustelutietojasi pilveen. Kenttämuistikirjasi asuu taskussasi.</p>
+		</section>
+
+		<section class="section"><h3>laitteellasi</h3><article class="card"><h4>Muistikirjasi, puhelimesi</h4><p>Ei tiliä, ei Yamadori-palvelinta. Tutkimusmerkintäsi, valokuvasi, äänimuistiinpanosi ja lähtöpisteesi pysyvät tällä laitteella. Oletuksena tiedot tallennetaan salaamattomina paikalliseen tallennustilaan; voit ottaa paikallisen salauksen käyttöön Asetuksista (valinnainen, Android) — se suojaa puita, pysäköintiä, vientisalasanaa ja GPS-asetuksia, mutta ei sää- tai karttavälimuisteja.</p></article>
+<article class="card"><h4>Rakennettu metsää varten</h4><p>Kartta-, sää- ja maarekisteritiedot tallennetaan paikallisesti välimuistiin. GPS toimii ilman verkkoa – jopa syvällä metsässä.</p></article>
+<article class="card"><h4>Suojaa muistikirjaasi</h4><p>Vie varmuuskopio säännöllisesti (USB-asema, henkilökohtainen pilvi). Ilman vientisalasanaa tiedosto takaa vain eheyden (tarkistussummat), ei luottamuksellisuutta: kuka tahansa tiedoston haltija voi purkaa tiedot. Salasanalla koko arkisto salataan (PBKDF2 + AES-GCM). Vihje on vain muistin tuki; se ei palauta salasanaa.</p></article>
+<article class="card"><h4>Täysi läpinäkyvyys</h4><p>Kuten paperimuistivihko laukussasi, tutkimustietosi pysyvät luettavissa lukitsemattomalla laitteella. Yamadori ei käytä Androidin automaattista varmuuskopiointia Googleen. Suosittelemme näytön lukitusta ja salasanalla suojattua vientiä.</p></article>
+<article class="card"><h4>Android-käyttöoikeudet</h4><p>Kamera: vain puukuvat, kun napautat Ota. Mikrofoni: äänimuistiinpanot (enintään 30 s) toiminnastasi. Sijainti: partio, kartta ja sää, vain sovelluksen ollessa etualalla. Kompassi: suunnan näyttö kaappauksen aikana, käsitelty paikallisesti. Ohjattu käyttöoikeustoiminto opastaa sinua ensimmäisen käynnistyksen yhteydessä – mitään ei pyydetä ilman syytä.</p></article></section>
+<section class="section"><h3>verkossa</h3><article class="card"><h4>Minimaalinen liitettävyys</h4><p>Kun olet verkossa, vain GPS-koordinaatit lähetetään julkisille sää-, maatalous-, kartta-, kiinteistö-, suojelualue- ja geokoodauspalveluille — ei koskaan valokuviasi tai muistiinpanojasi. Maittain: Open-Meteo, IGN / CNIG / basemap.de / OS / swisstopo / basemap.at / OpenTopo (BE, SE, JP, AU, DK, FI, IE, CA, NZ) / PDOK BRT (NL) / Kartverket (NO) / USGS (US), EEA, Natural England, FOEN, CadGIS, Nominatim (OpenStreetMap) ja muut.</p></article>
+<article class="card"><h4>Kolmannen osapuolen palveluita on kuultu</h4><p>Open-Meteo (ennusteet ja ilmastohistoria; kaupallinen käyttö kustantajan tilauksella), kansalliset kartat (IGN FR, CNIG ES, basemap.de, Ordnance Survey / OSM-varaus, swisstopo CH, basemap.at AT, OpenTopo BE/SE/JP/AU/DK/FI/IE/CA/NZ, PDOK BRT NL, Kartverket NO, USGS US), kiinteistö (IGN Apicarto, Catastro ES, Catasto IT, osittainen ALKIS DE, HMLR GB, AV/EGRID CH + ZH AVWFS, AT-kunta, CadGIS BE, BRK NL, kommun SE, matrikkel NO, DGT PT, Nominatim DK/FI/IE/JP, CAPAD AU, PAD-US, CPCAD CA, DOC NZ), suojelualueet (IGN FR, EEA, Natural England, FOEN/Pro Natura CH, CAPAD AU, MOE/KSJ A10 JP, PAD-US, CPCAD CA, DOC NZ), Nominatim/OpenStreetMap (paikannimet), kuntahakemistot maittain. Yamadorilla ei ole välipalvelinta: koordinaatit menevät suoraan näihin julkisiin palveluihin, joista jokaisella on oma tietosuojakäytäntönsä. Valokuvasi ja muistiinpanosi eivät koskaan poistu laitteesta tällä tavalla.</p></article>
+<article class="card"><h4>Ei seurantaa</h4><p>Ei Yamadori-tiliä, ei mainoksia, ei analytiikkaa (Firebase, kaatumistoimittajat jne.). Ei datan jälleenmyyntiä. Ei kolmannen osapuolen evästeitä: sovellus toimii paikallisesti Android WebView'ssa.</p></article></section>
+<section class="section"><h3>Sinä hallitset</h3><article class="card"><h4>Sinä päätät, kuka näkee paikkasi</h4><p>Puun jakaminen tai varmuuskopion vieminen on täysin sinun valintasi. Mitään ei lähetetä automaattisesti kolmansille osapuolille.</p></article>
+<article class="card"><h4>Läpinäkyvä GPS</h4><p>Etualalla GPS:ää käytetään puun etsimiseen, kartan näyttämiseen ja sään asettamiseen kontekstiin. Seuranta pysähtyy, kun sovellus on taustalla. Sijaintia ei lähetetä Yamadori-palvelimelle.</p></article>
+<article class="card"><h4>Katkaisit verkon</h4><p>Jokainen verkkoyhteys voidaan poistaa käytöstä yksitellen asetuksista. Jos poistat API:n käytöstä, ei enää reaaliaikaisia ​​pyyntöjä. jo ladattu välimuisti on edelleen käytettävissä offline-tilassa.</p></article></section>
+
+		<section class="inventory">
+			<div>
+				<h2>Tietojen inventaario</h2>
+				<p class="intro">Mitä Yamadori käsittelee kenttämuistikirjaasi varten – missä se on tallennettu, mikä menee verkkoon ja kuinka se poistetaan.</p>
+			</div>
+			<article class="card"><h4>GPS-koordinaatit</h4><p>Tallennettu laitteeseen (puut, pysäköinti, sijainti). Lähetetty verkossa: vain leveys-/pituusaste, käytössä oleville sovellusliittymille. Jaettavissa viennin tai puun jakamisen kautta. Poistaminen: poista puu tai tyhjennä välimuistit asetuksista.</p></article>
+<article class="card"><h4>Valokuvat</h4><p>Tallennettu laitteeseen. Yamadori ei koskaan lähettänyt verkossa. Jaettavissa viennin tai puun jakamisen kautta. Poistaminen: poista puu.</p></article>
+<article class="card"><h4>Äänimuistiinpanot</h4><p>Tallennettu laitteeseen. Ei koskaan lähetetty verkkoon. Jaettavissa vain varmuuskopion viennin kautta. Poistaminen: poista puu.</p></article>
+<article class="card"><h4>Sää ja ilmasto</h4><p>Välimuistissa paikallisesti pyynnön jälkeen. Koordinaatit lähetetään Open-Meteolle, kun kyseinen API on käytössä. Ei jaettu. Poisto: Asetukset → tyhjennä säävälimuisti.</p></article>
+<article class="card"><h4>Karttalaatat</h4><p>Välimuistissa paikallisesti. Näkyvän kartta-alueen laattapyynnöt maittain (IGN, CNIG, basemap.de, OS…). Ei jaettu. Poistaminen: Asetukset → tyhjennä karttavälimuisti.</p></article>
+<article class="card"><h4>Maarekisteri ja suojelualueet</h4><p>Välimuistissa paikallisesti. Koordinaatit lähetetään kansallisiin kiinteistö-/suojelualuepalveluihin, kun ne ovat käytössä. Ei jaettu. Poisto: Asetukset → tyhjennä kiinteistön välimuisti.</p></article>
+		</section>
+
+		<footer>Yamadori-manifesti — versio 0.7.8</footer>
+	</main>
+</body>
+</html>

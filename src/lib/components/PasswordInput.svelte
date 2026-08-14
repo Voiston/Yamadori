@@ -13,7 +13,7 @@
 		value?: string;
 		id?: string;
 		label?: string;
-		autocomplete?: string;
+		autocomplete?: HTMLInputElement['autocomplete'];
 		disabled?: boolean;
 		inputClass?: string;
 	} = $props();

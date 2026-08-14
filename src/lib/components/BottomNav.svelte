@@ -1,68 +1,77 @@
 <script lang="ts">
-
 	import { page } from '$app/state';
-
 	import { getMainNavTabs } from '$lib/navigation';
-
+	import { treeStore } from '$lib/stores/trees.svelte';
+	import { canAddTree } from '$lib/utils/featurePolicy';
+	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
-
+	import { hapticSelection } from '$lib/utils/haptics';
 	import * as m from '$lib/paraglide/messages.js';
-
 	import NavIcon from './NavIcon.svelte';
-
-
 
 	let routeId = $derived(page.route.id);
 
 	let navTabs = $derived.by(() => {
-
 		void appearanceSettingsState.locale;
-
 		return getMainNavTabs();
-
 	});
 
+	let captureBlocked = $derived(!canAddTree(treeStore.trees.length));
+
+	function onNavSelect() {
+		void hapticSelection();
+	}
+
+	function onCaptureBlocked() {
+		void hapticSelection();
+		openProPaywall('tree_limit');
+	}
 </script>
 
-
-
 <nav
-
 	class="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-100 bg-white pb-safe-unified"
-
 	aria-label={m.nav_main()}
-
 >
-
 	<div class="flex h-16 w-full items-stretch">
-
 		{#each navTabs as tab (tab.href)}
-
 			{@const active = routeId === tab.routeId}
+			{@const isCaptureTab = tab.routeId === '/capture'}
+			{@const disabled = isCaptureTab && captureBlocked}
 
-			<a
-
-				href={tab.href}
-
-				class="flex flex-1 flex-col items-center justify-center gap-1 transition active:scale-95 {active
-
-					? 'text-forest-800'
-
-					: 'text-muted'}"
-
-				aria-current={active ? 'page' : undefined}
-
-			>
-
-				<NavIcon icon={tab.icon} />
-
-				<span class="text-xs font-medium">{tab.label}</span>
-
-			</a>
-
+			{#if disabled}
+				<button
+					type="button"
+					class="flex flex-1 flex-col items-center justify-center gap-1 text-muted opacity-70 transition active:scale-95"
+					aria-label={m.pro_tree_limit_reached()}
+					onclick={onCaptureBlocked}
+				>
+					<span class="nav-tab-icon">
+						<NavIcon icon={tab.icon} class="h-6 w-6" />
+					</span>
+					<span class="text-xs font-medium">{tab.label}</span>
+				</button>
+			{:else}
+				<a
+					href={tab.href}
+					class="flex flex-1 flex-col items-center justify-center gap-1 transition active:scale-95 {active
+						? 'text-forest-800'
+						: 'text-muted'}"
+					aria-current={active ? 'page' : undefined}
+					onclick={onNavSelect}
+				>
+					<span
+						class="nav-tab-icon"
+						class:nav-tab-icon--active={active}
+						class:nav-tab-icon--capture={isCaptureTab && !active}
+					>
+						<NavIcon
+							icon={tab.icon}
+							class={isCaptureTab ? 'h-7 w-7' : 'h-6 w-6'}
+						/>
+					</span>
+					<span class="text-xs {active ? 'font-semibold' : 'font-medium'}">{tab.label}</span>
+				</a>
+			{/if}
 		{/each}
-
 	</div>
-
 </nav>
-

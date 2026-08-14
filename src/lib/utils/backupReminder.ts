@@ -5,6 +5,7 @@ import type { Tree } from '$lib/types/tree';
 export const BACKUP_REMINDER_STORAGE_KEY = 'yamadori-backup-reminder';
 export const BACKUP_REMINDER_DISMISS_KEY = 'yamadori-backup-reminder-dismissed';
 export const MAX_DAYS_WITHOUT_EXPORT = 14;
+export const INVENTORY_FINGERPRINT_PREFIX = 'v2:';
 
 export type BackupReminderPersisted = {
 	lastExportAt: string | null;
@@ -19,26 +20,16 @@ export type BackupWarning = {
 	reason: BackupWarningReason;
 };
 
-function getLastActivityAt(tree: Tree): string {
-	const lastVisit = tree.visits.reduce<string | null>((latest, visit) => {
-		if (!latest || visit.visitedAt > latest) {
-			return visit.visitedAt;
-		}
-		return latest;
-	}, null);
-	return lastVisit && lastVisit > tree.capturedAt ? lastVisit : tree.capturedAt;
-}
-
-export function computeDataFingerprint(
-	trees: Tree[],
-	parking: ParkingPosition | null
-): string {
-	const treeParts = trees
-		.map((tree) => `${tree.id}:${getLastActivityAt(tree)}`)
+export function computeTreeInventoryFingerprint(trees: Tree[]): string {
+	const ids = trees
+		.map((tree) => tree.id)
 		.sort()
 		.join('|');
-	const parkingPart = parking?.savedAt ? `parking:${parking.savedAt}` : 'parking:none';
-	return `${trees.length}:${treeParts}:${parkingPart}`;
+	return `${INVENTORY_FINGERPRINT_PREFIX}${trees.length}:${ids}`;
+}
+
+function isV2InventoryFingerprint(fingerprint: string | null): fingerprint is string {
+	return fingerprint?.startsWith(INVENTORY_FINGERPRINT_PREFIX) ?? false;
 }
 
 function daysSince(isoDate: string, now = Date.now()): number {
@@ -58,7 +49,7 @@ function formatStaleMessage(days: number): string {
 
 export function evaluateBackupWarning(
 	trees: Tree[],
-	parking: ParkingPosition | null,
+	_parking: ParkingPosition | null,
 	reminder: BackupReminderPersisted,
 	dismissed: boolean,
 	now = Date.now()
@@ -67,7 +58,7 @@ export function evaluateBackupWarning(
 		return null;
 	}
 
-	const fingerprint = computeDataFingerprint(trees, parking);
+	const inventoryFingerprint = computeTreeInventoryFingerprint(trees);
 	const { lastExportAt, lastExportFingerprint } = reminder;
 
 	if (!lastExportAt) {
@@ -78,7 +69,10 @@ export function evaluateBackupWarning(
 		};
 	}
 
-	if (lastExportFingerprint !== fingerprint) {
+	if (
+		isV2InventoryFingerprint(lastExportFingerprint) &&
+		lastExportFingerprint !== inventoryFingerprint
+	) {
 		return {
 			show: true,
 			message: m.backup_changed(),
@@ -86,13 +80,19 @@ export function evaluateBackupWarning(
 		};
 	}
 
-	const days = daysSince(lastExportAt, now);
-	if (days >= MAX_DAYS_WITHOUT_EXPORT) {
-		return {
-			show: true,
-			message: formatStaleMessage(days),
-			reason: 'stale'
-		};
+	const inventoryMatchesForStale =
+		!isV2InventoryFingerprint(lastExportFingerprint) ||
+		lastExportFingerprint === inventoryFingerprint;
+
+	if (inventoryMatchesForStale) {
+		const days = daysSince(lastExportAt, now);
+		if (days >= MAX_DAYS_WITHOUT_EXPORT) {
+			return {
+				show: true,
+				message: formatStaleMessage(days),
+				reason: 'stale'
+			};
+		}
 	}
 
 	return null;

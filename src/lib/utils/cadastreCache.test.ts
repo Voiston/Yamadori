@@ -16,6 +16,7 @@ vi.mock('idb-keyval', () => ({
 }));
 
 import { cadastreCacheKey, clearCadastreCache, clearCadastreMemoryCache, lookupCadastre } from './cadastre';
+import { apiSettingsState } from '$lib/stores/apiSettings.svelte';
 
 const parisLat = 48.8566;
 const parisLon = 2.3522;
@@ -43,6 +44,8 @@ describe('lookupCadastre persistent cache', () => {
 	beforeEach(async () => {
 		memoryStore.clear();
 		await clearCadastreCache();
+		apiSettingsState.loaded = true;
+		apiSettingsState.ignCadastre = true;
 		vi.stubGlobal('fetch', vi.fn());
 	});
 

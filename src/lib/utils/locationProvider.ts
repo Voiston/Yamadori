@@ -1,7 +1,9 @@
 import * as m from '$lib/paraglide/messages.js';
 import { Geolocation } from '@capacitor/geolocation';
 import {
+	getCapacitorGpsFixOptions,
 	getCapacitorGpsOptions,
+	getGpsFixOptions,
 	getGpsOptions,
 	profileFromPurpose,
 	type GpsProfile,
@@ -24,7 +26,12 @@ export type LocationWatchHandle = {
 	mode: 'web' | 'capacitor';
 };
 
-export type LocationPermissionStatus = 'granted' | 'coarse-only' | 'denied' | 'unsupported';
+export type LocationPermissionStatus =
+	| 'granted'
+	| 'coarse-only'
+	| 'prompt'
+	| 'denied'
+	| 'unsupported';
 
 const GEOLOCATION_PERMISSION_DENIED = 1;
 
@@ -45,6 +52,7 @@ export function locationPermissionErrorMessage(status: LocationPermissionStatus)
 	switch (status) {
 		case 'coarse-only':
 			return m.location_precise_required();
+		case 'prompt':
 		case 'denied':
 			return m.location_denied_yrs_required();
 		case 'unsupported':
@@ -70,6 +78,15 @@ export async function getLocationPermissionStatus(): Promise<LocationPermissionS
 		}
 		if (status.coarseLocation === 'granted') {
 			return 'coarse-only';
+		}
+		if (status.location === 'prompt' || status.location === 'prompt-with-rationale') {
+			return 'prompt';
+		}
+		if (
+			status.coarseLocation === 'prompt' ||
+			status.coarseLocation === 'prompt-with-rationale'
+		) {
+			return 'prompt';
 		}
 		return 'denied';
 	} catch {
@@ -145,8 +162,12 @@ function fromCapacitorPosition(position: {
 	};
 }
 
-function toCapacitorOptions(profile: GpsProfile) {
+function toCapacitorWatchOptions(profile: GpsProfile) {
 	return getCapacitorGpsOptions(profile);
+}
+
+function toCapacitorFixOptions(profile: GpsProfile) {
+	return getCapacitorGpsFixOptions(profile);
 }
 
 function resolveProfile(profileOrPurpose: GpsProfile | GpsPurpose): GpsProfile {
@@ -165,7 +186,7 @@ export async function getCurrentPosition(
 	}
 
 	if (isNativeApp()) {
-		const position = await Geolocation.getCurrentPosition(toCapacitorOptions(profile));
+		const position = await Geolocation.getCurrentPosition(toCapacitorFixOptions(profile));
 		return fromCapacitorPosition(position);
 	}
 
@@ -173,7 +194,7 @@ export async function getCurrentPosition(
 		navigator.geolocation.getCurrentPosition(
 			(position) => resolve(fromGeolocationPosition(position)),
 			(err) => reject(new Error(geolocationErrorMessage(err))),
-			getGpsOptions(profile)
+			getGpsFixOptions(profile)
 		);
 	});
 }
@@ -189,7 +210,7 @@ export async function startWatching(
 	}
 
 	if (isNativeApp()) {
-		const id = await Geolocation.watchPosition(toCapacitorOptions(profile), (position, err) => {
+		const id = await Geolocation.watchPosition(toCapacitorWatchOptions(profile), (position, err) => {
 			if (err) {
 				onError(err.message || 'Position indisponible');
 				return;

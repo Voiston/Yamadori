@@ -1,34 +1,38 @@
 <script lang="ts">
+	import OnboardingStepPanel from '$lib/components/OnboardingStepPanel.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
-	import { setOnboardingComplete } from '$lib/utils/onboarding';
-	import { openBackgroundLocationSettings } from '$lib/utils/backgroundLocation';
+	import { acceptLegalDisclaimer } from '$lib/stores/onboarding.svelte';
 	import {
 		requestCameraPermission,
 		requestCompassPermission,
 		requestLocationPermission,
-		requestMicrophonePermission,
-		requestNotificationPermission
+		requestMicrophonePermission
 	} from '$lib/utils/permissions';
 	import * as m from '$lib/paraglide/messages.js';
+	import { portal, BODY_PORTAL_TARGET, ONBOARDING_PANEL_CLASS } from '$lib/utils/portal';
+	import { sheetBackdrop, sheetPanel } from '$lib/utils/motion';
 
-	let { oncomplete }: { oncomplete: () => void } = $props();
+	let { onphasecomplete }: { onphasecomplete: () => void } = $props();
 
-	type StepId = 'welcome' | 'location' | 'media' | 'notifications' | 'compass' | 'backup' | 'legal';
+	type StepId = 'welcome' | 'location' | 'media' | 'compass' | 'capture_intro' | 'legal';
 
-	const stepIds: StepId[] = [
-		'welcome',
-		'location',
-		'media',
-		'notifications',
-		'compass',
-		'backup',
-		'legal'
-	];
+	const stepIds: StepId[] = ['welcome', 'location', 'media', 'compass', 'capture_intro', 'legal'];
 
 	let stepIndex = $state(0);
 	let working = $state(false);
 	let feedback = $state('');
 	let locationGranted = $state(false);
+
+	function blurActiveElement() {
+		if (document.activeElement instanceof HTMLElement) {
+			document.activeElement.blur();
+		}
+	}
+
+	function advanceStep() {
+		stepIndex += 1;
+		blurActiveElement();
+	}
 
 	let currentStepId = $derived(stepIds[stepIndex]);
 	let isLastStep = $derived(stepIndex >= stepIds.length - 1);
@@ -42,12 +46,10 @@
 				return m.onboarding_location_title();
 			case 'media':
 				return m.onboarding_camera_title();
-			case 'notifications':
-				return m.onboarding_notifications_title();
 			case 'compass':
 				return m.onboarding_compass_title();
-			case 'backup':
-				return m.onboarding_backup_title();
+			case 'capture_intro':
+				return m.onboarding_capture_intro_title();
 			case 'legal':
 				return m.onboarding_legal_title();
 		}
@@ -62,26 +64,38 @@
 				return m.onboarding_location_desc();
 			case 'media':
 				return m.onboarding_camera_desc();
-			case 'notifications':
-				return m.onboarding_notifications_desc();
 			case 'compass':
 				return m.onboarding_compass_desc();
-			case 'backup':
-				return m.onboarding_backup_desc();
+			case 'capture_intro':
+				return m.onboarding_capture_intro_desc();
 			case 'legal':
 				return m.onboarding_legal_desc();
 		}
 	});
 
+	let titleClass = $derived(
+		currentStepId === 'legal' ? 'text-2xl leading-tight sm:text-3xl' : 'text-xl'
+	);
+
+	let descriptionClass = $derived(
+		currentStepId === 'legal' ? 'text-base text-forest-800' : 'text-sm'
+	);
+
 	async function handlePrimaryAction() {
-		if (currentStepId === 'welcome' || currentStepId === 'backup') {
-			stepIndex += 1;
+		if (currentStepId === 'welcome' || currentStepId === 'capture_intro') {
+			advanceStep();
 			return;
 		}
 
 		if (currentStepId === 'legal') {
-			await setOnboardingComplete();
-			oncomplete();
+			working = true;
+			try {
+				await acceptLegalDisclaimer();
+				blurActiveElement();
+				onphasecomplete();
+			} finally {
+				working = false;
+			}
 			return;
 		}
 
@@ -109,13 +123,6 @@
 					}
 					break;
 				}
-				case 'notifications': {
-					const granted = await requestNotificationPermission();
-					feedback = granted
-						? m.onboarding_notifications_ok()
-						: m.onboarding_notifications_denied();
-					break;
-				}
 				case 'compass': {
 					const granted = await requestCompassPermission();
 					feedback = granted
@@ -126,6 +133,7 @@
 			}
 
 			stepIndex += 1;
+			blurActiveElement();
 		} finally {
 			working = false;
 		}
@@ -135,79 +143,66 @@
 		if (currentStepId === 'legal') {
 			return;
 		}
-		stepIndex += 1;
-	}
-
-	async function handleOpenLocationSettings() {
-		await openBackgroundLocationSettings();
+		advanceStep();
 	}
 </script>
 
 <div
-	class="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-safe pt-safe sm:items-center"
-	role="dialog"
-	aria-modal="true"
-	aria-labelledby="onboarding-title"
+	use:portal={BODY_PORTAL_TARGET}
+	data-yamadori-onboarding-overlay
+	class="fixed inset-0 z-50 flex items-end pb-onboarding-sheet pt-safe sm:items-center sm:justify-center sm:px-4"
+	role="presentation"
 >
-	<div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-		<p class="text-xs font-medium uppercase tracking-wide text-muted">
-			Étape {stepIndex + 1} / {stepIds.length}
-		</p>
-		<h2
-			id="onboarding-title"
-			class="mt-2 font-semibold text-forest-900 {currentStepId === 'legal'
-				? 'text-2xl leading-tight sm:text-3xl'
-				: 'text-xl'}"
-		>
-			{currentTitle}
-		</h2>
-		<p
-			class="mt-3 leading-relaxed text-muted {currentStepId === 'legal'
-				? 'text-base text-forest-800'
-				: 'text-sm'}"
-		>
-			{currentDescription}
-		</p>
+	<div class="absolute inset-0 bg-black/50" transition:sheetBackdrop role="presentation"></div>
+	<div
+		class="relative z-10 w-full"
+		transition:sheetPanel
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="onboarding-title"
+	>
+	<OnboardingStepPanel
+		progress={m.onboarding_step({ current: stepIndex + 1, total: stepIds.length })}
+		title={currentTitle}
+		titleId="onboarding-title"
+		description={currentDescription}
+		{titleClass}
+		{descriptionClass}
+		panelClass="{ONBOARDING_PANEL_CLASS} w-full"
+	>
+		{#snippet middle()}
+			{#if feedback}
+				<p class="rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
+					{feedback}
+				</p>
+			{/if}
 
-		{#if feedback}
-			<p class="mt-4 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
-				{feedback}
-			</p>
-		{/if}
+			{#if currentStepId === 'welcome'}
+				<p class="rounded-xl border border-gray-100 bg-forest-50 px-3 py-2 text-sm text-forest-800">
+					{m.onboarding_simple_mode_hint()}
+				</p>
+			{/if}
+		{/snippet}
 
-		{#if currentStepId === 'welcome'}
-			<p class="mt-4 rounded-xl border border-gray-100 bg-forest-50 px-3 py-2 text-sm text-forest-800">
-				{m.onboarding_simple_mode_hint()}
-			</p>
-		{/if}
-
-		{#if currentStepId === 'location'}
-			<button
-				type="button"
-				onclick={handleOpenLocationSettings}
-				class="mt-4 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-forest-800 transition active:scale-[0.98]"
-			>
-				{m.settings_open_location()}
-			</button>
-		{/if}
-
-		<div class="mt-6 flex flex-col gap-3">
+		{#snippet actions()}
 			<button
 				type="button"
 				onclick={() => void handlePrimaryAction()}
 				disabled={working}
-				class="rounded-xl bg-forest-800 px-4 py-3 text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+				class="btn-primary"
 			>
 				{#if working}
 					{m.climate_loading()}
 				{:else if currentStepId === 'welcome'}
-					Commencer
+					{m.onboarding_start()}
+				{:else if currentStepId === 'capture_intro'}
+					{m.onboarding_capture_intro_start()}
 				{:else if currentStepId === 'legal'}
 					{m.onboarding_legal_accept()}
 				{:else if isLastStep}
-					Terminer
+					{m.onboarding_finish()}
 				{:else}
-					Continuer
+					{m.onboarding_continue()}
 				{/if}
 			</button>
 
@@ -216,11 +211,12 @@
 					type="button"
 					onclick={handleSkip}
 					disabled={working}
-					class="rounded-xl px-4 py-2 text-sm font-medium text-muted transition active:scale-[0.98] disabled:opacity-50"
+					class="rounded-[var(--radius-control)] px-4 py-2 text-sm font-medium text-muted transition active:scale-[0.98] disabled:opacity-50"
 				>
 					{isLastStep ? m.onboarding_finish_skip() : m.onboarding_skip()}
 				</button>
 			{/if}
-		</div>
+		{/snippet}
+	</OnboardingStepPanel>
 	</div>
 </div>

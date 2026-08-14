@@ -3,7 +3,9 @@
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import { MAX_BACKUP_PASSWORD_HINT_LENGTH } from '$lib/stores/backupPasswordSettings.svelte';
 	import * as m from '$lib/paraglide/messages.js';
-	import { portal } from '$lib/utils/portal';
+	import { portal, APP_SHELL_PORTAL_TARGET } from '$lib/utils/portal';
+	import { modalFocus } from '$lib/utils/modalFocus';
+	import { sheetBackdrop, sheetPanel } from '$lib/utils/motion';
 
 	export type BackupPasswordFormMode = 'setup' | 'change' | 'remove';
 
@@ -17,6 +19,7 @@
 		mode = $bindable('setup' as BackupPasswordFormMode),
 		initialHint = '',
 		error = $bindable(null as string | null),
+		trapFocus = true,
 		onconfirm,
 		oncancel
 	}: {
@@ -24,6 +27,7 @@
 		mode?: BackupPasswordFormMode;
 		initialHint?: string;
 		error?: string | null;
+		trapFocus?: boolean;
 		onconfirm?: (result: BackupPasswordFormResult) => void;
 		oncancel?: () => void;
 	} = $props();
@@ -125,17 +129,26 @@
 
 {#if open}
 	<div
-		use:portal
-		class="fixed inset-0 z-[100] flex items-end justify-center bg-forest-900/40 p-4 sm:items-center"
+		use:portal={APP_SHELL_PORTAL_TARGET}
+		data-yamadori-portal
+		class="fixed inset-0 z-[100] flex items-end justify-center p-4 sm:items-center"
 		role="presentation"
-		onclick={handleBackdropClick}
 	>
 		<div
-			class="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+			class="absolute inset-0 bg-forest-900/40"
+			role="presentation"
+			transition:sheetBackdrop
+			onclick={handleBackdropClick}
+		></div>
+		<div
+			class="relative z-10 max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
 			role="alertdialog"
 			aria-modal="true"
 			aria-labelledby="backup-password-form-title"
+			transition:sheetPanel
+			use:modalFocus={trapFocus}
 		>
+			<div class="sheet-grabber sm:hidden" aria-hidden="true"></div>
 			<h2 id="backup-password-form-title" class="text-lg font-semibold text-forest-900">
 				{title}
 			</h2>
@@ -184,21 +197,14 @@
 				{/if}
 
 				{#if error}
-					<p class="text-sm text-red-600" role="alert">{error}</p>
+					<p class="text-sm text-[var(--color-danger)]" role="alert">{error}</p>
 				{/if}
 
 				<div class="flex gap-3 pt-2">
-					<button
-						type="button"
-						onclick={close}
-						class="flex h-12 flex-1 items-center justify-center rounded-xl border border-gray-200 text-base font-medium text-forest-900 transition active:scale-[0.98]"
-					>
+					<button type="button" onclick={close} class="btn-secondary flex-1">
 						{m.action_cancel()}
 					</button>
-					<button
-						type="submit"
-						class="flex h-12 flex-1 items-center justify-center rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.98]"
-					>
+					<button type="submit" class="btn-primary flex-1">
 						{m.action_confirm()}
 					</button>
 				</div>

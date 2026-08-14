@@ -1,7 +1,7 @@
 import type { Tree, VoiceNote } from '$lib/types/tree';
 import { zip } from 'fflate';
 import { sha256Hex } from './checksums';
-import { encryptPayload, encryptEnvelope, ivToBase64 } from './crypto';
+import { encryptEnvelope } from './crypto';
 import {
 	extensionForMime,
 	mediaZipPath,
@@ -9,7 +9,9 @@ import {
 	parseDataUrl
 } from './media';
 import {
+	ARCHIVE_DONNEES_JSON_PATH,
 	ARCHIVE_FORMAT_VERSION,
+	ARCHIVE_MANIFEST_PATH,
 	type ArchiveBuildOptions,
 	type ArchiveExportInput,
 	type ArchiveFileEntry,
@@ -23,16 +25,14 @@ import {
 	type ZipEntryMap
 } from './types';
 
-const MANIFEST_PATH = 'manifest.json';
-const DONNEES_PATH = 'donnees.enc';
-
 type MediaCollector = {
 	files: ZipEntryMap;
 	paths: string[];
+	dataUrlToPath: Map<string, string>;
 };
 
 function createMediaCollector(): MediaCollector {
-	return { files: {}, paths: [] };
+	return { files: {}, paths: [], dataUrlToPath: new Map() };
 }
 
 function addMediaFromDataUrl(
@@ -42,6 +42,9 @@ function addMediaFromDataUrl(
 ): string {
 	if (!dataUrl.trim()) return '';
 
+	const cached = collector.dataUrlToPath.get(dataUrl);
+	if (cached) return cached;
+
 	const parsed = parseDataUrl(dataUrl);
 	if (!parsed || parsed.bytes.length === 0) return '';
 
@@ -50,6 +53,7 @@ function addMediaFromDataUrl(
 	const path = mediaZipPath(opaqueId, `${filename}.${ext}`);
 	collector.files[path] = parsed.bytes;
 	collector.paths.push(path);
+	collector.dataUrlToPath.set(dataUrl, path);
 	return path;
 }
 
@@ -64,23 +68,36 @@ function exportVoiceNote(
 }
 
 function treeToArchive(tree: Tree, collector: MediaCollector): TreeArchive {
-	const photos = tree.photos.map((photo, index) =>
-		addMediaFromDataUrl(collector, photo, String(index))
-	);
+	const visits: TreeVisitArchive[] = tree.visits.map((visit) => {
+		const photoPaths = visit.photos
+			.map((photo, index) =>
+				addMediaFromDataUrl(collector, photo, `v-${visit.id}-${index}`)
+			)
+			.filter(Boolean);
+		return {
+			id: visit.id,
+			visitedAt: visit.visitedAt,
+			note: visit.note,
+			photoPaths,
+			photoPath: photoPaths[0] ?? '',
+			voiceNote: visit.voiceNote
+				? exportVoiceNote(visit.voiceNote, collector, `voice-${visit.id}`)
+				: null,
+			yrsSnapshot: visit.yrsSnapshot ?? null
+		};
+	});
+
+	const photos = tree.photos.map((photo, index) => {
+		if (!photo.trim()) return '';
+		return (
+			collector.dataUrlToPath.get(photo) ??
+			addMediaFromDataUrl(collector, photo, `orphan-${index}`)
+		);
+	});
 
 	const voiceNote: VoiceNoteArchive | null = tree.voiceNote
 		? exportVoiceNote(tree.voiceNote, collector, 'voice')
 		: null;
-
-	const visits: TreeVisitArchive[] = tree.visits.map((visit) => ({
-		id: visit.id,
-		visitedAt: visit.visitedAt,
-		note: visit.note,
-		photoPath: addMediaFromDataUrl(collector, visit.photoBase64, `v-${visit.id}`),
-		voiceNote: visit.voiceNote
-			? exportVoiceNote(visit.voiceNote, collector, `voice-${visit.id}`)
-			: null
-	}));
 
 	return {
 		id: tree.id,
@@ -118,58 +135,8 @@ async function buildFileEntries(files: ZipEntryMap): Promise<ArchiveFileEntry[]>
 	return entries.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export async function buildArchive(
-	input: ArchiveExportInput,
-	options?: ArchiveBuildOptions | ArchiveProgressCallback
-): Promise<Blob> {
-	const { password, onProgress } =
-		typeof options === 'function' ? { onProgress: options } : (options ?? {});
-	const collector = createMediaCollector();
-	const trees = input.trees.map((tree) => treeToArchive(tree, collector));
-
-	onProgress?.('media', 40);
-
-	const payload: YamadoriArchiveData = {
-		version: ARCHIVE_FORMAT_VERSION,
-		trees,
-		parking: input.parking,
-		appearanceSettings: input.appearanceSettings,
-		locationSettings: input.locationSettings
-	};
-
-	const plaintext = JSON.stringify(payload);
-	const { ciphertext, iv } = await encryptPayload(plaintext);
-
-	onProgress?.('encrypt', 60);
-
-	const zipFiles: ZipEntryMap = {
-		...collector.files,
-		[DONNEES_PATH]: ciphertext
-	};
-
-	const fileEntries = await buildFileEntries(zipFiles);
-	const manifest: ArchiveManifest = {
-		formatVersion: ARCHIVE_FORMAT_VERSION,
-		appVersion: input.appVersion,
-		exportedAt: new Date().toISOString(),
-		encryption: {
-			algorithm: 'AES-256-GCM',
-			keyScope: 'app',
-			iv: ivToBase64(iv)
-		},
-		stats: {
-			treeCount: trees.length,
-			mediaFileCount: collector.paths.length
-		},
-		files: fileEntries
-	};
-
-	const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
-	zipFiles[MANIFEST_PATH] = manifestBytes;
-
-	onProgress?.('zip', 80);
-
-	const zipped = await new Promise<Uint8Array>((resolve, reject) => {
+function zipEntries(zipFiles: ZipEntryMap): Promise<Uint8Array> {
+	return new Promise((resolve, reject) => {
 		const zipInput: Record<string, Uint8Array> = {};
 		for (const [path, data] of Object.entries(zipFiles)) {
 			zipInput[path] = data;
@@ -187,6 +154,61 @@ export async function buildArchive(
 			}
 		);
 	});
+}
+
+/**
+ * Build a Yamadori archive.
+ * - Without password: honest plaintext ZIP (`donnees.json`, `encryption: null`).
+ * - With password: same plaintext ZIP wrapped in a PBKDF2 password envelope
+ *   (key never stored in the archive).
+ */
+export async function buildArchive(
+	input: ArchiveExportInput,
+	options?: ArchiveBuildOptions | ArchiveProgressCallback
+): Promise<Blob> {
+	const { password, onProgress } =
+		typeof options === 'function' ? { onProgress: options } : (options ?? {});
+	const collector = createMediaCollector();
+	const trees = input.trees.map((tree) => treeToArchive(tree, collector));
+
+	onProgress?.('media', 40);
+
+	const payload: YamadoriArchiveData = {
+		version: ARCHIVE_FORMAT_VERSION,
+		trees,
+		parking: input.parking,
+		appearanceSettings: input.appearanceSettings,
+		...(input.apiSettings ? { apiSettings: input.apiSettings } : {})
+	};
+
+	const plaintextBytes = new TextEncoder().encode(JSON.stringify(payload));
+
+	onProgress?.('encrypt', 60);
+
+	const zipFiles: ZipEntryMap = {
+		...collector.files,
+		[ARCHIVE_DONNEES_JSON_PATH]: plaintextBytes
+	};
+
+	const fileEntries = await buildFileEntries(zipFiles);
+	const manifest: ArchiveManifest = {
+		formatVersion: ARCHIVE_FORMAT_VERSION,
+		appVersion: input.appVersion,
+		exportedAt: new Date().toISOString(),
+		encryption: null,
+		stats: {
+			treeCount: trees.length,
+			mediaFileCount: collector.paths.length
+		},
+		files: fileEntries
+	};
+
+	const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+	zipFiles[ARCHIVE_MANIFEST_PATH] = manifestBytes;
+
+	onProgress?.('zip', 80);
+
+	const zipped = await zipEntries(zipFiles);
 
 	onProgress?.('zip', 100);
 

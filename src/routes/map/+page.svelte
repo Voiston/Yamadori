@@ -2,7 +2,7 @@
 
 	import { page } from '$app/state';
 
-	import TopoMap from '$lib/components/TopoMap.svelte';
+	import TopoMapLazy from '$lib/components/TopoMapLazy.svelte';
 
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 
@@ -36,7 +36,7 @@
 
 <div class="flex h-full min-h-0 w-full flex-1 flex-col">
 
-	<TopoMap {focusTreeId} />
+	<TopoMapLazy {focusTreeId} />
 
 </div>
 

@@ -2,7 +2,9 @@
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import { portal } from '$lib/utils/portal';
+	import { modalFocus } from '$lib/utils/modalFocus';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
+	import { sheetBackdrop, sheetPanel } from '$lib/utils/motion';
 
 	let {
 		open = $bindable(false),
@@ -76,17 +78,25 @@
 {#if open}
 	<div
 		use:portal
-		class="fixed inset-0 z-[100] flex items-end justify-center bg-forest-900/40 p-4 sm:items-center"
+		class="fixed inset-0 z-[100] flex items-end justify-center p-4 sm:items-center"
 		role="presentation"
-		onclick={handleBackdropClick}
 	>
 		<div
-			class="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+			class="absolute inset-0 bg-forest-900/40"
+			role="presentation"
+			transition:sheetBackdrop
+			onclick={handleBackdropClick}
+		></div>
+		<div
+			class="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
 			role="alertdialog"
 			aria-modal="true"
 			aria-labelledby="password-dialog-title"
 			aria-describedby="password-dialog-message"
+			transition:sheetPanel
+			use:modalFocus
 		>
+			<div class="sheet-grabber sm:hidden" aria-hidden="true"></div>
 			<h2 id="password-dialog-title" class="text-lg font-semibold text-forest-900">
 				{resolvedTitle}
 			</h2>
@@ -104,22 +114,14 @@
 					<p class="mt-2 text-sm text-muted">{m.settings_backup_password_hint_display({ hint })}</p>
 				{/if}
 				{#if error}
-					<p class="mt-2 text-sm text-red-600" role="alert">{error}</p>
+					<p class="mt-2 text-sm text-[var(--color-danger)]" role="alert">{error}</p>
 				{/if}
 
 				<div class="mt-6 flex gap-3">
-					<button
-						type="button"
-						onclick={close}
-						class="flex h-12 flex-1 items-center justify-center rounded-xl border border-gray-200 text-base font-medium text-forest-900 transition active:scale-[0.98]"
-					>
+					<button type="button" onclick={close} class="btn-secondary flex-1">
 						{m.action_cancel()}
 					</button>
-					<button
-						type="submit"
-						disabled={!password.trim()}
-						class="flex h-12 flex-1 items-center justify-center rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
-					>
+					<button type="submit" disabled={!password.trim()} class="btn-primary flex-1">
 						{m.action_confirm()}
 					</button>
 				</div>

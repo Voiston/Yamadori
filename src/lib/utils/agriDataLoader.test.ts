@@ -26,6 +26,7 @@ vi.mock('$lib/utils/agri', async (importOriginal) => {
 });
 
 import * as m from '$lib/paraglide/messages.js';
+import { apiSettingsState } from '$lib/stores/apiSettings.svelte';
 import { resolveAgriData } from './agriDataLoader';
 import { saveCachedForecast } from './weatherCache';
 
@@ -68,6 +69,7 @@ function buildAgriData(latitude: number, longitude: number): AgriData {
 		heatStressDaysForecast7d: 0,
 		frostEventsPast7d: 0,
 		soilBufferScore: 70,
+		hydricStressKs: 1,
 		wsi: 31.4,
 		futureStressRiskMm: 5.6,
 		weeklyViability: null,
@@ -82,7 +84,10 @@ function buildAgriData(latitude: number, longitude: number): AgriData {
 				hydric: 14,
 				stressPenalty: 0
 			},
-			summary: 'Conditions acceptables.'
+			summary: 'Conditions acceptables.',
+			confidence: 'medium',
+			climateProfile: 'temperate_oceanic',
+			localization: 'local'
 		}
 	};
 }
@@ -91,6 +96,8 @@ describe('resolveAgriData', () => {
 	beforeEach(() => {
 		memoryStore.clear();
 		fetchAgriDataBaseMock.mockReset();
+		apiSettingsState.loaded = true;
+		apiSettingsState.openMeteoForecast = true;
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date('2026-06-22T12:00:00'));
 	});
@@ -107,6 +114,18 @@ describe('resolveAgriData', () => {
 		expect(result.source).toBe('live');
 		expect(result.data?.airTemperatureC).toBe(18);
 		expect(fetchAgriDataBaseMock).toHaveBeenCalledOnce();
+	});
+
+	it('skips network when a fresh forecast cache exists online', async () => {
+		const cached = buildAgriData(47.2, 2.2);
+		await saveCachedForecast(47.2, 2.2, cached);
+
+		const result = await resolveAgriData(47.2, 2.2, { species: 'Erable' }, true);
+
+		expect(fetchAgriDataBaseMock).not.toHaveBeenCalled();
+		expect(result.source).toBe('cache');
+		expect(result.cacheStale).toBe(false);
+		expect(result.data?.airTemperatureC).toBe(18);
 	});
 
 	it('falls back to cache when offline', async () => {

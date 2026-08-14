@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import type { ClimateHistory } from '$lib/types/climate';
 	import * as m from '$lib/paraglide/messages.js';
@@ -22,7 +23,11 @@
 	const frostYearLabels = $derived.by(() => {
 		void appearanceSettingsState.locale;
 		return (
-			climate?.yearlyStats.map((year) => `${year.frostDays} j · ${year.year}`).join(' · ') ?? ''
+			climate?.yearlyStats
+				.map((year) =>
+					m.climate_frost_year({ days: String(year.frostDays), year: String(year.year) })
+				)
+				.join(' · ') ?? ''
 		);
 	});
 
@@ -41,23 +46,19 @@
 	{#if offline && !climate && !loading}
 		<p class="mt-3 text-sm text-muted" role="status">{m.climate_online_required()}</p>
 	{:else if loading}
-		<div class="mt-4 flex items-center gap-3 text-sm text-muted" role="status">
-			<svg
-				class="h-5 w-5 animate-spin text-forest-600"
-				xmlns="http://www.w3.org/2000/svg"
-				fill="none"
-				viewBox="0 0 24 24"
-				aria-hidden="true"
-			>
-				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-				></circle>
-				<path
-					class="opacity-75"
-					fill="currentColor"
-					d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-				></path>
-			</svg>
-			{m.climate_analyzing()}
+		<div
+			class="mt-4 flex flex-col gap-3 md:grid md:grid-cols-3 md:gap-3"
+			role="status"
+			aria-busy="true"
+			aria-label={m.climate_analyzing()}
+		>
+			{#each [0, 1, 2] as i (i)}
+				<div class="rounded-lg bg-forest-50/60 px-4 py-3">
+					<Skeleton class="h-3.5 w-24" decorative />
+					<Skeleton class="mt-2 h-8 w-16" decorative />
+					<Skeleton class="mt-2 h-3 w-full" decorative />
+				</div>
+			{/each}
 		</div>
 	{:else if climate}
 		<p class="mt-1 text-xs text-muted">
@@ -76,7 +77,7 @@
 			<article class="rounded-lg bg-blue-50 px-4 py-3">
 				<p class="text-sm font-medium text-forest-900">🌧️ {m.climate_precipitation()}</p>
 				<p class="mt-1 text-2xl font-semibold text-forest-800">
-					{climate.avgAnnualPrecipitationMm} mm/an
+					{m.climate_precip_annual({ n: String(climate.avgAnnualPrecipitationMm) })}
 				</p>
 				<p class="mt-1 text-xs text-muted">{m.climate_precipitation_hint()}</p>
 			</article>
@@ -85,7 +86,7 @@
 				<p class="text-sm font-medium text-forest-900">☀️ {m.climate_frost_days()}</p>
 				<p class="mt-1 text-base font-semibold text-forest-800">{frostYearLabels}</p>
 				<p class="mt-1 text-xs text-muted">
-					Moyenne : {climate.avgFrostDaysPerYear} jours/an
+					{m.climate_frost_average({ days: String(climate.avgFrostDaysPerYear) })}
 				</p>
 			</article>
 		</div>

@@ -1,11 +1,16 @@
 import { ArchiveError } from './types';
+import * as m from '$lib/paraglide/messages.js';
 
 const APP_ARCHIVE_KEY_MATERIAL = 'yamadori-archive-v2';
 const IV_BYTES = 12;
 const ENVELOPE_MAGIC = new TextEncoder().encode('YAMADORI');
-const ENVELOPE_VERSION = 1;
+/** Legacy envelope: PBKDF2 100_000 iterations. */
+export const ENVELOPE_VERSION_LEGACY = 1;
+/** Current envelope: PBKDF2 600_000 iterations (OWASP 2023+). */
+export const ENVELOPE_VERSION = 2;
 const SALT_BYTES = 16;
-const PBKDF2_ITERATIONS = 100_000;
+export const PBKDF2_ITERATIONS_LEGACY = 100_000;
+export const PBKDF2_ITERATIONS = 600_000;
 const ENVELOPE_HEADER_BYTES = ENVELOPE_MAGIC.length + 1 + SALT_BYTES + IV_BYTES;
 
 let cachedKey: CryptoKey | null = null;
@@ -43,12 +48,23 @@ function hasEnvelopeMagic(bytes: Uint8Array): boolean {
 	return true;
 }
 
-export function isPasswordProtectedArchive(bytes: Uint8Array): boolean {
-	if (!hasEnvelopeMagic(bytes)) return false;
-	return bytes.length >= ENVELOPE_HEADER_BYTES && bytes[ENVELOPE_MAGIC.length] === ENVELOPE_VERSION;
+function iterationsForEnvelopeVersion(version: number): number | null {
+	if (version === ENVELOPE_VERSION_LEGACY) return PBKDF2_ITERATIONS_LEGACY;
+	if (version === ENVELOPE_VERSION) return PBKDF2_ITERATIONS;
+	return null;
 }
 
-async function deriveKeyFromPassword(password: string, salt: Uint8Array): Promise<CryptoKey> {
+export function isPasswordProtectedArchive(bytes: Uint8Array): boolean {
+	if (!hasEnvelopeMagic(bytes)) return false;
+	if (bytes.length < ENVELOPE_HEADER_BYTES) return false;
+	return iterationsForEnvelopeVersion(bytes[ENVELOPE_MAGIC.length]!) !== null;
+}
+
+async function deriveKeyFromPassword(
+	password: string,
+	salt: Uint8Array,
+	iterations: number
+): Promise<CryptoKey> {
 	const baseKey = await crypto.subtle.importKey(
 		'raw',
 		new TextEncoder().encode(password),
@@ -61,7 +77,7 @@ async function deriveKeyFromPassword(password: string, salt: Uint8Array): Promis
 		{
 			name: 'PBKDF2',
 			salt: copyBytes(salt),
-			iterations: PBKDF2_ITERATIONS,
+			iterations,
 			hash: 'SHA-256'
 		},
 		baseKey,
@@ -71,7 +87,11 @@ async function deriveKeyFromPassword(password: string, salt: Uint8Array): Promis
 	);
 }
 
-async function deriveVerificationHash(password: string, salt: Uint8Array): Promise<Uint8Array> {
+async function deriveVerificationHash(
+	password: string,
+	salt: Uint8Array,
+	iterations: number
+): Promise<Uint8Array> {
 	const baseKey = await crypto.subtle.importKey(
 		'raw',
 		new TextEncoder().encode(password),
@@ -84,7 +104,7 @@ async function deriveVerificationHash(password: string, salt: Uint8Array): Promi
 		{
 			name: 'PBKDF2',
 			salt: copyBytes(salt),
-			iterations: PBKDF2_ITERATIONS,
+			iterations,
 			hash: 'SHA-256'
 		},
 		baseKey,
@@ -94,34 +114,65 @@ async function deriveVerificationHash(password: string, salt: Uint8Array): Promi
 	return new Uint8Array(bits);
 }
 
+function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
+	if (a.length !== b.length) return false;
+	let diff = 0;
+	for (let i = 0; i < a.length; i += 1) {
+		diff |= a[i]! ^ b[i]!;
+	}
+	return diff === 0;
+}
+
 export async function hashPasswordForVerification(
 	password: string,
-	saltInput?: Uint8Array
-): Promise<{ salt: string; hash: string }> {
+	saltInput?: Uint8Array,
+	iterations: number = PBKDF2_ITERATIONS
+): Promise<{ salt: string; hash: string; iterations: number }> {
 	const salt = saltInput ?? crypto.getRandomValues(new Uint8Array(SALT_BYTES));
-	const hash = await deriveVerificationHash(password, salt);
+	const hash = await deriveVerificationHash(password, salt, iterations);
 	return {
 		salt: ivToBase64(salt),
-		hash: bytesToBase64(hash)
+		hash: bytesToBase64(hash),
+		iterations
 	};
 }
 
 export async function verifyPassword(
 	password: string,
 	saltBase64: string,
-	hashBase64: string
+	hashBase64: string,
+	iterations: number = PBKDF2_ITERATIONS
 ): Promise<boolean> {
 	const salt = base64ToBytes(saltBase64);
 	const expected = base64ToBytes(hashBase64);
-	const actual = await deriveVerificationHash(password, salt);
+	const actual = await deriveVerificationHash(password, salt, iterations);
+	return constantTimeEqual(actual, expected);
+}
 
-	if (actual.length !== expected.length) return false;
-
-	let diff = 0;
-	for (let i = 0; i < actual.length; i += 1) {
-		diff |= actual[i]! ^ expected[i]!;
+/**
+ * Verifies against the stored iteration count, then legacy 100k if needed
+ * (configs written before iterations were persisted).
+ */
+export async function verifyPasswordCompatible(
+	password: string,
+	saltBase64: string,
+	hashBase64: string,
+	iterations?: number
+): Promise<boolean> {
+	const primary = iterations ?? PBKDF2_ITERATIONS_LEGACY;
+	if (await verifyPassword(password, saltBase64, hashBase64, primary)) {
+		return true;
 	}
-	return diff === 0;
+	if (primary !== PBKDF2_ITERATIONS && (await verifyPassword(password, saltBase64, hashBase64, PBKDF2_ITERATIONS))) {
+		return true;
+	}
+	if (
+		primary !== PBKDF2_ITERATIONS_LEGACY &&
+		(await verifyPassword(password, saltBase64, hashBase64, PBKDF2_ITERATIONS_LEGACY))
+	) {
+		return true;
+	}
+	return false;
 }
 
 export async function encryptEnvelope(
@@ -130,7 +181,7 @@ export async function encryptEnvelope(
 ): Promise<Uint8Array> {
 	const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
 	const iv = generateIv();
-	const key = await deriveKeyFromPassword(password, salt);
+	const key = await deriveKeyFromPassword(password, salt, PBKDF2_ITERATIONS);
 	const encrypted = await crypto.subtle.encrypt(
 		{ name: 'AES-GCM', iv: copyBytes(iv) },
 		key,
@@ -154,6 +205,12 @@ export async function decryptEnvelope(
 		throw new ArchiveError('ARCHIVE_INVALID_ZIP', 'Not a password-protected archive.');
 	}
 
+	const version = bytes[ENVELOPE_MAGIC.length]!;
+	const iterations = iterationsForEnvelopeVersion(version);
+	if (iterations === null) {
+		throw new ArchiveError('ARCHIVE_INVALID_ZIP', 'Unsupported envelope version.');
+	}
+
 	const salt = bytes.slice(ENVELOPE_MAGIC.length + 1, ENVELOPE_MAGIC.length + 1 + SALT_BYTES);
 	const iv = bytes.slice(
 		ENVELOPE_MAGIC.length + 1 + SALT_BYTES,
@@ -162,7 +219,7 @@ export async function decryptEnvelope(
 	const ciphertext = bytes.slice(ENVELOPE_HEADER_BYTES);
 
 	try {
-		const key = await deriveKeyFromPassword(password, salt);
+		const key = await deriveKeyFromPassword(password, salt, iterations);
 		const decrypted = await crypto.subtle.decrypt(
 			{ name: 'AES-GCM', iv: copyBytes(iv) },
 			key,
@@ -174,7 +231,17 @@ export async function decryptEnvelope(
 	}
 }
 
-async function getAppArchiveKey(): Promise<CryptoKey> {
+async function importArchiveKey(keyMaterial: Uint8Array): Promise<CryptoKey> {
+	if (keyMaterial.length !== 32) {
+		throw new ArchiveError('ARCHIVE_INVALID_PAYLOAD', 'Invalid archive encryption key.');
+	}
+	return crypto.subtle.importKey('raw', copyBytes(keyMaterial), 'AES-GCM', false, [
+		'encrypt',
+		'decrypt'
+	]);
+}
+
+async function getLegacyAppArchiveKey(): Promise<CryptoKey> {
 	if (cachedKey) return cachedKey;
 
 	const raw = await crypto.subtle.digest(
@@ -185,11 +252,23 @@ async function getAppArchiveKey(): Promise<CryptoKey> {
 	return cachedKey;
 }
 
+export function generateArchiveKeyMaterial(): Uint8Array {
+	return crypto.getRandomValues(new Uint8Array(32));
+}
+
+async function resolveArchiveKey(keyMaterial?: Uint8Array): Promise<CryptoKey> {
+	if (keyMaterial) {
+		return importArchiveKey(keyMaterial);
+	}
+	return getLegacyAppArchiveKey();
+}
+
 export async function encryptPayload(
-	plaintext: string
+	plaintext: string,
+	keyMaterial?: Uint8Array
 ): Promise<{ ciphertext: Uint8Array; iv: Uint8Array }> {
 	const iv = generateIv();
-	const key = await getAppArchiveKey();
+	const key = await resolveArchiveKey(keyMaterial);
 	const encrypted = await crypto.subtle.encrypt(
 		{ name: 'AES-GCM', iv: copyBytes(iv) },
 		key,
@@ -202,9 +281,13 @@ export async function encryptPayload(
 	};
 }
 
-export async function decryptPayload(ciphertext: Uint8Array, iv: Uint8Array): Promise<string> {
+export async function decryptPayload(
+	ciphertext: Uint8Array,
+	iv: Uint8Array,
+	keyMaterial?: Uint8Array
+): Promise<string> {
 	try {
-		const key = await getAppArchiveKey();
+		const key = await resolveArchiveKey(keyMaterial);
 		const decrypted = await crypto.subtle.decrypt(
 			{ name: 'AES-GCM', iv: copyBytes(iv) },
 			key,
@@ -212,9 +295,6 @@ export async function decryptPayload(ciphertext: Uint8Array, iv: Uint8Array): Pr
 		);
 		return new TextDecoder().decode(decrypted);
 	} catch {
-		throw new ArchiveError(
-			'ARCHIVE_INVALID_PAYLOAD',
-			'Sauvegarde corrompue ou données chiffrées invalides.'
-		);
+		throw new ArchiveError('ARCHIVE_INVALID_PAYLOAD', m.archive_decrypt_failed());
 	}
 }

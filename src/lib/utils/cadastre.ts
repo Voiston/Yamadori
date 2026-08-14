@@ -1,10 +1,13 @@
 import * as m from '$lib/paraglide/messages.js';
+import { collectStatusForZone } from '$lib/geo/legal/usCollectStatus';
+import { getApiDisabledError, isApiEnabled } from '$lib/utils/apiPolicy';
 import type { CadastreInfo, CadastreZoneType } from '$lib/types/cadastre';
 import {
 	getCachedCadastre,
 	saveCachedCadastre,
 	clearCadastrePersistentCache
 } from '$lib/utils/cadastreCache';
+import { createTimedAbortSignal, isAbortError, throwIfAborted } from '$lib/utils/abortSignal';
 
 const APICARTO_PARCELLE_URL = 'https://apicarto.ign.fr/api/cadastre/parcelle';
 const APICARTO_COMMUNE_URL = 'https://apicarto.ign.fr/api/cadastre/commune';
@@ -34,6 +37,7 @@ const COVERAGE = {
 
 type GeoJsonFeature = {
 	properties?: Record<string, unknown>;
+	geometry?: { type: string; coordinates: unknown };
 };
 
 type GeoJsonFeatureCollection = {
@@ -116,40 +120,58 @@ function pickProperty(properties: Record<string, unknown>, keys: string[]): stri
 	return '';
 }
 
-async function fetchGeoJson(url: string): Promise<GeoJsonFeatureCollection | null> {
-	const controller = new AbortController();
-	const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+async function fetchGeoJson(
+	url: string,
+	options?: { signal?: AbortSignal }
+): Promise<GeoJsonFeatureCollection | null> {
+	const { signal, dispose } = createTimedAbortSignal(FETCH_TIMEOUT_MS, options?.signal);
 
 	try {
-		const response = await fetch(url, { signal: controller.signal });
+		const response = await fetch(url, { signal });
 		if (!response.ok) return null;
 		return (await response.json()) as GeoJsonFeatureCollection;
-	} catch {
+	} catch (error) {
+		if (isAbortError(error)) {
+			throw error;
+		}
 		return null;
 	} finally {
-		clearTimeout(timeoutId);
+		dispose();
 	}
 }
 
 async function fetchParcelFeature(
 	longitude: number,
-	latitude: number
+	latitude: number,
+	options?: { signal?: AbortSignal }
 ): Promise<GeoJsonFeature | null> {
 	const params = new URLSearchParams({
 		geom: pointGeometry(longitude, latitude),
 		_limit: '1'
 	});
-	const data = await fetchGeoJson(`${APICARTO_PARCELLE_URL}?${params}`);
-	const feature = data?.features?.[0];
-	return feature ?? null;
+	const data = await fetchGeoJson(`${APICARTO_PARCELLE_URL}?${params}`, options);
+	const feature = data?.features?.[0] ?? null;
+	const { writeCachedParcelGeometry } = await import('$lib/utils/parcelGeometryCache');
+	writeCachedParcelGeometry(
+		latitude,
+		longitude,
+		feature?.geometry
+			? { type: feature.geometry.type, coordinates: feature.geometry.coordinates }
+			: null
+	);
+	return feature;
 }
 
-async function fetchCommuneName(longitude: number, latitude: number): Promise<string> {
+async function fetchCommuneName(
+	longitude: number,
+	latitude: number,
+	options?: { signal?: AbortSignal }
+): Promise<string> {
 	const params = new URLSearchParams({
 		geom: pointGeometry(longitude, latitude),
 		_limit: '1'
 	});
-	const data = await fetchGeoJson(`${APICARTO_COMMUNE_URL}?${params}`);
+	const data = await fetchGeoJson(`${APICARTO_COMMUNE_URL}?${params}`, options);
 	const properties = data?.features?.[0]?.properties;
 	if (!properties) return '';
 
@@ -158,17 +180,19 @@ async function fetchCommuneName(longitude: number, latitude: number): Promise<st
 
 async function fetchPublicForestFeature(
 	longitude: number,
-	latitude: number
+	latitude: number,
+	options?: { signal?: AbortSignal }
 ): Promise<GeoJsonFeature | null> {
 	const geom = pointGeometry(longitude, latitude);
 
 	for (const source of PUBLIC_FOREST_WFS_SOURCES) {
+		throwIfAborted(options?.signal);
 		const params = new URLSearchParams({
 			source,
 			geom,
 			_limit: '1'
 		});
-		const data = await fetchGeoJson(`${APICARTO_WFS_URL}?${params}`);
+		const data = await fetchGeoJson(`${APICARTO_WFS_URL}?${params}`, options);
 		const feature = data?.features?.[0];
 		if (feature) return feature;
 	}
@@ -216,12 +240,55 @@ function parcelLabel(section: string, parcelNumber: string): string {
 export function getCadastreSummary(info: CadastreInfo): string {
 	const parcel = parcelLabel(info.section, info.parcelNumber);
 	const args = { parcel, commune: info.commune };
+	const unit = info.unitName || info.commune;
 
 	switch (info.zoneType) {
 		case 'state_forest':
 			return m.cadastre_summary_state_forest(args);
 		case 'communal_forest':
 			return m.cadastre_summary_communal_forest(args);
+		case 'national_forest':
+			return m.cadastre_summary_national_forest({ unit });
+		case 'blm':
+			return m.cadastre_summary_blm({ unit });
+		case 'national_park':
+			return m.cadastre_summary_national_park({ unit });
+		case 'wilderness':
+			return m.cadastre_summary_wilderness({ unit });
+		case 'state_park':
+			return m.cadastre_summary_state_park({ unit });
+		case 'state_land':
+			return m.cadastre_summary_state_land({ unit });
+		case 'local_park':
+			return m.cadastre_summary_local_park({ unit });
+		case 'tribal':
+			return info.section === 'NZ'
+				? m.cadastre_summary_whenua_rahui({ unit })
+				: info.section === 'AU'
+					? m.cadastre_summary_capad_ipa({ unit })
+					: m.cadastre_summary_tribal({ unit });
+		case 'military':
+			return m.cadastre_summary_military({ unit });
+		case 'other_federal':
+			return info.section === 'NZ'
+				? m.cadastre_summary_doc_conservation({ unit })
+				: info.section === 'AU'
+					? m.cadastre_summary_capad_conservation({ unit })
+					: m.cadastre_summary_other_federal({ unit });
+		case 'provincial_park':
+			return m.cadastre_summary_provincial_park({ unit });
+		case 'national_wildlife_area':
+			return m.cadastre_summary_nwa({ unit });
+		case 'ipca':
+			return info.section === 'AU'
+				? m.cadastre_summary_capad_ipa({ unit })
+				: m.cadastre_summary_ipca({ unit });
+		case 'crown_unverified':
+			return info.section === 'NZ'
+				? m.cadastre_summary_outside_pcl({ unit })
+				: info.section === 'AU'
+					? m.cadastre_summary_outside_capad({ unit })
+					: m.cadastre_summary_crown_unverified({ unit });
 		default:
 			return m.cadastre_summary_private(args);
 	}
@@ -233,6 +300,7 @@ export function getCadastreBannerMessage(info: CadastreInfo): { title: string; d
 		number: info.parcelNumber,
 		commune: info.commune
 	};
+	const unit = info.unitName || info.commune;
 
 	switch (info.zoneType) {
 		case 'state_forest':
@@ -245,6 +313,99 @@ export function getCadastreBannerMessage(info: CadastreInfo): { title: string; d
 				title: m.cadastre_communal_title(),
 				detail: m.cadastre_communal_detail(args)
 			};
+		case 'national_forest':
+			return {
+				title: m.cadastre_national_forest_title({ unit }),
+				detail: m.cadastre_national_forest_detail()
+			};
+		case 'blm':
+			return {
+				title: m.cadastre_blm_title({ unit }),
+				detail: m.cadastre_blm_detail()
+			};
+		case 'national_park':
+			return {
+				title: m.cadastre_national_park_title({ unit }),
+				detail: m.cadastre_national_park_detail()
+			};
+		case 'wilderness':
+			return {
+				title: m.cadastre_wilderness_title({ unit }),
+				detail: m.cadastre_wilderness_detail()
+			};
+		case 'state_park':
+		case 'state_land':
+		case 'local_park':
+			return {
+				title: m.cadastre_us_agency_title({ unit }),
+				detail: m.cadastre_us_agency_detail()
+			};
+		case 'tribal':
+			return info.section === 'NZ'
+				? {
+						title: m.cadastre_whenua_rahui_title({ unit }),
+						detail: m.cadastre_whenua_rahui_detail()
+					}
+				: info.section === 'AU'
+					? {
+							title: m.cadastre_capad_ipa_title({ unit }),
+							detail: m.cadastre_capad_ipa_detail()
+						}
+					: {
+							title: m.cadastre_tribal_title({ unit }),
+							detail: m.cadastre_tribal_detail()
+						};
+		case 'military':
+		case 'other_federal':
+			return info.section === 'NZ'
+				? {
+						title: m.cadastre_doc_conservation_title({ unit }),
+						detail: m.cadastre_doc_conservation_detail()
+					}
+				: info.section === 'AU'
+					? {
+							title: m.cadastre_capad_conservation_title({ unit }),
+							detail: m.cadastre_capad_conservation_detail()
+						}
+					: {
+							title: m.cadastre_other_federal_title({ unit }),
+							detail: m.cadastre_other_federal_detail()
+						};
+		case 'provincial_park':
+			return {
+				title: m.cadastre_provincial_park_title({ unit }),
+				detail: m.cadastre_provincial_park_detail()
+			};
+		case 'national_wildlife_area':
+			return {
+				title: m.cadastre_nwa_title({ unit }),
+				detail: m.cadastre_nwa_detail()
+			};
+		case 'ipca':
+			return info.section === 'AU'
+				? {
+						title: m.cadastre_capad_ipa_title({ unit }),
+						detail: m.cadastre_capad_ipa_detail()
+					}
+				: {
+						title: m.cadastre_ipca_title({ unit }),
+						detail: m.cadastre_ipca_detail()
+					};
+		case 'crown_unverified':
+			return info.section === 'NZ'
+				? {
+						title: m.cadastre_outside_pcl_title(),
+						detail: m.cadastre_outside_pcl_detail()
+					}
+				: info.section === 'AU'
+					? {
+							title: m.cadastre_outside_capad_title(),
+							detail: m.cadastre_outside_capad_detail()
+						}
+					: {
+							title: m.cadastre_crown_unverified_title(),
+							detail: m.cadastre_crown_unverified_detail()
+						};
 		default:
 			return {
 				title: m.cadastre_private_title(args),
@@ -259,16 +420,37 @@ export function getCadastreAccentClasses(zoneType: CadastreZoneType): {
 } {
 	switch (zoneType) {
 		case 'state_forest':
+		case 'national_forest':
+		case 'blm':
 			return { border: 'border-emerald-200', accent: 'bg-emerald-500' };
 		case 'communal_forest':
+		case 'state_park':
+		case 'state_land':
+		case 'local_park':
 			return { border: 'border-sky-200', accent: 'bg-sky-500' };
+		case 'national_park':
+		case 'wilderness':
+		case 'military':
+		case 'tribal':
+		case 'ipca':
+		case 'provincial_park':
+		case 'national_wildlife_area':
+			return { border: 'border-red-200', accent: 'bg-red-500' };
+		case 'other_federal':
+			return { border: 'border-orange-200', accent: 'bg-orange-500' };
+		case 'crown_unverified':
+			return { border: 'border-amber-200', accent: 'bg-amber-500' };
 		default:
 			return { border: 'border-amber-200', accent: 'bg-amber-500' };
 	}
 }
 
-async function lookupCadastreUncached(latitude: number, longitude: number): Promise<CadastreInfo | null> {
-	const parcelFeature = await fetchParcelFeature(longitude, latitude);
+async function lookupCadastreUncached(
+	latitude: number,
+	longitude: number,
+	options?: { signal?: AbortSignal }
+): Promise<CadastreInfo | null> {
+	const parcelFeature = await fetchParcelFeature(longitude, latitude, options);
 	const properties = parcelFeature?.properties ?? {};
 
 	const section = pickProperty(properties, ['section', 'SECTION']);
@@ -281,13 +463,13 @@ async function lookupCadastreUncached(latitude: number, longitude: number): Prom
 
 	let commune = pickProperty(properties, ['nom_com', 'nom_commune', 'commune', 'NOM_COM']);
 	if (!commune) {
-		commune = await fetchCommuneName(longitude, latitude);
+		commune = await fetchCommuneName(longitude, latitude, options);
 	}
 	if (!commune) {
 		commune = codeInsee || m.cadastre_unavailable();
 	}
 
-	const forestFeature = await fetchPublicForestFeature(longitude, latitude);
+	const forestFeature = await fetchPublicForestFeature(longitude, latitude, options);
 	const zoneType = forestFeature
 		? classifyForestZone(forestFeature.properties)
 		: 'private';
@@ -298,7 +480,8 @@ async function lookupCadastreUncached(latitude: number, longitude: number): Prom
 		parcelNumber,
 		codeInsee,
 		zoneType,
-		fetchedAt: new Date().toISOString()
+		fetchedAt: new Date().toISOString(),
+		collectStatus: collectStatusForZone(zoneType)
 	};
 }
 
@@ -308,8 +491,10 @@ async function lookupCadastreUncached(latitude: number, longitude: number): Prom
  */
 export async function lookupCadastre(
 	latitude: number,
-	longitude: number
+	longitude: number,
+	options?: { signal?: AbortSignal }
 ): Promise<CadastreInfo | null> {
+	throwIfAborted(options?.signal);
 	if (!isInCadastreCoverage(latitude, longitude)) {
 		return null;
 	}
@@ -326,7 +511,12 @@ export async function lookupCadastre(
 		return persisted;
 	}
 
+	if (!isApiEnabled('ignCadastre')) {
+		throw new Error(getApiDisabledError('ignCadastre'));
+	}
+
 	return throttleRequest(async () => {
+		throwIfAborted(options?.signal);
 		const again = readCached(key);
 		if (again !== undefined) return again;
 
@@ -336,7 +526,7 @@ export async function lookupCadastre(
 			return persistedAgain;
 		}
 
-		const result = await lookupCadastreUncached(latitude, longitude);
+		const result = await lookupCadastreUncached(latitude, longitude, options);
 		writeCache(key, result);
 		return result;
 	});

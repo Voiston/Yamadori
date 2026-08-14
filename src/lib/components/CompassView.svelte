@@ -1,8 +1,11 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { CompassTarget } from '$lib/types/compass';
+	import { getCoverPhotoThumb, type Tree } from '$lib/types/tree';
 	import CompassDial from '$lib/components/CompassDial.svelte';
 	import CompassNavArrow from '$lib/components/CompassNavArrow.svelte';
-	import TopoMap from '$lib/components/TopoMap.svelte';
+	import TopoMapLazy from '$lib/components/TopoMapLazy.svelte';
+	import AppLogoImage from './AppLogoImage.svelte';
 	import {
 		formatDistance,
 		haversineBearingDeg,
@@ -13,7 +16,14 @@
 		smoothBearing
 	} from '$lib/utils/haversine';
 	import { shouldUpdateCompassPosition } from '$lib/utils/compassPosition';
+	import {
+		createHeadingStabilityState,
+		headingToCardinal,
+		resetHeadingStabilityState,
+		updateHeadingStability
+	} from '$lib/utils/compass';
 	import type { GpsProfile } from '$lib/utils/geo';
+	import { formatAccuracy } from '$lib/utils/gps';
 	import { loadMagneticDeclinationDeg } from '$lib/utils/magneticDeclination';
 	import {
 		createHeadingFusionState,
@@ -33,6 +43,10 @@
 	import { isNativeApp } from '$lib/utils/platform';
 	import { acquireScreenWakeLock, releaseScreenWakeLock } from '$lib/utils/wakeLock';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import {
+		compassSettingsState,
+		initCompassSettings
+	} from '$lib/stores/compassSettings.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import { App } from '@capacitor/app';
 	import { untrack } from 'svelte';
@@ -61,20 +75,22 @@
 	let {
 		target,
 		focusTreeId,
-		focusCenter
+		focusCenter,
+		trackedTree
 	}: {
 		target: CompassTarget;
 		focusTreeId?: string;
 		focusCenter?: { latitude: number; longitude: number };
+		trackedTree?: Pick<Tree, 'id' | 'photos' | 'photoThumbs' | 'locationLabel' | 'species'>;
 	} = $props();
 
 	const fusionState = createHeadingFusionState();
+	const stabilityState = createHeadingStabilityState();
 	let sensorHeadingRaw = $state<number | null>(null);
 	let sensorReference = $state<'true' | 'magnetic'>('true');
 	let orientationEnabled = $state(false);
 	let orientationError = $state('');
 	let smoothedBearing = $state<number | null>(null);
-	let displayedDistance = $state<number | null>(null);
 	let lastBearingPosition = $state<{ latitude: number; longitude: number } | null>(null);
 	let displayRotation = $state(0);
 	let declinationDeg = $state<number | null>(null);
@@ -82,6 +98,7 @@
 	let viewMode = $state<CompassViewMode>(readStoredViewMode());
 	let headingLocked = $state(readStoredHeadingLock());
 	let orientationAttempt = $state(0);
+	let sensorUnstable = $state(false);
 
 	let needleColor = $derived(appearanceSettingsState.outdoorMode ? '#000000' : '#2d4a2d');
 
@@ -90,7 +107,23 @@
 		return m.onboarding_compass_title().replace(/\s*\([^)]*\)$/, '');
 	});
 
-	const distance = $derived(displayedDistance);
+	const distance = $derived.by(() => {
+		const position = userPositionState.position;
+		if (!position || target.latitude === null || target.longitude === null) {
+			return null;
+		}
+		return haversineDistanceM(
+			position.latitude,
+			position.longitude,
+			target.latitude,
+			target.longitude
+		);
+	});
+
+	const distanceLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return distance === null ? '' : formatDistance(distance);
+	});
 
 	const declinationGridKey = $derived.by(() => {
 		const position = userPositionState.position;
@@ -149,7 +182,6 @@
 		if (!position || target.latitude === null || target.longitude === null) {
 			untrack(() => {
 				smoothedBearing = null;
-				displayedDistance = null;
 				lastBearingPosition = null;
 			});
 			return;
@@ -178,12 +210,6 @@
 			: Number.POSITIVE_INFINITY;
 
 		smoothedBearing = smoothBearing(previousBearing, nextBearing, movedMeters);
-		displayedDistance = haversineDistanceM(
-			position.latitude,
-			position.longitude,
-			target.latitude,
-			target.longitude
-		);
 		lastBearingPosition = {
 			latitude: position.latitude,
 			longitude: position.longitude
@@ -191,6 +217,44 @@
 	});
 
 	let bearing = $derived(smoothedBearing);
+
+	let coverPhoto = $derived(trackedTree ? getCoverPhotoThumb(trackedTree) : '');
+
+	let coverPhotoAlt = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return `${m.photo_label()} — ${target.label}`;
+	});
+
+	let bearingLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (bearing === null) {
+			return null;
+		}
+		const degrees = Math.round(bearing);
+		return m.compass_bearing({
+			degrees: String(degrees),
+			cardinal: headingToCardinal(degrees)
+		});
+	});
+
+	let accuracyMeters = $derived(userPositionState.position?.accuracyMeters ?? null);
+
+	let accuracyLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (accuracyMeters === null) {
+			return null;
+		}
+		return formatAccuracy(accuracyMeters);
+	});
+
+	let treeDetailHref = $derived(
+		trackedTree ? resolve('/tree/[id]', { id: trackedTree.id }) : ''
+	);
+
+	let treeDetailAria = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return m.tree_view_detail({ label: target.label });
+	});
 
 	let trueSensorHeading = $derived.by(() => {
 		if (sensorHeadingRaw === null) {
@@ -202,13 +266,31 @@
 		return sensorHeadingRaw;
 	});
 
-	let heading = $derived.by(() => {
+	let headingResult = $derived.by(() => {
 		const position = userPositionState.position;
-		return processHeadingFusion(fusionState, {
+		const value = processHeadingFusion(fusionState, {
 			sensorHeading: trueSensorHeading,
 			gpsHeading: position?.courseDegrees ?? null,
 			speedMps: position?.speedMps ?? null
 		});
+		return { value, source: fusionState.activeSource };
+	});
+
+	let heading = $derived(headingResult.value);
+	let activeHeadingSource = $derived(headingResult.source);
+
+	let headingQualityLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (!orientationEnabled || heading === null) {
+			return null;
+		}
+		if (activeHeadingSource === 'gps') {
+			return m.compass_source_gps();
+		}
+		if (sensorUnstable) {
+			return m.compass_unstable();
+		}
+		return m.compass_source_sensor();
 	});
 
 	let arrowRotation = $derived.by(() => {
@@ -248,12 +330,15 @@
 	});
 
 	$effect(() => {
-		let profile: GpsProfile;
-		if (viewMode === 'map') {
-			profile = headingLocked ? 'navigation' : 'watch';
-		} else {
-			profile = headingLocked ? 'navigation' : 'proximity';
-		}
+		void initCompassSettings();
+	});
+
+	$effect(() => {
+		// Heading lock drives the map camera from device heading — keep high-rate
+		// navigation GPS. Otherwise honor Settings → compass GPS profile.
+		const profile: GpsProfile = headingLocked
+			? 'navigation'
+			: compassSettingsState.gpsProfile;
 		void requestCurrentPosition(profile);
 		const release = acquireLocationWatch('compass', profile);
 		return () => release();
@@ -275,6 +360,7 @@
 			stop = subscribeFusedHeading((sample) => {
 				sensorHeadingRaw = sample.heading;
 				sensorReference = sample.reference;
+				sensorUnstable = updateHeadingStability(stabilityState, sample.heading);
 			});
 		};
 
@@ -283,6 +369,8 @@
 			stop = null;
 			sensorHeadingRaw = null;
 			orientationEnabled = false;
+			resetHeadingStabilityState(stabilityState);
+			sensorUnstable = false;
 		};
 
 		const handleAppActiveChange = (isActive: boolean) => {
@@ -367,19 +455,19 @@
 		class="relative -mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] min-h-0 flex-1 flex-col overflow-hidden md:-mx-6"
 	>
 		<div class="absolute inset-x-4 top-3 z-40 flex items-start justify-between gap-2">
-			<div class="rounded-xl border border-gray-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur-sm">
+			<div class="app-card bg-white/95 px-3 py-2 backdrop-blur-sm">
 				<p class="text-sm font-semibold text-forest-900">{target.label}</p>
 				{#if distance !== null}
-					<p class="text-xs font-medium text-forest-800">{formatDistance(distance)}</p>
+					<p class="text-xs font-medium text-forest-800">{distanceLabel}</p>
 				{/if}
 			</div>
 			<div class="flex shrink-0 items-center gap-2">
 				<button
 					type="button"
 					onclick={toggleHeadingLock}
-					class="flex h-10 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold shadow-sm backdrop-blur-sm transition active:scale-[0.98] {headingLocked
+					class="flex h-10 items-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-sm font-semibold backdrop-blur-sm transition active:scale-[0.98] {headingLocked
 						? 'border-forest-600 bg-forest-800 text-white'
-						: 'border-gray-200 bg-white/95 text-forest-900'}"
+						: 'app-card border-0 bg-white/95 text-forest-900'}"
 					aria-pressed={headingLocked}
 					title={headingLocked ? m.compass_north_up() : m.compass_lock_heading()}
 				>
@@ -400,7 +488,7 @@
 				<button
 					type="button"
 					onclick={toggleViewMode}
-					class="flex h-10 items-center gap-1.5 rounded-xl border border-gray-200 bg-white/95 px-3 text-sm font-semibold text-forest-900 shadow-sm backdrop-blur-sm transition active:scale-[0.98]"
+					class="app-card flex h-10 items-center gap-1.5 border-0 bg-white/95 px-3 text-sm font-semibold text-forest-900 backdrop-blur-sm transition active:scale-[0.98]"
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -419,7 +507,7 @@
 			</div>
 		</div>
 
-		<TopoMap
+		<TopoMapLazy
 			{focusTreeId}
 			focusCenter={mapFocusCenter}
 			embedded
@@ -433,7 +521,7 @@
 				<CompassNavArrow {needleColor} aligned={isNavAligned && orientationEnabled} />
 				{#if !isNavAligned && orientationEnabled}
 					<p class="rounded-lg bg-white/90 px-2 py-1 text-[11px] font-medium text-muted shadow-sm">
-						Alignez la ligne devant vous
+						{m.compass_align_line()}
 					</p>
 				{/if}
 			</div>
@@ -444,7 +532,7 @@
 				<button
 					type="button"
 					onclick={retryOrientation}
-					class="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-900 shadow-sm"
+					class="app-card w-full border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-900"
 				>
 					{orientationError}
 				</button>
@@ -457,7 +545,7 @@
 			<div class="min-w-0 flex-1 text-center">
 				<h2 class="text-xl font-semibold text-forest-900">{target.label}</h2>
 				{#if distance !== null}
-					<p class="mt-2 text-2xl font-semibold text-forest-800">{formatDistance(distance)}</p>
+					<p class="mt-2 text-2xl font-semibold text-forest-800">{distanceLabel}</p>
 				{:else}
 					<p class="mt-2 text-sm text-muted">{m.compass_calculating()}</p>
 				{/if}
@@ -465,7 +553,7 @@
 			<button
 				type="button"
 				onclick={toggleViewMode}
-				class="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-forest-900 shadow-sm transition active:scale-[0.98]"
+				class="btn-secondary !h-10 !w-auto shrink-0 gap-1.5 px-3 text-sm font-semibold"
 			>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
@@ -484,6 +572,51 @@
 		</div>
 
 		<CompassDial {displayRotation} {needleColor} />
+
+		{#if headingQualityLabel}
+			<p
+				class="max-w-sm px-4 text-center text-xs {sensorUnstable && activeHeadingSource === 'sensor'
+					? 'font-medium text-amber-800'
+					: 'text-muted'}"
+			>
+				{headingQualityLabel}
+			</p>
+		{/if}
+
+		{#if trackedTree}
+			<a
+				href={treeDetailHref}
+				class="mx-4 w-full max-w-sm transition active:scale-[0.98]"
+				aria-label={treeDetailAria}
+			>
+				<article class="app-card flex items-center gap-4 p-4">
+					<div class="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-gray-100">
+						{#if coverPhoto}
+							<img
+								src={coverPhoto}
+								alt={coverPhotoAlt}
+								class="h-full w-full object-cover"
+								loading="lazy"
+								decoding="async"
+							/>
+						{:else}
+							<AppLogoImage class="h-full w-full object-cover" />
+						{/if}
+					</div>
+					<div class="min-w-0 flex-1">
+						{#if bearingLabel}
+							<p class="text-lg font-semibold tabular-nums text-forest-900">{bearingLabel}</p>
+						{/if}
+						{#if accuracyLabel}
+							<p class="mt-0.5 text-sm text-muted">{accuracyLabel}</p>
+						{/if}
+						{#if trackedTree.locationLabel}
+							<p class="mt-1 truncate text-xs text-muted">{trackedTree.locationLabel}</p>
+						{/if}
+					</div>
+				</article>
+			</a>
+		{/if}
 
 		{#if orientationError}
 			<button

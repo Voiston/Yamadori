@@ -1,19 +1,26 @@
 <script lang="ts">
 	import type { Tree } from '$lib/types/tree';
+	import { resolve } from '$app/paths';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import { treeStore } from '$lib/stores/trees.svelte';
+	import { canAddTree, isTreeAccessible } from '$lib/utils/featurePolicy';
+	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import TreeCard from './TreeCard.svelte';
+	import AppLogoImage from './AppLogoImage.svelte';
 
 	let {
 		trees,
 		distanceByTreeId = {},
 		emptyTitle,
-		emptyMessage
+		emptyMessage,
+		showCaptureCta = true
 	}: {
 		trees: Tree[];
 		distanceByTreeId?: Record<string, number>;
 		emptyTitle?: string;
 		emptyMessage?: string;
+		showCaptureCta?: boolean;
 	} = $props();
 
 	let resolvedEmptyTitle = $derived.by(() => {
@@ -25,6 +32,12 @@
 		void appearanceSettingsState.locale;
 		return emptyMessage ?? m.list_empty_hint();
 	});
+
+	let captureBlocked = $derived(!canAddTree(treeStore.trees.length));
+
+	function onCaptureBlocked() {
+		openProPaywall('tree_limit');
+	}
 </script>
 
 {#if trees.length === 0}
@@ -32,27 +45,43 @@
 		<div
 			class="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-forest-800/10 text-forest-800"
 		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				viewBox="0 0 24 24"
-				fill="currentColor"
-				class="h-10 w-10"
-				aria-hidden="true"
-			>
-				<path
-					d="M12 2C8.5 2 6 4.5 6 8c0 2 1 3.8 2.5 5-2.5 1.2-4.5 4-4.5 7.5 0 4.1 3.4 7.5 7.5 7.5s7.5-3.4 7.5-7.5c0-3.5-2-6.3-4.5-7.5C17 11.8 18 10 18 8c0-3.5-2.5-6-6-6z"
-				/>
-			</svg>
+			<AppLogoImage class="h-12 w-12 object-contain" />
 		</div>
 		<h2 class="text-xl font-semibold text-forest-900">{resolvedEmptyTitle}</h2>
 		<p class="mt-2 max-w-xs text-base text-muted">{resolvedEmptyMessage}</p>
+		{#if showCaptureCta}
+			{#if captureBlocked}
+				<button
+					type="button"
+					class="btn-primary btn-primary--inline mt-6"
+					onclick={onCaptureBlocked}
+				>
+					{m.nav_add()}
+				</button>
+			{:else}
+				<a href={resolve('/capture')} class="btn-primary btn-primary--inline mt-6">
+					{m.nav_add()}
+				</a>
+			{/if}
+		{/if}
 	</div>
 {:else}
-	<ul class="flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:gap-4 xl:grid-cols-3">
+	<ul class="tree-list flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:gap-4 xl:grid-cols-3">
 		{#each trees as tree (tree.id)}
-			<li>
-				<TreeCard {tree} distanceMeters={distanceByTreeId[tree.id] ?? null} />
+			<li class="tree-list-item">
+				<TreeCard
+					{tree}
+					distanceMeters={distanceByTreeId[tree.id] ?? null}
+					locked={!isTreeAccessible(tree.id, treeStore.trees)}
+				/>
 			</li>
 		{/each}
 	</ul>
 {/if}
+
+<style>
+	.tree-list-item {
+		content-visibility: auto;
+		contain-intrinsic-size: auto 7.5rem;
+	}
+</style>

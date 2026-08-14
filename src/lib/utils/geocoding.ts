@@ -1,13 +1,18 @@
 import * as m from '$lib/paraglide/messages.js';
+import { getApiDisabledError, isApiEnabled } from '$lib/utils/apiPolicy';
 import type { Tree } from '$lib/types/tree';
-import { getCachedGeocodeLabel, saveCachedGeocodeLabel } from '$lib/utils/geocodingCache';
+import { getCachedGeocodeLabel, saveCachedGeocodeLabel, getCachedGeocodeRaw, saveCachedGeocodeRaw } from '$lib/utils/geocodingCache';
+import { regionalApiCoordinates } from '$lib/utils/geo';
 import { getAcceptLanguage } from '$lib/utils/i18n/locale';
+import { createTimedAbortSignal, isAbortError, throwIfAborted } from '$lib/utils/abortSignal';
+import { createInFlightMap } from '$lib/utils/inFlight';
+
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
 const FETCH_TIMEOUT_MS = 10_000;
-const USER_AGENT = 'Yamadori/0.0.5 (bonsai field app)';
+const USER_AGENT = 'Yamadori/0.7.8 (bonsai field app)';
 const MIN_REQUEST_INTERVAL_MS = 1_000;
 
-type NominatimAddress = {
+export type NominatimAddress = {
 	village?: string;
 	town?: string;
 	city?: string;
@@ -17,15 +22,18 @@ type NominatimAddress = {
 	natural?: string;
 	county?: string;
 	state?: string;
+	country_code?: string;
+	[key: string]: string | undefined;
 };
 
-type NominatimResponse = {
+export type NominatimReverseResult = {
 	display_name?: string;
 	address?: NominatimAddress;
 };
 
 let lastRequestAt = 0;
 let queue: Promise<void> = Promise.resolve();
+const rawInFlight = createInFlightMap<NominatimReverseResult | null>();
 
 function throttleRequest<T>(fn: () => Promise<T>): Promise<T> {
 	const run = async (): Promise<T> => {
@@ -97,8 +105,87 @@ export function formatLocationLabel(tree: Pick<Tree, 'locationLabel'>): string |
 	return tree.locationLabel?.trim() || null;
 }
 
-export async function reverseGeocode(latitude: number, longitude: number): Promise<string> {
-	const cached = await getCachedGeocodeLabel(latitude, longitude);
+/**
+ * Shared Nominatim reverse (1 req/s throttle + in-flight coalesce).
+ * Returns null on soft failures; rethrows abort errors.
+ */
+export async function nominatimReverseRaw(
+	latitude: number,
+	longitude: number,
+	options?: { signal?: AbortSignal; zoom?: number }
+): Promise<NominatimReverseResult | null> {
+	throwIfAborted(options?.signal);
+
+	if (!isApiEnabled('nominatim')) {
+		return null;
+	}
+
+	const { latitude: apiLat, longitude: apiLon } = regionalApiCoordinates(latitude, longitude);
+	const zoom = options?.zoom ?? 14;
+	const acceptLanguage = getAcceptLanguage();
+	const inflightKey = `${apiLat.toFixed(2)}_${apiLon.toFixed(2)}:${zoom}:${acceptLanguage}`;
+
+	const cachedRaw = await getCachedGeocodeRaw(apiLat, apiLon, zoom, acceptLanguage);
+	if (cachedRaw) {
+		return cachedRaw as NominatimReverseResult;
+	}
+
+	return rawInFlight.run(inflightKey, () =>
+		throttleRequest(async () => {
+			throwIfAborted(options?.signal);
+
+			const cachedAgain = await getCachedGeocodeRaw(apiLat, apiLon, zoom, acceptLanguage);
+			if (cachedAgain) {
+				return cachedAgain as NominatimReverseResult;
+			}
+
+			const params = new URLSearchParams({
+				lat: String(apiLat),
+				lon: String(apiLon),
+				format: 'json',
+				addressdetails: '1',
+				zoom: String(zoom),
+				'accept-language': acceptLanguage
+			});
+
+			const { signal, dispose } = createTimedAbortSignal(FETCH_TIMEOUT_MS, options?.signal);
+
+			try {
+				const response = await fetch(`${NOMINATIM_URL}?${params}`, {
+					signal,
+					headers: {
+						Accept: 'application/json',
+						'Accept-Language': acceptLanguage,
+						'User-Agent': USER_AGENT
+					}
+				});
+
+				if (!response.ok) {
+					return null;
+				}
+
+				const payload = (await response.json()) as NominatimReverseResult;
+				await saveCachedGeocodeRaw(apiLat, apiLon, zoom, payload, acceptLanguage);
+				return payload;
+			} catch (error) {
+				if (isAbortError(error)) throw error;
+				return null;
+			} finally {
+				dispose();
+			}
+		})
+	);
+}
+
+export async function reverseGeocode(
+	latitude: number,
+	longitude: number,
+	options?: { signal?: AbortSignal }
+): Promise<string> {
+	throwIfAborted(options?.signal);
+	const { latitude: apiLat, longitude: apiLon } = regionalApiCoordinates(latitude, longitude);
+	const cacheLang = getAcceptLanguage();
+	const cached = await getCachedGeocodeLabel(apiLat, apiLon, cacheLang);
 	if (cached) {
 		return cached;
 	}
@@ -107,56 +194,49 @@ export async function reverseGeocode(latitude: number, longitude: number): Promi
 		throw new Error(m.geocode_online_required());
 	}
 
-	return throttleRequest(async () => {
-		const cachedAgain = await getCachedGeocodeLabel(latitude, longitude);
-		if (cachedAgain) {
-			return cachedAgain;
-		}
+	if (!isApiEnabled('nominatim')) {
+		throw new Error(getApiDisabledError('nominatim'));
+	}
 
-		const params = new URLSearchParams({			lat: String(latitude),
-			lon: String(longitude),
-			format: 'json',
-			addressdetails: '1',
-			'accept-language': getAcceptLanguage()
+	const cachedAgain = await getCachedGeocodeLabel(apiLat, apiLon, cacheLang);
+	if (cachedAgain) {
+		return cachedAgain;
+	}
+
+	try {
+		// Canonical reverse zoom 14 — shared with cadastre / municipality caches.
+		let data = await nominatimReverseRaw(latitude, longitude, {
+			signal: options?.signal,
+			zoom: 14
 		});
+		let label = data?.address
+			? formatAddressLabel(data.address, data.display_name)
+			: null;
 
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-		try {
-			const response = await fetch(`${NOMINATIM_URL}?${params}`, {
-				signal: controller.signal,
-				headers: {
-					'Accept-Language': getAcceptLanguage(),
-					'User-Agent': USER_AGENT
-				}
+		// Zoom 18 only when the coarser reverse cannot produce a usable label.
+		if (!label) {
+			data = await nominatimReverseRaw(latitude, longitude, {
+				signal: options?.signal,
+				zoom: 18
 			});
-
-			if (!response.ok) {
-				throw new Error(m.geocode_fetch_error());
-			}
-
-			const data = (await response.json()) as NominatimResponse;
-			const label = data.address
+			label = data?.address
 				? formatAddressLabel(data.address, data.display_name)
 				: null;
-
-			if (!label) {
-				throw new Error(m.geocode_not_found());
-			}
-
-			await saveCachedGeocodeLabel(latitude, longitude, label);
-			return label;
-		} catch (error) {
-			if (error instanceof DOMException && error.name === 'AbortError') {
-				throw new Error(m.geocode_timeout());
-			}
-			if (error instanceof Error) {
-				throw error;
-			}
-			throw new Error(m.geocode_error());
-		} finally {
-			clearTimeout(timeoutId);
 		}
-	});
+
+		if (!label) {
+			throw new Error(m.geocode_not_found());
+		}
+
+		await saveCachedGeocodeLabel(apiLat, apiLon, label, cacheLang);
+		return label;
+	} catch (error) {
+		if (error instanceof DOMException && error.name === 'AbortError') {
+			throw new Error(m.geocode_timeout());
+		}
+		if (error instanceof Error) {
+			throw error;
+		}
+		throw new Error(m.geocode_error());
+	}
 }

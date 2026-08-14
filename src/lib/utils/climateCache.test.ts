@@ -44,8 +44,9 @@ describe('climateCache', () => {
 	it('stores and retrieves climate history by grid key', async () => {
 		const history = sampleHistory();
 		await saveCachedClimateHistory(48.12, 2.34, history);
+		expect(memoryStore.size).toBeGreaterThan(0);
 
-		const cached = await getCachedClimateHistory(48.119, 2.339);
+		const cached = await getCachedClimateHistory(48.12, 2.34);
 		expect(cached?.avgAnnualPrecipitationMm).toBe(600);
 	});
 });

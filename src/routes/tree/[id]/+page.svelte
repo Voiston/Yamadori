@@ -1,43 +1,68 @@
 <script lang="ts">
-	import { base } from '$app/paths';
+	import { base, resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import AddVisitForm from '$lib/components/AddVisitForm.svelte';
-	import ClimateDataSection from '$lib/components/ClimateDataSection.svelte';
+	import ClimateDataSectionLazy from '$lib/components/ClimateDataSectionLazy.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import EnvironmentExposureField from '$lib/components/EnvironmentExposureField.svelte';
 	import PhotoGallery from '$lib/components/PhotoGallery.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import TreeAssessmentPanel from '$lib/components/TreeAssessmentPanel.svelte';
 	import TreeDetailActions from '$lib/components/TreeDetailActions.svelte';
 	import VisitTimeline from '$lib/components/VisitTimeline.svelte';
-	import VoiceNotePlayer from '$lib/components/VoiceNotePlayer.svelte';
-	import VoiceNoteRecorder from '$lib/components/VoiceNoteRecorder.svelte';
+	import VoiceNotePlayerLazy from '$lib/components/VoiceNotePlayerLazy.svelte';
+	import VoiceNoteRecorderLazy from '$lib/components/VoiceNoteRecorderLazy.svelte';
 	import SpeciesAutocomplete from '$lib/components/SpeciesAutocomplete.svelte';
 	import CadastreBanner from '$lib/components/CadastreBanner.svelte';
 	import VetoLegalChecklist from '$lib/components/VetoLegalChecklist.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
-	import { deleteTree, getTreeById, toggleFavorite, updateCadastre, updateClimate, updateLocationLabel, updateTree, updateVoiceNote } from '$lib/stores/trees.svelte';
+	import {
+		applyTreeEnrichment,
+		deleteTree,
+		ensureTreeHydrated,
+		getTreeById,
+		runPersistBatch,
+		toggleFavorite,
+		treeStore,
+		updateTree,
+		updateVoiceNote
+	} from '$lib/stores/trees.svelte';
+	import {
+		fetchTreeEnrichment,
+		toTreeEnrichmentPatch,
+		type TreeEnrichmentResult
+	} from '$lib/utils/treeEnrichment';
+	import { isAbortError } from '$lib/utils/abortSignal';
+	import { canUseApi } from '$lib/utils/apiPolicy';
+	import { isTreeAccessible } from '$lib/utils/featurePolicy';
+	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import { speciesDisplayName } from '$lib/constants/species-i18n';
+	import { getCombinedYamadoriVerdict } from '$lib/utils/yrs';
 	import * as m from '$lib/paraglide/messages.js';
 	import { goHome } from '$lib/utils/app-navigation';
 	import { formatDate } from '$lib/utils/date';
 	import {
 		formatAltitudeLabel
 	} from '$lib/utils/altitude';
-	import { fetchClimateHistory } from '$lib/utils/climate';
 	import { loadAgriData } from '$lib/stores/agriData.svelte';
-	import { formatLocationLabel, reverseGeocode } from '$lib/utils/geocoding';
+	import { formatLocationLabel } from '$lib/utils/geocoding';
 	import { formatFrontLabel } from '$lib/utils/compass';
 	import GpsStatusCompact from '$lib/components/GpsStatusCompact.svelte';
 	import { formatAccuracy, isPoorAccuracy } from '$lib/utils/gps';
-	import { hapticSelection } from '$lib/utils/haptics';
+	import { showDetailFeedback } from '$lib/stores/appToast.svelte';
+	import { hapticSelection, hapticWarning } from '$lib/utils/haptics';
+	import { MOTION_MS } from '$lib/utils/motion';
 	import { onlineState } from '$lib/utils/online.svelte';
-	import { lookupCadastre } from '$lib/utils/cadastre';
+	import { scheduleCadastreBackfill } from '$lib/utils/cadastreBackfill';
 	import type { EnvironmentExposure } from '$lib/types/environment';
 	import type { HarvestEthicsConfirmation } from '$lib/types/harvest-ethics';
-	import type { VoiceNote } from '$lib/types/tree';
+	import type { Tree, VoiceNote } from '$lib/types/tree';
 
 	let treeId = $derived(page.params.id ?? '');
 	let tree = $derived(treeId ? getTreeById(treeId) : undefined);
+	let treeLocked = $derived(
+		tree !== undefined && !isTreeAccessible(tree.id, treeStore.trees)
+	);
 	let pageUrl = $derived(`${page.url.origin}${base}/tree/${treeId}`);
 	let displayLabel = $derived.by(() => {
 		void appearanceSettingsState.locale;
@@ -55,14 +80,15 @@
 	let editing = $state(false);
 	let deleting = $state(false);
 	let saving = $state(false);
-	let feedback = $state('');
-	let feedbackTimeout: ReturnType<typeof setTimeout> | undefined;
+	let favoritePulse = $state(false);
+	let favoritePulseTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	let editSpecies = $state('');
 	let editNotes = $state('');
 	let climateLoading = $state(false);
 	let climateError = $state('');
 	let cadastreLoading = $state(false);
+	let climateSectionOpen = $state(false);
 	let editingVoiceNote = $state(false);
 	let voiceNoteDraft = $state<VoiceNote | null>(null);
 	let savingVoiceNote = $state(false);
@@ -74,117 +100,147 @@
 	const locationLabel = $derived(tree ? formatLocationLabel(tree) : null);
 	const altitudeLabel = $derived(tree ? formatAltitudeLabel(tree.altitudeMeters) : null);
 	const frontHeadingLabel = $derived(tree ? formatFrontLabel(tree.frontHeadingDegrees) : null);
+	const combinedYamadoriVerdict = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (!tree?.yrsAtCapture) return null;
+		return getCombinedYamadoriVerdict(tree.assessment.potentialScore, tree.yrsAtCapture);
+	});
 
-	$effect(() => {
-		if (simpleMode) return;
-		const currentTree = tree;
-		if (!currentTree || currentTree.latitude === null || currentTree.longitude === null) {
+	function needsLocationEnrichment(currentTree: Tree): boolean {
+		if (!currentTree.locationLabel) {
+			return true;
+		}
+		return (
+			!currentTree.cadastreInfo && !isPoorAccuracy(currentTree.accuracyMeters)
+		);
+	}
+
+	async function persistEnrichmentResult(
+		treeIdAtStart: string,
+		enrichment: TreeEnrichmentResult
+	): Promise<void> {
+		if (enrichment.climateError) {
+			climateError = enrichment.climateError;
+		}
+		const patch = toTreeEnrichmentPatch(enrichment);
+		if (Object.keys(patch).length === 0) {
 			return;
 		}
+		await runPersistBatch(() => applyTreeEnrichment(treeIdAtStart, patch));
+	}
 
-		void loadAgriData(currentTree.latitude, currentTree.longitude, false, {
-			species: currentTree.species,
-			observedPhenologyStage: currentTree.assessment.observedPhenologyStage,
-			cernageStatus: currentTree.assessment.cernageStatus,
-			environmentExposure: currentTree.environmentExposure
-		});
+	$effect(() => {
+		void treeId;
+		climateLoading = false;
+		cadastreLoading = false;
+		climateError = '';
+	});
+
+	$effect(() => {
+		const currentTree = tree;
+		if (!currentTree?.id || currentTree.photos[0]) {
+			return;
+		}
+		void ensureTreeHydrated(currentTree.id);
+	});
+
+	$effect(() => {
+		if (!treeStore.loaded || !onlineState.online) return;
+		scheduleCadastreBackfill();
 	});
 
 	$effect(() => {
 		if (simpleMode) return;
+		const currentTree = tree;
+		if (
+			!currentTree ||
+			!needsLocationEnrichment(currentTree) ||
+			currentTree.latitude === null ||
+			currentTree.longitude === null ||
+			!onlineState.online
+		) {
+			return;
+		}
+
+		const controller = new AbortController();
+		const treeIdAtStart = currentTree.id;
+
+		void (async () => {
+			cadastreLoading = true;
+			try {
+				const enrichment = await fetchTreeEnrichment(currentTree, {
+					signal: controller.signal,
+					scope: 'location'
+				});
+				if (controller.signal.aborted || treeId !== treeIdAtStart) {
+					return;
+				}
+				await persistEnrichmentResult(treeIdAtStart, enrichment);
+			} catch (err) {
+				if (isAbortError(err) || controller.signal.aborted || treeId !== treeIdAtStart) {
+					return;
+				}
+			} finally {
+				if (!controller.signal.aborted && treeId === treeIdAtStart) {
+					cadastreLoading = false;
+				}
+			}
+		})();
+
+		return () => controller.abort();
+	});
+
+	$effect(() => {
+		if (simpleMode || !climateSectionOpen) return;
 		const currentTree = tree;
 		if (
 			!currentTree ||
 			currentTree.climateHistory ||
 			currentTree.latitude === null ||
 			currentTree.longitude === null ||
-			!navigator.onLine
+			!onlineState.online ||
+			!canUseApi('openMeteoArchive')
 		) {
 			return;
 		}
 
-		const { id, latitude, longitude } = currentTree;
+		const controller = new AbortController();
+		const treeIdAtStart = currentTree.id;
+
 		void (async () => {
 			climateLoading = true;
 			climateError = '';
 			try {
-				const result = await fetchClimateHistory(latitude, longitude);
-				await updateClimate(id, result);
+				const enrichment = await fetchTreeEnrichment(currentTree, {
+					signal: controller.signal,
+					scope: 'climate'
+				});
+				if (controller.signal.aborted || treeId !== treeIdAtStart) {
+					return;
+				}
+				await persistEnrichmentResult(treeIdAtStart, enrichment);
 			} catch (err) {
+				if (isAbortError(err) || controller.signal.aborted || treeId !== treeIdAtStart) {
+					return;
+				}
 				climateError =
 					err instanceof Error ? err.message : m.tree_climate_unavailable();
 			} finally {
-				climateLoading = false;
-			}
-		})();
-	});
-
-	$effect(() => {
-		const currentTree = tree;
-		if (
-			!currentTree ||
-			currentTree.locationLabel ||
-			currentTree.latitude === null ||
-			currentTree.longitude === null ||
-			!navigator.onLine
-		) {
-			return;
-		}
-
-		const { id, latitude, longitude } = currentTree;
-		void (async () => {
-			try {
-				const label = await reverseGeocode(latitude, longitude);
-				await updateLocationLabel(id, label);
-			} catch {
-				// Enrichissement optionnel — pas de message d'erreur
-			}
-		})();
-	});
-
-	$effect(() => {
-		const currentTree = tree;
-		if (
-			!currentTree ||
-			currentTree.cadastreInfo ||
-			currentTree.latitude === null ||
-			currentTree.longitude === null ||
-			isPoorAccuracy(currentTree.accuracyMeters) ||
-			!navigator.onLine
-		) {
-			return;
-		}
-
-		const { id, latitude, longitude } = currentTree;
-		void (async () => {
-			cadastreLoading = true;
-			try {
-				const result = await lookupCadastre(latitude, longitude);
-				if (result) {
-					await updateCadastre(id, result);
+				if (!controller.signal.aborted && treeId === treeIdAtStart) {
+					climateLoading = false;
 				}
-			} catch {
-				// Enrichissement optionnel — pas de message d'erreur
-			} finally {
-				cadastreLoading = false;
 			}
 		})();
-	});
 
-	function showFeedback(message: string) {
-		feedback = message;
-		if (feedbackTimeout) clearTimeout(feedbackTimeout);
-		feedbackTimeout = setTimeout(() => {
-			feedback = '';
-		}, 2000);
-	}
+		return () => controller.abort();
+	});
 
 	async function confirmHarvestEthics(confirmation: HarvestEthicsConfirmation) {
 		const currentTree = tree;
 		if (!currentTree) return;
 		await updateTree(currentTree.id, { harvestEthicsConfirmation: confirmation });
 		vetoChecklistOpen = false;
-		showFeedback(m.veto_confirm_success());
+		showDetailFeedback(m.veto_confirm_success());
 	}
 
 	async function updateEnvironmentExposure(exposure: EnvironmentExposure) {
@@ -192,11 +248,17 @@
 		if (!currentTree || currentTree.environmentExposure === exposure) return;
 
 		await updateTree(currentTree.id, { environmentExposure: exposure });
-		if (currentTree.latitude !== null && currentTree.longitude !== null) {
+		if (
+			climateSectionOpen &&
+			currentTree.latitude !== null &&
+			currentTree.longitude !== null
+		) {
 			void loadAgriData(currentTree.latitude, currentTree.longitude, false, {
 				species: currentTree.species,
 				observedPhenologyStage: currentTree.assessment.observedPhenologyStage,
 				cernageStatus: currentTree.assessment.cernageStatus,
+				aoutementStatus: currentTree.assessment.aoutementStatus,
+				leafFallPct: currentTree.assessment.leafFallPct,
 				environmentExposure: exposure
 			});
 		}
@@ -213,14 +275,17 @@
 			species: currentTree.species,
 			observedPhenologyStage: currentTree.assessment.observedPhenologyStage,
 			cernageStatus: currentTree.assessment.cernageStatus,
+			aoutementStatus: currentTree.assessment.aoutementStatus,
+			leafFallPct: currentTree.assessment.leafFallPct,
 			environmentExposure: currentTree.environmentExposure
 		});
 		void (async () => {
 			climateLoading = true;
 			climateError = '';
 			try {
+				const { fetchClimateHistory } = await import('$lib/utils/climate');
 				const result = await fetchClimateHistory(latitude, longitude);
-				await updateClimate(id, result);
+				await runPersistBatch(() => applyTreeEnrichment(id, { climateHistory: result }));
 			} catch (err) {
 				climateError =
 					err instanceof Error ? err.message : m.tree_climate_unavailable();
@@ -239,6 +304,7 @@
 
 	function cancelEditing() {
 		editing = false;
+		void hapticWarning();
 	}
 
 	async function saveEditing() {
@@ -251,7 +317,7 @@
 				notes: simpleMode ? tree.notes : editNotes.trim()
 			});
 			editing = false;
-			showFeedback(m.tree_saved());
+			showDetailFeedback(m.tree_saved());
 		} finally {
 			saving = false;
 		}
@@ -259,8 +325,17 @@
 
 	async function handleToggleFavorite() {
 		if (!tree) return;
+		const willFavorite = !tree.isFavorite;
 		await toggleFavorite(tree.id);
 		void hapticSelection();
+		if (willFavorite) {
+			if (favoritePulseTimeout) clearTimeout(favoritePulseTimeout);
+			favoritePulse = true;
+			favoritePulseTimeout = setTimeout(() => {
+				favoritePulse = false;
+				favoritePulseTimeout = undefined;
+			}, MOTION_MS.pulse);
+		}
 	}
 
 	async function handleSaveVoiceNote() {
@@ -269,7 +344,7 @@
 		try {
 			await updateVoiceNote(tree.id, voiceNoteDraft);
 			editingVoiceNote = false;
-			showFeedback(m.tree_voice_saved());
+			showDetailFeedback(m.tree_voice_saved());
 		} finally {
 			savingVoiceNote = false;
 		}
@@ -297,19 +372,32 @@
 	<title>{pageTitle}</title>
 </svelte:head>
 
-{#if tree}
+{#if treeLocked}
+	<div class="flex flex-col items-center gap-4 py-16 text-center">
+		<h2 class="text-xl font-semibold text-forest-900">{m.pro_tree_locked()}</h2>
+		<p class="max-w-sm text-muted">{m.pro_modal_reason_tree_locked()}</p>
+		<button
+			type="button"
+			class="btn-primary btn-primary--inline"
+			onclick={() => openProPaywall('tree_locked')}
+		>
+			{m.pro_upgrade_cta()}
+		</button>
+		<a
+			href={resolve('/')}
+			class="text-sm font-medium text-forest-700 underline-offset-2 hover:underline"
+		>
+			{m.layout_back()}
+		</a>
+	</div>
+{:else if deleting}
+	<div class="flex items-center justify-center py-20">
+		<Skeleton class="h-10 w-10 rounded-full" label={m.climate_loading()} />
+	</div>
+{:else if tree}
 	<div
 		class="flex flex-col gap-6 simple-density md:grid md:grid-cols-2 md:items-start md:gap-6"
 	>
-		{#if feedback}
-			<p
-				class="bottom-safe-toast fixed left-1/2 z-50 -translate-x-1/2 rounded-full bg-forest-900 px-4 py-2 text-sm font-medium text-white shadow-lg"
-				role="status"
-			>
-				{feedback}
-			</p>
-		{/if}
-
 		<div class="flex flex-col gap-6">
 			<PhotoGallery {tree} />
 
@@ -319,7 +407,6 @@
 					{pageUrl}
 					{simpleMode}
 					onedit={startEditing}
-					onfeedback={showFeedback}
 				/>
 			{/if}
 		</div>
@@ -344,7 +431,9 @@
 				<button
 					type="button"
 					onclick={handleToggleFavorite}
-					class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white transition active:scale-95"
+					class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white transition active:scale-95 {favoritePulse
+						? 'save-success-pulse'
+						: ''}"
 					aria-label={tree.isFavorite ? m.tree_favorite() : m.filter_favorites()}
 					aria-pressed={tree.isFavorite}
 				>
@@ -383,7 +472,7 @@
 							type="button"
 							onclick={cancelEditing}
 							disabled={saving}
-							class="flex h-12 flex-1 items-center justify-center rounded-xl border border-gray-200 text-base font-medium text-forest-900 transition active:scale-[0.98] disabled:opacity-50"
+							class="btn-secondary flex-1"
 						>
 							{m.action_cancel()}
 						</button>
@@ -391,7 +480,7 @@
 							type="button"
 							onclick={saveEditing}
 							disabled={saving}
-							class="flex h-12 flex-1 items-center justify-center rounded-xl bg-forest-800 text-base font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+							class="btn-primary flex-1"
 						>
 							{saving ? m.action_saving() : m.action_save()}
 						</button>
@@ -399,24 +488,24 @@
 				</div>
 			{:else}
 				{#if !simpleMode && tree.notes.trim()}
-					<section class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+					<section class="app-card-muted p-4">
 						<h3 class="text-sm font-medium text-forest-900">{m.capture_notes()}</h3>
 						<p class="mt-2 whitespace-pre-wrap text-base text-forest-900/90">{tree.notes}</p>
 					</section>
 				{/if}
 
 				{#if editingVoiceNote}
-					<section class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+					<section class="app-card-muted p-4">
 						<h3 class="text-sm font-medium text-forest-900">{m.voice_note()}</h3>
 						<div class="mt-3">
-							<VoiceNoteRecorder bind:value={voiceNoteDraft} disabled={savingVoiceNote} compact />
+							<VoiceNoteRecorderLazy bind:value={voiceNoteDraft} disabled={savingVoiceNote} compact />
 						</div>
 						<div class="mt-3 flex gap-2">
 							<button
 								type="button"
 								onclick={() => (editingVoiceNote = false)}
 								disabled={savingVoiceNote}
-								class="flex h-10 flex-1 items-center justify-center rounded-xl border border-gray-200 text-sm font-medium text-forest-900"
+								class="btn-secondary !h-10 flex-1 text-sm"
 							>
 								{m.action_cancel()}
 							</button>
@@ -424,14 +513,14 @@
 								type="button"
 								onclick={() => void handleSaveVoiceNote()}
 								disabled={savingVoiceNote}
-								class="flex h-10 flex-1 items-center justify-center rounded-xl bg-forest-800 text-sm font-semibold text-white disabled:opacity-50"
+								class="btn-primary !h-10 flex-1 text-sm"
 							>
 								{savingVoiceNote ? m.action_saving() : m.action_save()}
 							</button>
 						</div>
 					</section>
 				{:else if tree.voiceNote}
-					<section class="simple-surface rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+					<section class="simple-surface app-card-muted p-4">
 						<div class="flex items-center justify-between gap-3">
 							<h3 class="text-sm font-medium text-forest-900">{m.voice_note()}</h3>
 							{#if !simpleMode}
@@ -445,7 +534,7 @@
 							{/if}
 						</div>
 						<div class="mt-3">
-							<VoiceNotePlayer voiceNote={tree.voiceNote} />
+							<VoiceNotePlayerLazy voiceNote={tree.voiceNote} />
 						</div>
 						{#if simpleMode}
 							<button
@@ -466,7 +555,7 @@
 						{m.voice_note_optional()}
 					</button>
 				{:else}
-					<section class="rounded-xl border border-dashed border-gray-200 bg-white p-4 shadow-sm">
+					<section class="app-card-muted border-dashed p-4">
 						<h3 class="text-sm font-medium text-forest-900">{m.voice_note()}</h3>
 						<button
 							type="button"
@@ -478,7 +567,7 @@
 					</section>
 				{/if}
 
-				<section class="simple-surface rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+				<section class="simple-surface app-card-muted p-4">
 					{#if simpleMode && tree.latitude !== null && tree.longitude !== null}
 						<GpsStatusCompact
 							accuracyMeters={tree.accuracyMeters}
@@ -606,14 +695,15 @@
 				</section>
 
 				{#if hasGps && !simpleMode}
-					<div class="rounded-xl border border-gray-100 bg-white px-3 py-2.5 shadow-sm">
+					<div class="app-card-muted px-3 py-2.5">
 						<EnvironmentExposureField
 							value={tree.environmentExposure}
 							onchange={(exposure) => void updateEnvironmentExposure(exposure)}
 						/>
 					</div>
 
-					<ClimateDataSection
+					<ClimateDataSectionLazy
+						bind:open={climateSectionOpen}
 						climate={tree.climateHistory}
 						loading={climateLoading}
 						error={climateError}
@@ -621,19 +711,39 @@
 						species={tree.species}
 						observedPhenologyStage={tree.assessment.observedPhenologyStage}
 						cernageStatus={tree.assessment.cernageStatus}
+						aoutementStatus={tree.assessment.aoutementStatus}
+						leafFallPct={tree.assessment.leafFallPct}
 						environmentExposure={tree.environmentExposure}
+						latitude={tree.latitude}
+						longitude={tree.longitude}
 						onretry={retryClimateData}
 					/>
 				{/if}
 			{/if}
 
 			{#if !editing && !simpleMode}
+				{#if tree.yrsAtCapture}
+					<div
+						class="rounded-lg border border-forest-100 bg-forest-50/80 px-3 py-2 text-xs text-forest-900"
+						role="status"
+					>
+						<p>
+							{m.yrs_at_capture_label({
+								score: String(tree.yrsAtCapture.score),
+								decision: tree.yrsAtCapture.decision
+							})}
+						</p>
+						{#if combinedYamadoriVerdict}
+							<p class="mt-1 font-medium text-forest-800">{combinedYamadoriVerdict}</p>
+						{/if}
+					</div>
+				{/if}
 				<TreeAssessmentPanel {tree} />
 
-				<section class="flex flex-col gap-4">
+				<section class="app-card-muted flex flex-col gap-4 p-4">
 					<h3 class="text-sm font-medium text-forest-900">{m.yrs_history()}</h3>
-					<VisitTimeline visits={tree.visits} />
-					<AddVisitForm treeId={tree.id} onsuccess={showFeedback} />
+					<VisitTimeline treeId={tree.id} visits={tree.visits} />
+					<AddVisitForm treeId={tree.id} />
 				</section>
 			{/if}
 
@@ -642,7 +752,7 @@
 					type="button"
 					onclick={() => (showDeleteDialog = true)}
 					disabled={deleting}
-					class="flex h-12 w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 text-base font-medium text-red-700 transition active:scale-[0.98] disabled:opacity-50"
+					class="btn-danger"
 				>
 					{m.action_delete()}
 				</button>
@@ -659,11 +769,10 @@
 	/>
 {:else}
 	<div class="flex flex-col items-center py-16 text-center">
-		<h2 class="text-xl font-semibold text-forest-900">{m.list_no_trees()}</h2>
-		<p class="mt-2 text-muted">{m.tree_delete_message()}</p>
+		<h2 class="text-xl font-semibold text-forest-900">{m.tree_not_found()}</h2>
 		<a
-			href="{base}/"
-			class="mt-6 flex h-12 items-center justify-center rounded-xl bg-forest-800 px-6 text-base font-semibold text-white transition active:scale-[0.98]"
+			href={resolve('/')}
+			class="btn-primary btn-primary--inline mt-6"
 		>
 			{m.layout_back()}
 		</a>

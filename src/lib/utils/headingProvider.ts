@@ -2,19 +2,15 @@ import { DeviceOrientation } from 'capacitor-community-device-orientation';
 import type { DeviceOrientationData } from 'capacitor-community-device-orientation';
 import {
 	createThrottledCallback,
-	EMPTY_HEADING_FUSION_CONTEXT,
 	subscribeDeviceOrientation,
 	requestOrientationPermission as requestWebOrientationPermission,
-	type HeadingFusionContext
+	type DeviceHeadingReading
 } from '$lib/utils/compass';
 import { normalizeHeading360 } from '$lib/utils/haversine';
 import { isNativeApp } from '$lib/utils/platform';
 import { Capacitor } from '@capacitor/core';
 
-export type HeadingSample = {
-	heading: number;
-	reference: 'true' | 'magnetic';
-};
+export type HeadingSample = DeviceHeadingReading;
 
 function readingFromNativeData(data: DeviceOrientationData): HeadingSample | null {
 	if (data.fused?.heading !== undefined) {
@@ -63,20 +59,17 @@ function subscribeNativeFusedHeading(onSample: (sample: HeadingSample) => void):
 	};
 }
 
-export function subscribeFusedHeading(
-	onSample: (sample: HeadingSample) => void,
-	getContext: () => HeadingFusionContext = () => EMPTY_HEADING_FUSION_CONTEXT
-): () => void {
+/**
+ * Subscribe to fused device heading.
+ * Web path preserves true/magnetic reference from the orientation pipeline
+ * (do not override — UI applies WMM declination only when magnetic).
+ */
+export function subscribeFusedHeading(onSample: (sample: HeadingSample) => void): () => void {
 	if (isNativeApp()) {
 		return subscribeNativeFusedHeading(onSample);
 	}
 
-	return subscribeDeviceOrientation(
-		(heading) => {
-			onSample({ heading, reference: 'magnetic' });
-		},
-		getContext
-	);
+	return subscribeDeviceOrientation(onSample);
 }
 
 export async function requestFusedHeadingPermission(): Promise<boolean> {

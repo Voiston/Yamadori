@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { AgriRiskLevel } from '$lib/types/agri';
 	import type { PhenologyStageId } from '$lib/types/gdd';
-	import type { CernageStatus, YrsDecision } from '$lib/types/yrs';
+	import type { AoutementStatus, CernageStatus, LeafFallPct, YrsConfidence, YrsDecision } from '$lib/types/yrs';
 	import type { EnvironmentExposure } from '$lib/types/environment';
 	import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
 	import { getAgriMetricHelp } from '$lib/constants/agri-metric-help';
@@ -20,9 +20,12 @@
 		formatSoilNightDropAttenuationLabel,
 		getSoilNightDropActivationWeight
 	} from '$lib/utils/soilNightDrop';
-	import { getYrsScoreBreakdown, getYrsDecisionLabels, getYrsScoreLabel, type YrsLayerKey } from '$lib/utils/yrs';
+	import { getYrsScoreBreakdown, getYrsDecisionLabels, getYrsConfidenceLabels, getYrsScoreLabel, getPrimaryYrsConfidenceGap, getYrsConfidenceGapCta, type YrsLayerKey } from '$lib/utils/yrs';
+	import { canViewYrsDetails } from '$lib/utils/featurePolicy';
+	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import AgriMetricCard from './AgriMetricCard.svelte';
 	import GddPanel from './GddPanel.svelte';
+	import Skeleton from './Skeleton.svelte';
 	import SoilTempSparkline from './SoilTempSparkline.svelte';
 	import ViabilityWeekChart from './ViabilityWeekChart.svelte';
 	import YrsLayerScoreCell from './YrsLayerScoreCell.svelte';
@@ -34,6 +37,8 @@
 		species?: string;
 		observedPhenologyStage?: PhenologyStageId | null;
 		cernageStatus?: CernageStatus | null;
+		aoutementStatus?: AoutementStatus | null;
+		leafFallPct?: LeafFallPct | null;
 		environmentExposure?: EnvironmentExposure;
 		loading?: boolean;
 		onretry?: () => void;
@@ -45,6 +50,8 @@
 		species = '',
 		observedPhenologyStage = null,
 		cernageStatus = null,
+		aoutementStatus = null,
+		leafFallPct = null,
 		environmentExposure = DEFAULT_ENVIRONMENT_EXPOSURE,
 		loading = false,
 		onretry
@@ -53,6 +60,7 @@
 	let yrsHelpOpen = $state(false);
 	let openLayer = $state<YrsLayerKey | 'total' | null>(null);
 	const yrsHelpId = 'yrs-score-help';
+	const yrsDetailsUnlocked = $derived(canViewYrsDetails());
 
 	const data = $derived(agriData.data);
 	const error = $derived(agriData.error);
@@ -102,6 +110,8 @@
 		species,
 		observedPhenologyStage,
 		cernageStatus,
+		aoutementStatus,
+		leafFallPct,
 		environmentExposure
 	});
 	const showMicroclimateBadge = $derived(environmentExposure !== DEFAULT_ENVIRONMENT_EXPOSURE);
@@ -135,6 +145,11 @@
 	const yrsDecisionLabels = $derived.by(() => {
 		void appearanceSettingsState.locale;
 		return getYrsDecisionLabels();
+	});
+
+	const yrsConfidenceLabels = $derived.by((): Record<YrsConfidence, string> => {
+		void appearanceSettingsState.locale;
+		return getYrsConfidenceLabels();
 	});
 
 	const yrsLayerLabels = $derived.by(() => {
@@ -171,7 +186,7 @@
 
 	const soil18cmZoneLabel = $derived.by(() => {
 		void appearanceSettingsState.locale;
-		return data ? getSoil18cmZoneLabel(data.soilTemperature18cmC) : '';
+		return data ? getSoil18cmZoneLabel(data.soilTemperature18cmC, data.latitude, data.longitude) : '';
 	});
 
 	const allDaysRisk = $derived(
@@ -189,7 +204,7 @@
 	}));
 
 	const gddSeasonZone = $derived(
-		data?.gdd ? getGddSeasonZone(data.gdd.cumulativeSinceJan1) : null
+		data?.gdd ? getGddSeasonZone(data.gdd.cumulativeSinceJan1, data.gdd.baseCategory) : null
 	);
 
 	const gddSeasonZoneClass = $derived(
@@ -274,24 +289,19 @@
 	{#if offline && !data && !agriLoading && !fromCache}
 		<p class="mt-3 text-sm text-muted" role="status">{m.climate_online_required()}</p>
 	{:else if agriLoading}
-		<div class="mt-4 flex items-center gap-3 text-sm text-muted" role="status">
-			<svg class="h-5 w-5 animate-spin text-forest-600" viewBox="0 0 24 24" aria-hidden="true">
-				<circle
-					class="opacity-25"
-					cx="12"
-					cy="12"
-					r="10"
-					stroke="currentColor"
-					stroke-width="4"
-					fill="none"
-				/>
-				<path
-					class="opacity-75"
-					fill="currentColor"
-					d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-				/>
-			</svg>
-			{m.agri_loading()}
+		<div
+			class="mt-4 grid grid-cols-2 gap-3"
+			role="status"
+			aria-busy="true"
+			aria-label={m.agri_loading()}
+		>
+			{#each [0, 1, 2, 3] as i (i)}
+				<div class="rounded-lg border border-forest-100 bg-forest-50/40 px-3 py-3">
+					<Skeleton class="h-3 w-20" decorative />
+					<Skeleton class="mt-2 h-7 w-14" decorative />
+					<Skeleton class="mt-2 h-2.5 w-full" decorative />
+				</div>
+			{/each}
 		</div>
 	{:else if error}
 		<p class="mt-3 text-sm text-red-700" role="alert">{error}</p>
@@ -314,6 +324,7 @@
 					<h5 class="text-xs font-semibold uppercase tracking-wide text-muted">
 						{yrsScoreLabel}
 					</h5>
+					{#if yrsDetailsUnlocked}
 					<button
 						type="button"
 						class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-xs font-semibold text-forest-700 transition active:scale-95"
@@ -324,8 +335,9 @@
 					>
 						?
 					</button>
+					{/if}
 				</div>
-				{#if yrsHelpOpen}
+				{#if yrsDetailsUnlocked && yrsHelpOpen}
 					<p id={yrsHelpId} class="mt-2 text-xs leading-relaxed text-muted" role="note">
 						<span class="font-medium text-forest-800">{m.yrs_recommendation()}</span>
 						{metricHelp.yrs.helpText}
@@ -333,6 +345,7 @@
 				{/if}
 				<div class="mt-3 flex flex-wrap items-center gap-3">
 					<div class="relative">
+						{#if yrsDetailsUnlocked}
 						<button
 							type="button"
 							class="rounded-lg px-1 py-0.5 text-left transition active:scale-[0.98] {openLayer ===
@@ -350,7 +363,22 @@
 								{yrs.score}<span class="text-lg text-muted">/100</span>
 							</p>
 						</button>
-						{#if openLayer === 'total' && yrsBreakdown}
+						{:else}
+						<button
+							type="button"
+							class="rounded-lg px-1 py-0.5 text-left transition active:scale-[0.98]"
+							aria-label={m.pro_yrs_details_locked()}
+							onclick={(event) => {
+								event.stopPropagation();
+								openProPaywall('yrs_details');
+							}}
+						>
+							<p class="text-3xl font-semibold text-forest-900">
+								{yrs.score}<span class="text-lg text-muted">/100</span>
+							</p>
+						</button>
+						{/if}
+						{#if yrsDetailsUnlocked && openLayer === 'total' && yrsBreakdown}
 							<div
 								role="region"
 								aria-label={m.yrs_composition()}
@@ -380,7 +408,23 @@
 						{yrsDecisionLabels[yrs.decision]}
 					</span>
 				</div>
-				{#if yrs.summary}
+				<p
+					class="mt-1.5 text-[11px] text-muted"
+					title={m.yrs_confidence_hint()}
+				>
+					{m.yrs_confidence_label()} : {yrsConfidenceLabels[yrs.confidence]}
+					— {m.yrs_confidence_hint()}
+				</p>
+				{#if yrs.localization === 'generic'}
+					<p class="mt-1 text-[11px] text-amber-800">{m.yrs_localization_generic_hint()}</p>
+				{/if}
+				{#if yrs.confidence !== 'high' && data}
+					{@const gapCta = getYrsConfidenceGapCta(getPrimaryYrsConfidenceGap(data, plantInputs))}
+					{#if gapCta}
+						<p class="mt-1 text-[11px] text-forest-800">{gapCta}</p>
+					{/if}
+				{/if}
+				{#if yrsDetailsUnlocked && yrs.summary}
 					<p class="mt-2 text-xs text-muted" role="status">{yrs.summary}</p>
 				{/if}
 				{#if yrsBreakdown}
@@ -390,28 +434,36 @@
 							displayValue="{yrs.layers.climate}/30"
 							breakdown={yrsBreakdown.climate}
 							open={openLayer === 'climate'}
+							interactive={yrsDetailsUnlocked}
 							ontoggle={() => toggleLayer('climate')}
+							onlockedclick={() => openProPaywall('yrs_details')}
 						/>
 						<YrsLayerScoreCell
 							label={yrsLayerLabels.soil}
 							displayValue="{yrs.layers.soil}/25"
 							breakdown={yrsBreakdown.soil}
 							open={openLayer === 'soil'}
+							interactive={yrsDetailsUnlocked}
 							ontoggle={() => toggleLayer('soil')}
+							onlockedclick={() => openProPaywall('yrs_details')}
 						/>
 						<YrsLayerScoreCell
 							label={yrsLayerLabels.phenology}
 							displayValue="{yrs.layers.phenology}/25"
 							breakdown={yrsBreakdown.phenology}
 							open={openLayer === 'phenology'}
+							interactive={yrsDetailsUnlocked}
 							ontoggle={() => toggleLayer('phenology')}
+							onlockedclick={() => openProPaywall('yrs_details')}
 						/>
 						<YrsLayerScoreCell
 							label={yrsLayerLabels.hydric}
 							displayValue="{yrs.layers.hydric}/20"
 							breakdown={yrsBreakdown.hydric}
 							open={openLayer === 'hydric'}
+							interactive={yrsDetailsUnlocked}
 							ontoggle={() => toggleLayer('hydric')}
+							onlockedclick={() => openProPaywall('yrs_details')}
 						/>
 						<YrsLayerScoreCell
 							label={yrsLayerLabels.stressPenalty}
@@ -419,12 +471,14 @@
 							breakdown={yrsBreakdown.stressPenalty}
 							isPenalty
 							open={openLayer === 'stressPenalty'}
+							interactive={yrsDetailsUnlocked}
 							ontoggle={() => toggleLayer('stressPenalty')}
+							onlockedclick={() => openProPaywall('yrs_details')}
 						/>
 					</div>
 				{/if}
 
-				{#if yrsRisks}
+				{#if yrsDetailsUnlocked && yrsRisks}
 					<h6 class="mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
 						{m.yrs_detailed_indicators()}
 					</h6>
@@ -607,12 +661,37 @@
 					</div>
 				{/if}
 
-				{#if weeklyViability}
+				{#if !yrsDetailsUnlocked}
+					<div class="mt-4">
+						<h6 class="text-xs font-semibold uppercase tracking-wide text-muted">
+							{m.yrs_detailed_indicators()}
+						</h6>
+						<button
+							type="button"
+							class="mt-2 inline-flex transition active:scale-[0.98]"
+							aria-label={m.pro_yrs_details_locked()}
+							onclick={() => openProPaywall('yrs_details')}
+						>
+							<span
+								class="rounded-full border border-forest-200 bg-forest-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-forest-800"
+							>
+								{m.pro_badge()}
+							</span>
+						</button>
+					</div>
+				{/if}
+
+				{#if yrsDetailsUnlocked && weeklyViability}
 					<div class="mt-4 border-t border-forest-100 pt-4">
 						<h6 class="text-xs font-semibold uppercase tracking-wide text-muted">
 							{yrsViabilityHeading}
 						</h6>
-						<ViabilityWeekChart viability={weeklyViability} />
+						<ViabilityWeekChart
+							viability={weeklyViability}
+							{species}
+							latitude={data?.latitude ?? 0}
+							longitude={data?.longitude ?? 0}
+						/>
 						<p class="mt-2 text-xs text-muted" role="status">
 							{#if allDaysRisk}
 								{m.yrs_decision_risk()} — {m.yrs_decision_no_go()}
@@ -648,10 +727,12 @@
 			</div>
 		</section>
 
+		{#if yrsDetailsUnlocked}
 		<section class="mt-4 border-t border-gray-100 pt-4">
 			<h5 class="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">{m.yrs_phenology_section()}</h5>
 			<GddPanel {species} {offline} loading={agriLoading} />
 		</section>
+		{/if}
 	{:else}
 		<p class="mt-3 text-sm text-muted">{m.yrs_no_agri_data()}</p>
 		{#if showRetry}

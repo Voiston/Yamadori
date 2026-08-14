@@ -30,8 +30,12 @@ function roundMaskSvg(size) {
 for (const size of [192, 512]) {
 	const buffer = await sharp(sourcePath).resize(size, size).png().toBuffer();
 	writeFileSync(resolve(iconsOutDir, `icon-${size}.png`), buffer);
+	if (size === 192) {
+		writeFileSync(resolve(iconsOutDir, 'icon.png'), buffer);
+	}
 	console.log(`generate-icons: icon-${size}.png`);
 }
+console.log('generate-icons: icon.png');
 
 for (const [density, size] of Object.entries(launcherSizes)) {
 	const dir = resolve(androidRes, `mipmap-${density}`);

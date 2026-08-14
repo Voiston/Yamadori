@@ -9,6 +9,19 @@ const PROFILE_PRIORITY: Record<GpsProfile, number> = {
 
 export type GpsConsumerMap = Map<string, GpsProfile>;
 
+export const COMPASS_GPS_CONSUMER_ID = 'compass';
+
+export function shouldRunGpsStaleWatchdog(
+	profile: GpsProfile | null,
+	consumers: GpsConsumerMap
+): boolean {
+	return (
+		profile === 'navigation' ||
+		profile === 'capture' ||
+		consumers.has(COMPASS_GPS_CONSUMER_ID)
+	);
+}
+
 export function resolveActiveProfile(consumers: GpsConsumerMap): GpsProfile | null {
 	let best: GpsProfile | null = null;
 	let bestPriority = 0;
@@ -45,23 +58,13 @@ export function clearConsumers(consumers: GpsConsumerMap): void {
 	consumers.clear();
 }
 
-export function shouldUseBackgroundWatch(
-	profile: GpsProfile,
-	backgroundTrackingEnabled: boolean,
-	backgroundSupported: boolean
-): boolean {
-	return (
-		(profile === 'watch' || profile === 'navigation' || profile === 'proximity') &&
-		backgroundTrackingEnabled &&
-		backgroundSupported
-	);
+export function shouldSuspendForAppBackground(appPaused: boolean): boolean {
+	return appPaused;
 }
 
-export function shouldSuspendForAppBackground(
-	appPaused: boolean,
-	backgroundTrackingEnabled: boolean
-): boolean {
-	return appPaused && !backgroundTrackingEnabled;
+/** Caps continuous GPS profiles during power saving; capture stays accurate for photos. */
+export function capProfileForPowerSaving(profile: GpsProfile): GpsProfile {
+	return profile === 'capture' ? profile : 'proximity';
 }
 
 export function isCaptureProfile(profile: GpsProfile | null): boolean {
@@ -69,6 +72,34 @@ export function isCaptureProfile(profile: GpsProfile | null): boolean {
 }
 
 export const GPS_NAVIGATION_STALE_MS = 10_000;
+
+/** Stale thresholds aligned with Android watch intervals (interval + margin). */
+const GPS_STALE_THRESHOLD_MS: Record<GpsProfile, number> = {
+	capture: 5_000,
+	navigation: GPS_NAVIGATION_STALE_MS,
+	watch: 12_000,
+	proximity: 20_000
+};
+
+export function resolveGpsStaleThresholdMs(profile: GpsProfile): number {
+	return GPS_STALE_THRESHOLD_MS[profile];
+}
+
+export function shouldRunLiveGpsRefresh(
+	profile: GpsProfile | null,
+	consumers: GpsConsumerMap
+): boolean {
+	return (
+		isCaptureProfile(profile) ||
+		profile === 'navigation' ||
+		consumers.has(COMPASS_GPS_CONSUMER_ID)
+	);
+}
+
+/** Proactive refresh when watch callbacks go quiet — half the stale threshold. */
+export function resolveGpsLiveRefreshThresholdMs(profile: GpsProfile): number {
+	return Math.floor(resolveGpsStaleThresholdMs(profile) / 2);
+}
 
 export type GpsStaleRecoveryAction = 'none' | 'request-fix' | 'restart-watch';
 

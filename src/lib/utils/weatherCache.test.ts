@@ -76,6 +76,7 @@ function buildAgriData(
 		heatStressDaysForecast7d: 0,
 		frostEventsPast7d: 0,
 		soilBufferScore: 70,
+		hydricStressKs: 1,
 		wsi: 31.4,
 		futureStressRiskMm: 5.6,
 		weeklyViability: null,
@@ -87,7 +88,7 @@ function buildAgriData(
 
 describe('weatherCache helpers', () => {
 	it('builds a stable grid key from coordinates', () => {
-		expect(gridKeyForCoordinates(47.456, 2.349)).toBe('47.46_2.35');
+		expect(gridKeyForCoordinates(47.456, 2.349)).toBe('47.45_2.34');
 	});
 
 	it('accepts entries fresher than 3 h', () => {
@@ -127,7 +128,7 @@ describe('weatherCache helpers', () => {
 
 		const match = pickClosestFreshEntry(47.456, 2.349, entries, now);
 		expect(match?.exactMatch).toBe(true);
-		expect(match?.entry.latitude).toBe(47.46);
+		expect(match?.entry.latitude).toBe(47.451);
 	});
 
 	it('returns the nearest entry within 30 km', () => {

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import * as m from '$lib/paraglide/messages.js';
+	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+
 	let {
 		displayRotation,
 		needleColor,
@@ -8,6 +11,11 @@
 		needleColor: string;
 		compact?: boolean;
 	} = $props();
+
+	const northLetter = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return m.compass_dial_north();
+	});
 </script>
 
 <div
@@ -16,7 +24,7 @@
 		: 'h-64 w-64 md:h-80 md:w-80'}"
 >
 	<div class="absolute inset-3 rounded-full border border-dashed border-gray-200"></div>
-	<span class="absolute top-2 text-[10px] font-medium text-muted">N</span>
+	<span class="absolute top-2 text-[10px] font-medium text-muted">{northLetter}</span>
 	<div style:transform="rotate({displayRotation}deg)" aria-hidden="true">
 		<svg
 			xmlns="http://www.w3.org/2000/svg"

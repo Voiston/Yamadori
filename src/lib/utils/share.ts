@@ -1,6 +1,9 @@
 import * as m from '$lib/paraglide/messages.js';
+import type { CountryCode } from '$lib/geo/countries';
+import type { CadastreInfo } from '$lib/types/cadastre';
 import type { Tree } from '$lib/types/tree';
 import { getTreeDisplayLabel } from '$lib/types/tree';
+import { buildCadastreRefsText } from '$lib/utils/cadastreRefs';
 import { formatDate } from '$lib/utils/date';
 import { formatBiologicalAltitude } from '$lib/utils/altitude';
 import { formatFrontHeading } from '$lib/utils/compass';
@@ -42,13 +45,11 @@ function buildShareText(tree: Tree, url: string): string {
 	return lines.join('\n');
 }
 
-export async function shareTree(
-	tree: Tree,
-	url: string
+async function shareOrCopyText(
+	title: string,
+	text: string,
+	url?: string
 ): Promise<'shared' | 'copied' | 'failed'> {
-	const text = buildShareText(tree, url);
-	const title = m.share_tree_title({ label: getTreeDisplayLabel(tree) });
-
 	if (isNativeApp()) {
 		try {
 			await Share.share({ title, text, url, dialogTitle: title });
@@ -62,7 +63,7 @@ export async function shareTree(
 
 	if (navigator.share) {
 		try {
-			await navigator.share({ title, text, url });
+			await navigator.share(url ? { title, text, url } : { title, text });
 			return 'shared';
 		} catch (err) {
 			if (err instanceof Error && err.name === 'AbortError') {
@@ -77,6 +78,26 @@ export async function shareTree(
 	} catch {
 		return 'failed';
 	}
+}
+
+export async function shareTree(
+	tree: Tree,
+	url: string
+): Promise<'shared' | 'copied' | 'failed'> {
+	const text = buildShareText(tree, url);
+	const title = m.share_tree_title({ label: getTreeDisplayLabel(tree) });
+	return shareOrCopyText(title, text, url);
+}
+
+/** Share parcel / tenure refs for mairie or land-manager contact — never owner name. */
+export async function shareCadastreRefs(
+	info: CadastreInfo,
+	latitude: number,
+	longitude: number,
+	country: CountryCode | null = null
+): Promise<'shared' | 'copied' | 'failed'> {
+	const text = buildCadastreRefsText(info, latitude, longitude, country);
+	return shareOrCopyText(m.share_cadastre_title(), text);
 }
 
 function dataUrlToBase64(dataUrl: string): string {

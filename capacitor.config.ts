@@ -14,15 +14,18 @@ const config: CapacitorConfig = {
 		Geolocation: {
 			permissions: ['location']
 		},
-		StatusBar: {
-			style: 'DARK',
-			backgroundColor: '#1a2e1a'
+		SystemBars: {
+			insetsHandling: 'css',
+			style: 'DARK'
 		},
 		Keyboard: {
 			resize: 'body'
 		},
 		SplashScreen: {
-			launchAutoHide: true
+			launchAutoHide: true,
+			launchShowDuration: 0,
+			launchFadeOutDuration: 0,
+			backgroundColor: '#e2e8e2'
 		}
 	}
 };

@@ -4,22 +4,23 @@ import { gridKeyForCoordinates } from '$lib/utils/weatherCache';
 
 export type AgriLoadAction = 'fetch' | 'recompute' | 'skip';
 
-export function buildAgriFetchKey(
-	latitude: number,
-	longitude: number,
-	inputs: YrsPlantInputs
-): string {
-	return `${gridKeyForCoordinates(latitude, longitude)}|${inputs.species?.trim() ?? ''}`;
+/** Network fetch key — location grid only (Open-Meteo forecast is species-agnostic). */
+export function buildAgriFetchKey(latitude: number, longitude: number): string {
+	return gridKeyForCoordinates(latitude, longitude);
 }
 
+/** Display/recompute key — includes plant inputs that affect YRS enrichment. */
 export function buildAgriDisplayKey(
 	latitude: number,
 	longitude: number,
 	inputs: YrsPlantInputs
 ): string {
-	return `${buildAgriFetchKey(latitude, longitude, inputs)}|${JSON.stringify({
+	return `${buildAgriFetchKey(latitude, longitude)}|${JSON.stringify({
+		species: inputs.species?.trim() ?? '',
 		observedPhenologyStage: inputs.observedPhenologyStage ?? null,
 		cernageStatus: inputs.cernageStatus ?? null,
+		aoutementStatus: inputs.aoutementStatus ?? null,
+		leafFallPct: inputs.leafFallPct ?? null,
 		environmentExposure: inputs.environmentExposure ?? DEFAULT_ENVIRONMENT_EXPOSURE
 	})}`;
 }

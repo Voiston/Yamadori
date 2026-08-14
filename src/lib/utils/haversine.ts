@@ -1,3 +1,5 @@
+import * as m from '$lib/paraglide/messages.js';
+
 const EARTH_RADIUS_M = 6_371_000;
 
 function toRadians(degrees: number): number {
@@ -92,40 +94,9 @@ export function blendHeadingsCircular(
 	return normalizeHeading360(Math.atan2(x, y) / DEG_TO_RAD);
 }
 
-const MIN_GPS_SPEED_MPS = 0.8;
-const MAX_GPS_FUSION_WEIGHT = 0.75;
-
-export function fuseWithGpsCourse(
-	trueCompassHeading: number,
-	gpsCourseDegrees: number | null,
-	speedMps: number | null
-): number {
-	if (gpsCourseDegrees === null || speedMps === null || speedMps < MIN_GPS_SPEED_MPS) {
-		return trueCompassHeading;
-	}
-
-	const gpsWeight = Math.min(MAX_GPS_FUSION_WEIGHT, (speedMps - MIN_GPS_SPEED_MPS) / 2.5);
-	return blendHeadingsCircular(trueCompassHeading, gpsCourseDegrees, gpsWeight);
-}
-
-export function isGpsCourseFusionActive(
-	gpsCourseDegrees: number | null,
-	speedMps: number | null
-): boolean {
-	return gpsCourseDegrees !== null && speedMps !== null && speedMps >= MIN_GPS_SPEED_MPS;
-}
-
 export function formatDistance(meters: number): string {
 	if (meters < 1000) {
-		return `${Math.round(meters)} m`;
+		return m.format_distance_m({ n: String(Math.round(meters)) });
 	}
-	return `${(meters / 1000).toFixed(1)} km`;
-}
-
-export function getRelativeDirection(relativeAngle: number): string {
-	const abs = Math.abs(relativeAngle);
-	if (abs <= 15) return 'devant toi';
-	if (abs >= 165) return 'derrière toi';
-	if (relativeAngle > 0) return 'à ta droite';
-	return 'à ta gauche';
+	return m.format_distance_km({ n: (meters / 1000).toFixed(1) });
 }

@@ -66,6 +66,7 @@ function buildAgriData(
 		heatStressDaysForecast7d: 0,
 		frostEventsPast7d: 0,
 		soilBufferScore: 70,
+		hydricStressKs: 1,
 		wsi: 31.4,
 		futureStressRiskMm: 5.6,
 		weeklyViability: null,

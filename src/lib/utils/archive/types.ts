@@ -5,8 +5,15 @@ import type { HarvestEthicsConfirmation } from '$lib/types/harvest-ethics';
 import type { Tree, TreeAssessment, VoiceNote } from '$lib/types/tree';
 import type { ClimateHistory } from '$lib/types/climate';
 
+import type { StoredApiSettings } from '$lib/stores/apiSettings.svelte';
+
 export const ARCHIVE_FORMAT_VERSION = 2;
 export const MAX_ARCHIVE_BYTES = 500 * 1024 * 1024;
+export const MAX_DECOMPRESSED_BYTES = 1024 * 1024 * 1024;
+export const MAX_LEGACY_BACKUP_BYTES = 50 * 1024 * 1024;
+export const ARCHIVE_MANIFEST_PATH = 'manifest.json';
+export const ARCHIVE_DONNEES_JSON_PATH = 'donnees.json';
+export const ARCHIVE_DONNEES_ENC_PATH = 'donnees.enc';
 
 export type ArchiveErrorCode =
 	| 'ARCHIVE_INVALID_ZIP'
@@ -35,18 +42,24 @@ export type ArchiveFileEntry = {
 	size: number;
 };
 
+/** Inner-zip payload encryption. `null` = honest plaintext (`donnees.json`). */
+export type ArchiveManifestEncryption = {
+	algorithm: 'AES-256-GCM';
+	keyScope?: 'app' | 'archive';
+	/** Base64-encoded 256-bit key when keyScope is archive (legacy unprotected). */
+	keyMaterial?: string;
+	iv: string;
+	/** @deprecated Ancien format chiffré par mot de passe */
+	salt?: string;
+	kdf?: string;
+};
+
 export type ArchiveManifest = {
 	formatVersion: number;
 	appVersion: string;
 	exportedAt: string;
-	encryption: {
-		algorithm: 'AES-256-GCM';
-		keyScope?: 'app';
-		iv: string;
-		/** @deprecated Ancien format chiffré par mot de passe */
-		salt?: string;
-		kdf?: string;
-	};
+	/** `null` for plaintext exports; object for legacy inner AES (`donnees.enc`). */
+	encryption: ArchiveManifestEncryption | null;
 	stats: {
 		treeCount: number;
 		mediaFileCount: number;
@@ -65,8 +78,12 @@ export type TreeVisitArchive = {
 	id: string;
 	visitedAt: string;
 	note: string;
-	photoPath: string;
+	/** Preferred multi-photo paths (max 3). */
+	photoPaths?: string[];
+	/** @deprecated Legacy single photo path. */
+	photoPath?: string;
 	voiceNote?: VoiceNoteArchive | null;
+	yrsSnapshot?: import('$lib/types/yrs').YrsStoredSnapshot | null;
 };
 
 export type TreeArchive = {
@@ -97,14 +114,14 @@ export type YamadoriArchiveData = {
 	trees: TreeArchive[];
 	parking: ParkingPosition | null;
 	appearanceSettings: { outdoorMode: boolean; darkMode?: boolean; simpleMode?: boolean; locale?: import('$lib/stores/appearanceSettings.svelte').AppLocale };
-	locationSettings: { backgroundTrackingEnabled: boolean };
+	apiSettings?: StoredApiSettings;
 };
 
 export type ArchiveExportInput = {
 	trees: Tree[];
 	parking: ParkingPosition | null;
 	appearanceSettings: { outdoorMode: boolean; darkMode?: boolean; simpleMode?: boolean; locale?: import('$lib/stores/appearanceSettings.svelte').AppLocale };
-	locationSettings: { backgroundTrackingEnabled: boolean };
+	apiSettings?: StoredApiSettings;
 	appVersion: string;
 };
 
@@ -136,7 +153,7 @@ export type RebuiltArchive = {
 	trees: Tree[];
 	parking: ParkingPosition | null;
 	appearanceSettings: YamadoriArchiveData['appearanceSettings'];
-	locationSettings: YamadoriArchiveData['locationSettings'];
+	apiSettings?: StoredApiSettings;
 	preview: ArchiveImportPreview;
 };
 

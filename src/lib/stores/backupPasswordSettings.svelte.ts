@@ -1,19 +1,21 @@
-import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin';
-import { del, get, set } from 'idb-keyval';
+import { secureIdbDel, secureIdbGet, secureIdbSet } from '$lib/utils/secure-idb';
 import {
 	hashPasswordForVerification,
-	verifyPassword
+	verifyPasswordCompatible
 } from '$lib/utils/archive/crypto';
 import { isNativeApp } from '$lib/utils/platform';
 
 const CONFIG_STORAGE_KEY = 'yamadori-backup-password-config';
-const SECURE_PASSWORD_KEY = 'yamadori-backup-export-password';
+/** Legacy key — cleared on init; password is no longer persisted in Secure Storage. */
+const LEGACY_SECURE_PASSWORD_KEY = 'yamadori-backup-export-password';
 export const MAX_BACKUP_PASSWORD_HINT_LENGTH = 120;
 
 type StoredBackupPasswordConfig = {
 	configured: boolean;
 	verifierSalt: string;
 	verifierHash: string;
+	/** PBKDF2 iterations used for verifierHash (absent = legacy 100k). */
+	verifierIterations?: number;
 	hint?: string;
 };
 
@@ -23,8 +25,6 @@ export const backupPasswordSettingsState = $state({
 	hint: null as string | null
 });
 
-let memoryPasswordCache: string | null = null;
-
 function normalizeHint(hint?: string): string | undefined {
 	const trimmed = hint?.trim();
 	if (!trimmed) return undefined;
@@ -32,60 +32,39 @@ function normalizeHint(hint?: string): string | undefined {
 }
 
 async function readConfig(): Promise<StoredBackupPasswordConfig | undefined> {
-	return get<StoredBackupPasswordConfig>(CONFIG_STORAGE_KEY);
+	return secureIdbGet<StoredBackupPasswordConfig>(CONFIG_STORAGE_KEY);
 }
 
 async function writeConfig(config: StoredBackupPasswordConfig | undefined): Promise<void> {
 	if (!config) {
-		await del(CONFIG_STORAGE_KEY);
+		await secureIdbDel(CONFIG_STORAGE_KEY);
 		return;
 	}
-	await set(CONFIG_STORAGE_KEY, config);
+	await secureIdbSet(CONFIG_STORAGE_KEY, config);
 }
 
-async function storePasswordSecure(password: string): Promise<void> {
-	memoryPasswordCache = password;
+async function clearLegacySecurePassword(): Promise<void> {
 	if (!isNativeApp()) return;
-
-	await SecureStoragePlugin.set({ key: SECURE_PASSWORD_KEY, value: password });
-}
-
-async function readPasswordSecure(): Promise<string | null> {
-	if (memoryPasswordCache) return memoryPasswordCache;
-	if (!isNativeApp()) return null;
-
 	try {
-		const { value } = await SecureStoragePlugin.get({ key: SECURE_PASSWORD_KEY });
-		if (value) {
-			memoryPasswordCache = value;
-			return value;
-		}
+		const { SecureStoragePlugin } = await import('capacitor-secure-storage-plugin');
+		await SecureStoragePlugin.remove({ key: LEGACY_SECURE_PASSWORD_KEY });
 	} catch {
-		return null;
-	}
-
-	return null;
-}
-
-async function clearPasswordSecure(): Promise<void> {
-	memoryPasswordCache = null;
-	if (!isNativeApp()) return;
-
-	try {
-		await SecureStoragePlugin.remove({ key: SECURE_PASSWORD_KEY });
-	} catch {
-		// Secure storage may already be empty.
+		// Legacy entry may already be absent.
 	}
 }
+
+/** @deprecated Password is not retained in memory; export prompts each time. */
+export function cacheBackupPasswordForSession(_password: string): void {}
+
+/** Clears any legacy in-memory password state (no-op with current policy). */
+export function clearBackupPasswordMemoryCache(): void {}
 
 export async function initBackupPasswordSettings(): Promise<void> {
 	try {
+		await clearLegacySecurePassword();
 		const config = await readConfig();
 		backupPasswordSettingsState.configured = config?.configured ?? false;
 		backupPasswordSettingsState.hint = config?.hint ?? null;
-		if (config?.configured) {
-			await readPasswordSecure();
-		}
 	} catch {
 		backupPasswordSettingsState.configured = false;
 		backupPasswordSettingsState.hint = null;
@@ -102,22 +81,19 @@ export function getBackupPasswordHint(): string | null {
 	return backupPasswordSettingsState.hint;
 }
 
-export async function getBackupPasswordForExport(): Promise<string | null> {
-	if (!backupPasswordSettingsState.configured) return null;
-	return readPasswordSecure();
-}
-
 export async function setupBackupPassword(password: string, hint?: string): Promise<void> {
-	const { salt, hash } = await hashPasswordForVerification(password);
+	const { salt, hash, iterations } = await hashPasswordForVerification(password);
 	const normalizedHint = normalizeHint(hint);
 
-	await storePasswordSecure(password);
-	await writeConfig({
+	const nextConfig: StoredBackupPasswordConfig = {
 		configured: true,
 		verifierSalt: salt,
 		verifierHash: hash,
+		verifierIterations: iterations,
 		hint: normalizedHint
-	});
+	};
+
+	await writeConfig(nextConfig);
 
 	backupPasswordSettingsState.configured = true;
 	backupPasswordSettingsState.hint = normalizedHint ?? null;
@@ -126,7 +102,12 @@ export async function setupBackupPassword(password: string, hint?: string): Prom
 export async function verifyBackupPassword(password: string): Promise<boolean> {
 	const config = await readConfig();
 	if (!config?.configured) return false;
-	return verifyPassword(password, config.verifierSalt, config.verifierHash);
+	return verifyPasswordCompatible(
+		password,
+		config.verifierSalt,
+		config.verifierHash,
+		config.verifierIterations
+	);
 }
 
 export async function changeBackupPassword(
@@ -136,16 +117,21 @@ export async function changeBackupPassword(
 ): Promise<boolean> {
 	if (!(await verifyBackupPassword(oldPassword))) return false;
 
-	const { salt, hash } = await hashPasswordForVerification(newPassword);
-	const normalizedHint = hint !== undefined ? normalizeHint(hint) : normalizeHint(backupPasswordSettingsState.hint ?? undefined);
+	const { salt, hash, iterations } = await hashPasswordForVerification(newPassword);
+	const normalizedHint =
+		hint !== undefined
+			? normalizeHint(hint)
+			: normalizeHint(backupPasswordSettingsState.hint ?? undefined);
 
-	await storePasswordSecure(newPassword);
-	await writeConfig({
+	const nextConfig: StoredBackupPasswordConfig = {
 		configured: true,
 		verifierSalt: salt,
 		verifierHash: hash,
+		verifierIterations: iterations,
 		hint: normalizedHint
-	});
+	};
+
+	await writeConfig(nextConfig);
 
 	backupPasswordSettingsState.hint = normalizedHint ?? null;
 	return true;
@@ -154,7 +140,6 @@ export async function changeBackupPassword(
 export async function removeBackupPassword(oldPassword: string): Promise<boolean> {
 	if (!(await verifyBackupPassword(oldPassword))) return false;
 
-	await clearPasswordSecure();
 	await writeConfig(undefined);
 	backupPasswordSettingsState.configured = false;
 	backupPasswordSettingsState.hint = null;
@@ -162,7 +147,6 @@ export async function removeBackupPassword(oldPassword: string): Promise<boolean
 }
 
 export async function resetBackupPasswordConfig(): Promise<void> {
-	await clearPasswordSecure();
 	await writeConfig(undefined);
 	backupPasswordSettingsState.configured = false;
 	backupPasswordSettingsState.hint = null;

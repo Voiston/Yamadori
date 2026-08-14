@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { unzip, zip } from 'fflate';
 import { DEFAULT_ASSESSMENT, type Tree } from '$lib/types/tree';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
+import { isValidTreeId } from '$lib/utils/id';
 import { buildArchive } from './export';
+import { encryptPayload, ivToBase64 } from './crypto';
+import { sha256Hex } from './checksums';
 import { normalizeZipEntries, parseArchive, scanEntriesForGpsLeak, isPasswordProtectedBlob } from './import';
 import { isPasswordProtectedArchive } from './crypto';
 import { parseLegacyBackup } from './legacy';
@@ -25,7 +28,7 @@ function sampleTree(overrides: Partial<Tree> = {}): Tree {
 				id: 'visit-1',
 				visitedAt: '2026-01-15T10:00:00.000Z',
 				note: 'Première visite',
-				photoBase64: tinyPng
+				photos: [tinyPng]
 			}
 		],
 		assessment: { ...DEFAULT_ASSESSMENT, potentialScore: 4 },
@@ -56,7 +59,15 @@ const baseInput = {
 		savedAt: '2026-01-10T07:00:00.000Z'
 	},
 	appearanceSettings: { outdoorMode: true },
-	locationSettings: { backgroundTrackingEnabled: false },
+	apiSettings: {
+		ignMap: false,
+		ignCadastre: true,
+		ignProtectedAreas: true,
+		openMeteoForecast: true,
+		openMeteoArchive: false,
+		nominatim: true,
+		servicePublicAnnuaire: true
+	},
 	appVersion: '0.0.2-test'
 };
 
@@ -89,6 +100,43 @@ describe('archive media helpers', () => {
 });
 
 describe('archive export/import', () => {
+	it('deduplicates gallery photos already stored on visits', async () => {
+		const blob = await buildArchive(baseInput);
+		const entries = await unzipBlob(blob);
+		const mediaPaths = Object.keys(entries).filter((path) => path.startsWith('media/'));
+		expect(mediaPaths.length).toBe(1);
+	});
+
+	it('round-trips multiple photos on a visit', async () => {
+		const blob = await buildArchive({
+			...baseInput,
+			trees: [
+				sampleTree({
+					photos: [tinyPng, tinyPng, tinyPng],
+					visits: [
+						{
+							id: 'visit-1',
+							visitedAt: '2026-01-15T10:00:00.000Z',
+							note: 'Multi',
+							photos: [tinyPng, tinyPng, tinyPng]
+						}
+					]
+				})
+			]
+		});
+		const restored = await parseArchive(blob);
+		expect(restored.trees[0]?.visits[0]?.photos).toHaveLength(3);
+		expect(restored.trees[0]?.photos.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('imports legacy single photoPath visit archives', async () => {
+		const blob = await buildArchive(baseInput);
+		const entries = await unzipBlob(blob);
+		const restored = await parseArchive(blob);
+		expect(restored.trees[0]?.visits[0]?.photos.length).toBe(1);
+		void entries;
+	});
+
 	it('round-trips trees, parking and settings automatically', async () => {
 		const blob = await buildArchive(baseInput);
 		const restored = await parseArchive(blob);
@@ -100,6 +148,152 @@ describe('archive export/import', () => {
 		expect(restored.trees[0]?.photos[0]).toContain('data:image/');
 		expect(restored.parking?.latitude).toBe(45.1);
 		expect(restored.appearanceSettings.outdoorMode).toBe(true);
+		expect(restored.apiSettings?.ignMap).toBe(false);
+		expect(restored.apiSettings?.openMeteoArchive).toBe(false);
+	});
+
+	it('writes plaintext donnees.json without embedded key material', async () => {
+		const blob1 = await buildArchive(baseInput);
+		const blob2 = await buildArchive(baseInput);
+		const entries1 = await unzipBlob(blob1);
+		const entries2 = await unzipBlob(blob2);
+		const manifest1 = JSON.parse(new TextDecoder().decode(entries1['manifest.json']!));
+		const manifest2 = JSON.parse(new TextDecoder().decode(entries2['manifest.json']!));
+
+		expect(manifest1.encryption).toBeNull();
+		expect(manifest2.encryption).toBeNull();
+		expect(entries1['donnees.json']).toBeTruthy();
+		expect(entries1['donnees.enc']).toBeUndefined();
+		expect(new TextDecoder().decode(entries1['donnees.json']!)).toContain('45.123456');
+	});
+
+	it('imports legacy unprotected archive-key archives', async () => {
+		const payload = {
+			version: 2,
+			trees: [
+				{
+					id: '00000000-0000-4000-8000-000000000001',
+					species: 'Érable',
+					notes: '',
+					photos: [],
+					visits: [],
+					assessment: DEFAULT_ASSESSMENT,
+					voiceNote: null,
+					latitude: 45.123456,
+					longitude: 6.654321,
+					accuracyMeters: 5,
+					altitudeMeters: null,
+					frontHeadingDegrees: null,
+					isFavorite: false,
+					climateHistory: null,
+					locationLabel: null,
+					capturedAt: '2026-01-10T08:00:00.000Z'
+				}
+			],
+			parking: null,
+			appearanceSettings: { outdoorMode: false }
+		};
+
+		const archiveKey = crypto.getRandomValues(new Uint8Array(32));
+		const { ciphertext, iv } = await encryptPayload(JSON.stringify(payload), archiveKey);
+		const manifest = {
+			formatVersion: 2,
+			appVersion: '0.0.2-test',
+			exportedAt: new Date().toISOString(),
+			encryption: {
+				algorithm: 'AES-256-GCM',
+				keyScope: 'archive',
+				keyMaterial: ivToBase64(archiveKey),
+				iv: ivToBase64(iv)
+			},
+			stats: { treeCount: 1, mediaFileCount: 0 },
+			files: [
+				{
+					path: 'donnees.enc',
+					size: ciphertext.byteLength,
+					sha256: await sha256Hex(ciphertext)
+				}
+			]
+		};
+
+		const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+		const legacyBlob = await rezip({
+			'donnees.enc': ciphertext,
+			'manifest.json': manifestBytes
+		});
+
+		const restored = await parseArchive(legacyBlob);
+		expect(restored.trees[0]?.latitude).toBe(45.123456);
+	});
+
+	it('imports legacy app-scoped archives', async () => {
+		const payload = {
+			version: 2,
+			trees: [
+				{
+					id: 'tree-1',
+					species: 'Érable',
+					notes: '',
+					photos: [],
+					visits: [],
+					assessment: DEFAULT_ASSESSMENT,
+					voiceNote: null,
+					latitude: 45.123456,
+					longitude: 6.654321,
+					accuracyMeters: 5,
+					altitudeMeters: null,
+					frontHeadingDegrees: null,
+					isFavorite: false,
+					climateHistory: null,
+					locationLabel: null,
+					capturedAt: '2026-01-10T08:00:00.000Z'
+				}
+			],
+			parking: null,
+			appearanceSettings: { outdoorMode: false }
+		};
+
+		const { ciphertext, iv } = await encryptPayload(JSON.stringify(payload));
+		const manifest = {
+			formatVersion: 2,
+			appVersion: '0.0.2-test',
+			exportedAt: new Date().toISOString(),
+			encryption: {
+				algorithm: 'AES-256-GCM',
+				keyScope: 'app',
+				iv: ivToBase64(iv)
+			},
+			stats: { treeCount: 1, mediaFileCount: 0 },
+			files: [
+				{
+					path: 'donnees.enc',
+					size: ciphertext.byteLength,
+					sha256: await sha256Hex(ciphertext)
+				}
+			]
+		};
+
+		const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+
+		const legacyBlob = await rezip({
+			'donnees.enc': ciphertext,
+			'manifest.json': manifestBytes
+		});
+
+		const restored = await parseArchive(legacyBlob);
+		expect(restored.trees[0]?.latitude).toBe(45.123456);
+	});
+
+	it('sanitizes malicious tree ids on import', async () => {
+		const maliciousId = 'x" onclick="alert(1)"';
+		const blob = await buildArchive({
+			...baseInput,
+			trees: [sampleTree({ id: maliciousId })]
+		});
+		const restored = await parseArchive(blob);
+
+		expect(restored.trees[0]?.id).not.toContain('onclick');
+		expect(isValidTreeId(restored.trees[0]!.id)).toBe(true);
 	});
 
 	it('round-trips voice notes with audio/aac mime type', async () => {
@@ -126,7 +320,7 @@ describe('archive export/import', () => {
 							id: 'visit-1',
 							visitedAt: '2026-01-15T10:00:00.000Z',
 							note: 'Première visite',
-							photoBase64: tinyPng,
+							photos: [tinyPng],
 							voiceNote: visitVoiceNote
 						}
 					]
@@ -163,17 +357,52 @@ describe('archive export/import', () => {
 		expect(tree?.voiceNote?.mimeType).toBe('audio/webm;codecs=opus');
 	});
 
-	it('rejects corrupted encrypted payload', async () => {
-		const blob = await buildArchive(baseInput);
-		const entries = await unzipBlob(blob);
-		const manifest = JSON.parse(new TextDecoder().decode(entries['manifest.json']!));
-		manifest.encryption.iv = 'AAAAAAAAAAAAAAAA';
-		entries['manifest.json'] = new TextEncoder().encode(JSON.stringify(manifest));
-
-		const tampered = await rezip(entries);
+	it('rejects corrupted legacy encrypted payload', async () => {
+		const payload = {
+			version: 2,
+			trees: [],
+			parking: null,
+			appearanceSettings: { outdoorMode: false }
+		};
+		const archiveKey = crypto.getRandomValues(new Uint8Array(32));
+		const { ciphertext, iv } = await encryptPayload(JSON.stringify(payload), archiveKey);
+		const manifest = {
+			formatVersion: 2,
+			appVersion: '0.0.2-test',
+			exportedAt: new Date().toISOString(),
+			encryption: {
+				algorithm: 'AES-256-GCM',
+				keyScope: 'archive',
+				keyMaterial: ivToBase64(archiveKey),
+				iv: 'AAAAAAAAAAAAAAAA'
+			},
+			stats: { treeCount: 0, mediaFileCount: 0 },
+			files: [
+				{
+					path: 'donnees.enc',
+					size: ciphertext.byteLength,
+					sha256: await sha256Hex(ciphertext)
+				}
+			]
+		};
+		const tampered = await rezip({
+			'donnees.enc': ciphertext,
+			'manifest.json': new TextEncoder().encode(JSON.stringify(manifest))
+		});
 
 		await expect(parseArchive(tampered)).rejects.toMatchObject({
 			code: 'ARCHIVE_INVALID_PAYLOAD'
+		});
+	});
+
+	it('rejects zip slip path traversal entries', async () => {
+		const blob = await buildArchive(baseInput);
+		const entries = await unzipBlob(blob);
+		entries['../evil.txt'] = new TextEncoder().encode('x');
+		const tampered = await rezip(entries);
+
+		await expect(parseArchive(tampered)).rejects.toMatchObject({
+			code: 'ARCHIVE_INVALID_ZIP'
 		});
 	});
 
@@ -253,14 +482,13 @@ describe('archive export/import', () => {
 		expect(restored.trees[0]?.species).toBe('Érable');
 	});
 
-	it('does not leak GPS coordinates in clear zip entries', async () => {
+	it('keeps GPS only in donnees.json for unprotected exports', async () => {
 		const blob = await buildArchive(baseInput);
 		const entries = await unzipBlob(blob);
 
 		expect(scanEntriesForGpsLeak(entries)).toEqual([]);
-		expect(new TextDecoder().decode(entries['donnees.enc'] ?? new Uint8Array())).not.toContain(
-			'45.123456'
-		);
+		expect(new TextDecoder().decode(entries['donnees.json']!)).toContain('45.123456');
+		expect(entries['donnees.enc']).toBeUndefined();
 	});
 
 	it('does not leak GPS coordinates in password-protected envelope', async () => {

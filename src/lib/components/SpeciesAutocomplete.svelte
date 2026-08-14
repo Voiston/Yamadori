@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { BONSAI_SPECIES_PRIORITY } from '$lib/constants/bonsai-species';
 	import { speciesDisplayName } from '$lib/constants/species-i18n';
+	import SpeciesProtectionAlert from '$lib/components/SpeciesProtectionAlert.svelte';
+	import { lookupSpeciesProtection } from '$lib/geo/providers/species-protection/dispatch';
+	import type { SpeciesProtectionScan } from '$lib/geo/providers/species-protection/types';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import { filterSpeciesDictionary } from '$lib/utils/species-filter';
 	import * as m from '$lib/paraglide/messages.js';
@@ -12,6 +15,8 @@
 		placeholder?: string;
 		highlight?: boolean;
 		inputClass?: string;
+		latitude?: number | null;
+		longitude?: number | null;
 		onselect?: (name: string) => void;
 	};
 
@@ -22,6 +27,8 @@
 		placeholder,
 		highlight = false,
 		inputClass = '',
+		latitude = null,
+		longitude = null,
 		onselect
 	}: Props = $props();
 
@@ -41,6 +48,19 @@
 	let resolvedPlaceholder = $derived.by(() => {
 		void appearanceSettingsState.locale;
 		return placeholder ?? m.capture_species_placeholder();
+	});
+
+	const protectionScan = $derived.by((): SpeciesProtectionScan | null => {
+		if (
+			latitude == null ||
+			longitude == null ||
+			!Number.isFinite(latitude) ||
+			!Number.isFinite(longitude) ||
+			!value.trim()
+		) {
+			return null;
+		}
+		return lookupSpeciesProtection(value, latitude, longitude);
 	});
 
 	let closeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -63,7 +83,7 @@
 	}
 </script>
 
-<div class="relative">
+<div class="relative" data-capture-tutorial="species">
 	<input
 		{id}
 		type="text"
@@ -79,7 +99,11 @@
 		onblur={handleBlur}
 		class="h-12 w-full rounded-xl border bg-white px-4 text-base text-forest-900 placeholder:text-gray-400 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-600/20 disabled:opacity-50 {highlight
 			? 'border-green-500 ring-2 ring-green-500/20'
-			: 'border-gray-200'} {inputClass}"
+			: protectionScan?.hit?.level === 'veto'
+				? 'border-red-400 ring-2 ring-red-400/20'
+				: protectionScan?.hit?.level === 'caution'
+					? 'border-amber-400 ring-2 ring-amber-400/20'
+					: 'border-gray-200'} {inputClass}"
 	/>
 
 	{#if showList}
@@ -106,3 +130,9 @@
 		</ul>
 	{/if}
 </div>
+
+{#if protectionScan?.hit}
+	<div class="mt-2">
+		<SpeciesProtectionAlert hit={protectionScan.hit} coverage={protectionScan.coverage} compact />
+	</div>
+{/if}

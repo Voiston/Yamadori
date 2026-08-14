@@ -1,21 +1,9 @@
-import { debugLog } from '$lib/utils/debug-log';
+import { createTapDeduper } from '$lib/utils/tap-dedupe';
 
 type TapParams = {
 	onactivate: (event: Event) => void;
 	label?: string;
 };
-
-function createTapDeduper() {
-	let lastAt = 0;
-	return () => {
-		const now = Date.now();
-		if (now - lastAt < 350) {
-			return false;
-		}
-		lastAt = now;
-		return true;
-	};
-}
 
 export function nativeTap(node: HTMLElement, params: TapParams) {
 	let onactivate = params.onactivate;
@@ -33,9 +21,6 @@ export function nativeTap(node: HTMLElement, params: TapParams) {
 		if (!shouldHandle() || isDisabled()) {
 			return;
 		}
-		// #region agent log
-		debugLog('nativeTap', 'activated', { label, type: event.type }, 'H50');
-		// #endregion
 		onactivate(event);
 	}
 
@@ -50,49 +35,6 @@ export function nativeTap(node: HTMLElement, params: TapParams) {
 		destroy() {
 			node.removeEventListener('pointerup', activate);
 			node.removeEventListener('click', activate);
-		}
-	};
-}
-
-type SpeciesDelegateParams = {
-	onSelect: (name: string, event: Event) => void;
-};
-
-export function speciesPillDelegate(node: HTMLElement, params: SpeciesDelegateParams) {
-	let onSelect = params.onSelect;
-	const shouldHandle = createTapDeduper();
-
-	function handle(event: Event) {
-		if (!shouldHandle()) {
-			return;
-		}
-
-		const pill = (event.target as HTMLElement | null)?.closest('[data-species-pill]');
-		if (!pill || !(pill instanceof HTMLButtonElement) || pill.disabled) {
-			return;
-		}
-
-		const name = pill.dataset.speciesPill;
-		if (!name) {
-			return;
-		}
-
-		// #region agent log
-		debugLog('speciesPillDelegate', 'pill native tap', { name, type: event.type }, 'H50');
-		// #endregion
-		onSelect(name, event);
-	}
-
-	node.addEventListener('pointerup', handle, { capture: true, passive: true });
-	node.addEventListener('click', handle, { capture: true });
-
-	return {
-		update(next: SpeciesDelegateParams) {
-			onSelect = next.onSelect;
-		},
-		destroy() {
-			node.removeEventListener('pointerup', handle, { capture: true });
-			node.removeEventListener('click', handle, { capture: true });
 		}
 	};
 }
@@ -123,25 +65,16 @@ export function captureFormRoot(node: HTMLElement, handlers: CaptureFormHandlers
 			if (!name) {
 				return;
 			}
-			// #region agent log
-			debugLog('captureFormRoot', 'species', { name, type: event.type }, 'H53');
-			// #endregion
 			h.onSpecies(name, event);
 			return;
 		}
 
 		if (action === 'submit') {
-			// #region agent log
-			debugLog('captureFormRoot', 'submit', { type: event.type }, 'H53');
-			// #endregion
 			h.onSubmit(event);
 			return;
 		}
 
 		if (action === 'climate-retry') {
-			// #region agent log
-			debugLog('captureFormRoot', 'climate-retry', { type: event.type }, 'H53');
-			// #endregion
 			h.onClimateRetry();
 		}
 	}
