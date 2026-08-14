@@ -68,7 +68,7 @@
 		"fflate": "^0.8.3",
 		"geomagnetism": "^0.2.0",
 		"idb-keyval": "^6.2.5",
-		"maplibre-gl": "^5.6.0",
+		"maplibre-gl": "^6.3.0",
 		"suncalc": "^2.0.0",
 		"valibot": "^1.4.2"
 	}
