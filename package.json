@@ -43,7 +43,7 @@
 		"topojson-client": "^3.1.0",
 		"typescript": "^6.0.3",
 		"vite": "^8.0.16",
-		"vitest": "^4.1.9"
+		"vitest": "^4.1.10"
 	},
 	"dependencies": {
 		"@capacitor-community/keep-awake": "^7.1.0",
