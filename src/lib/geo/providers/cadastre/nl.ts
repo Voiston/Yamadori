@@ -1,9 +1,10 @@
 import type { CadastreInfo } from '$lib/types/cadastre';
 import { COUNTRY_BBOXES, pointInBbox } from '$lib/geo/countries';
+import { HTTP_USER_AGENT } from '$lib/constants/app';
 import { createTimedAbortSignal, isAbortError, throwIfAborted } from '$lib/utils/abortSignal';
 
 const FETCH_TIMEOUT_MS = 10_000;
-const USER_AGENT = 'Yamadori/0.7.8 (bonsai field app)';
+const USER_AGENT = HTTP_USER_AGENT;
 
 /**
  * PDOK BRK Kadastrale kaart WFS v5 — Perceel features (no owner data).

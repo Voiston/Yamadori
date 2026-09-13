@@ -1,11 +1,12 @@
 import type { CadastreInfo } from '$lib/types/cadastre';
 import { COUNTRY_BBOXES, pointInBbox } from '$lib/geo/countries';
+import { HTTP_USER_AGENT } from '$lib/constants/app';
 import { collectStatusForZone } from '$lib/geo/legal/usCollectStatus';
 import { createTimedAbortSignal, isAbortError, throwIfAborted } from '$lib/utils/abortSignal';
 import { nominatimReverseRaw } from '$lib/utils/geocoding';
 
 const FETCH_TIMEOUT_MS = 10_000;
-const USER_AGENT = 'Yamadori/0.7.8 (bonsai field app)';
+const USER_AGENT = HTTP_USER_AGENT;
 
 /** Open ALKIS WFS endpoints (no owner data) — partial DE coverage. */
 export type AlkisLandConfig = {

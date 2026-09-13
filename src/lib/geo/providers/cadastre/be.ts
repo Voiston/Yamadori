@@ -1,10 +1,11 @@
 import type { CadastreInfo } from '$lib/types/cadastre';
 import { COUNTRY_BBOXES, pointInBbox } from '$lib/geo/countries';
+import { HTTP_USER_AGENT } from '$lib/constants/app';
 import { createTimedAbortSignal, isAbortError, throwIfAborted } from '$lib/utils/abortSignal';
 import { nominatimReverseRaw } from '$lib/utils/geocoding';
 
 const FETCH_TIMEOUT_MS = 10_000;
-const USER_AGENT = 'Yamadori/0.7.8 (bonsai field app)';
+const USER_AGENT = HTTP_USER_AGENT;
 
 /**
  * FPS Finance CadGIS — INSPIRE Cadastral Parcels MapServer identify (no token).

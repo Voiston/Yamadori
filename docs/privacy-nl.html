@@ -22,23 +22,10 @@
 			color: var(--forest-900);
 			line-height: 1.55;
 		}
-		main {
-			max-width: 42rem;
-			margin: 0 auto;
-			padding: 1.5rem 1rem 3rem;
-		}
-		header {
-			margin-bottom: 1.5rem;
-		}
-		h1 {
-			margin: 0 0 0.75rem;
-			font-size: 1.5rem;
-			line-height: 1.25;
-		}
-		h2 {
-			margin: 0 0 0.5rem;
-			font-size: 1.125rem;
-		}
+		main { max-width: 42rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+		header { margin-bottom: 1.5rem; }
+		h1 { margin: 0 0 0.75rem; font-size: 1.5rem; line-height: 1.25; }
+		h2 { margin: 0 0 0.5rem; font-size: 1.125rem; }
 		h3 {
 			margin: 0 0 0.75rem;
 			font-size: 0.75rem;
@@ -47,29 +34,18 @@
 			text-transform: uppercase;
 			color: var(--muted);
 		}
-		h4 {
-			margin: 0;
-			font-size: 0.95rem;
-		}
-		p {
-			margin: 0.5rem 0 0;
-		}
-		.meta {
-			font-size: 0.875rem;
-			color: var(--muted);
-		}
+		h4 { margin: 0; font-size: 0.95rem; }
+		p { margin: 0.5rem 0 0; }
+		.meta { font-size: 0.875rem; color: var(--muted); }
 		.meta p { margin: 0.25rem 0; }
-		.lang-switch {
-			margin-bottom: 1rem;
-			font-size: 0.875rem;
-		}
-		.lang-switch a {
+		.lang-switch, .doc-nav { margin-bottom: 1rem; font-size: 0.875rem; }
+		.lang-switch a, .doc-nav a {
 			color: var(--forest-800);
 			font-weight: 600;
 			text-decoration: none;
 		}
-		.lang-switch a:hover { text-decoration: underline; }
-		.lang-switch [aria-current="page"] {
+		.lang-switch a:hover, .doc-nav a:hover { text-decoration: underline; }
+		.lang-switch [aria-current="page"], .doc-nav [aria-current="page"] {
 			font-weight: 700;
 			color: var(--forest-900);
 		}
@@ -86,55 +62,52 @@
 			border-radius: 0.75rem;
 			padding: 0.875rem 1rem;
 		}
-		.card p {
-			color: var(--muted);
-			font-size: 0.9rem;
-		}
-		footer {
-			margin-top: 2rem;
-			text-align: center;
-			font-size: 0.75rem;
-			color: var(--muted);
-		}
+		.card p { color: var(--muted); font-size: 0.9rem; }
+		footer { margin-top: 2rem; text-align: center; font-size: 0.75rem; color: var(--muted); }
 		a { color: var(--forest-800); }
 	</style>
 </head>
 <body>
 	<main>
 		<div class="lang-switch">Taal : <a href="privacy.html">Français</a> · <a href="privacy-en.html">English</a> · <a href="privacy-de.html">Deutsch</a> · <a href="privacy-es.html">Español</a> · <a href="privacy-it.html">Italiano</a> · <span aria-current="page">Nederlands</span> · <a href="privacy-sv.html">Svenska</a> · <a href="privacy-nb.html">Norsk</a> · <a href="privacy-pt.html">Português</a> · <a href="privacy-da.html">Dansk</a> · <a href="privacy-fi.html">Suomi</a></div>
+		<nav class="doc-nav"><span aria-current="page">Privacy</span> · <a href="mentions-legales-nl.html">Wettelijke vermeldingen</a> · <a href="cgu-nl.html">Gebruiksvoorwaarden</a> · <a href="cgv-nl.html">Verkoopvoorwaarden</a></nav>
 		<header>
-			<h1>Privacybeleid</h1>
+			<h1>Privacybeleid — Yamadori Scouting</h1>
 			<div class="meta">
-				<p><strong>Applicatie :</strong> Yamadori Scouting (fr.yamadori.scouting)</p>
-				<p><strong>Uitgever / contact :</strong> <a href="mailto:david.voisard2@gmail.com">david.voisard2@gmail.com</a></p>
-				<p><strong>Laatst bijgewerkt :</strong> 13 augustus 2026</p>
-				<p><strong>App-versie :</strong> 0.7.8</p>
+				<p><strong>Toepassing :</strong> Yamadori Scouting (fr.yamadori.scouting)</p>
+				<p><strong>Uitgever / contact :</strong> David Voisard — <a href="mailto:david.voisard2@gmail.com">david.voisard2@gmail.com</a></p>
+				<p><strong>Laatst bijgewerkt :</strong> 13 september 2026</p>
+				<p><strong>App-versie :</strong> 1.0.0</p>
 			</div>
 		</header>
-
-		<section class="legal">
-			<article class="card"><h4>In-app-aankopen</h4><p>Yamadori Pro is een eenmalige aankoop via Google Play Billing. Transacties worden door Google verwerkt; Yamadori verzamelt of bewaart geen betaalgegevens. Alleen een aankooptoken blijft lokaal op het apparaat om Pro-functies te activeren.</p></article>
-			<article class="card"><h4>Uw rechten</h4><p>Yamadori maakt geen gebruikersaccounts en stuurt uw inventarisatiegegevens niet naar een server van de uitgever. U kunt uw gegevens rechtstreeks in de app bekijken, wijzigen en verwijderen (bomen, foto’s, spraaknotities, caches). Voor vragen: neem contact op via het adres hierboven.</p></article>
-			<article class="card"><h4>Wijzigingen</h4><p>Dit beleid kan worden bijgewerkt bij nieuwe app-versies. De datum van de laatste update staat bovenaan deze pagina.</p></article>
-		</section>
-
+		
+		
+		<section class="legal"><article class="card"><h4>Verwerkingsverantwoordelijke</h4><p>De verwerkingsverantwoordelijke is David Voisard, natuurlijke persoon en uitgever van Yamadori Scouting (identificatie fr.yamadori.scouting). Contact: david.voisard2@gmail.com. Correspondentieadres: het adres op de Google Play-fiche van Yamadori Scouting (fr.yamadori.scouting).</p></article>
+<article class="card"><h4>Rechtsgrondslagen (AVG)</h4><p>Lokale opslag van uw notitieboek (bomen, foto's, spraaknotities, parkeren, instellingen) steunt op de uitvoering van de gevraagde dienst (AVG art. 6-1-b). Toegang tot locatie, camera, microfoon en meldingen steunt op uw toestemming via systeemrechten, herroepbaar in de apparaatinstellingen (art. 6-1-a). Aanroepen van kaart-, weer-, kadaster-, beschermde-gebied- en geocodingdiensten steunen op gerechtvaardigd belang om de velddienst te leveren, alleen als de bijbehorende API is ingeschakeld (art. 6-1-f). Het Google Play-aankooptoken wordt verwerkt om het Yamadori Pro-koopcontract uit te voeren (art. 6-1-b).</p></article>
+<article class="card"><h4>Bewaartermijnen</h4><p>Notitieboekgegevens (bomen, foto's, spraaknotities, parkeren, instellingen, lokaal aankooptoken) blijven op het apparaat tot u ze verwijdert, de app de-installeert of de app-opslag leegt. Caches (kaart, weer, kadaster, geocoding, beschermde gebieden) blijven tot u ze in Instellingen wist of tot ze verlopen. Yamadori bewaart geen kopie op een uitgeversserver: de-installatie verwijdert lokale gegevens.</p></article>
+<article class="card"><h4>Uw rechten</h4><p>U kunt uw gegevens in de app inzien, corrigeren, wissen en exporteren (overdraagbaarheid). Online verwerking kunt u beperken of daartegen bezwaar maken door API's in Instellingen uit te schakelen, en GPS-, camera-, microfoon- of meldingstoestemming intrekken in de Android-rechten. Om uw rechten uit te oefenen: david.voisard2@gmail.com. U kunt ook een klacht indienen bij de CNIL (https://www.cnil.fr) of de gegevensbeschermingsautoriteit van uw EU/EER-woonland.</p></article>
+<article class="card"><h4>Minderjarigen</h4><p>Yamadori Scouting is niet bedoeld voor kinderen onder de 16 (AVG) of onder de 13 (COPPA). De uitgever verzamelt niet bewust persoonsgegevens van kinderen. Denkt u dat een kind gegevens heeft verstrekt, mail dan david.voisard2@gmail.com zodat ze op het apparaat kunnen worden verwijderd (gegevens blijven lokaal).</p></article>
+<article class="card"><h4>Inwoners buiten de EU/EER</h4><p>Woont u buiten de EU/EER, dan geldt de AVG mogelijk niet op dezelfde manier. Yamadori verkoopt uw persoonsgegevens niet. U kunt gegevens in de app inzien, corrigeren, wissen en exporteren, en ons mailen op david.voisard2@gmail.com. In het Verenigd Koninkrijk kunt u ook klagen bij de ICO (https://ico.org.uk). In Zwitserland bij de EDÖB (https://www.edoeb.admin.ch). In de VS, Canada, Australië, Nieuw-Zeeland en Japan kunnen lokale wetten (CCPA/CPRA, PIPEDA, Privacy Act, APPI, enz.) gelden afhankelijk van drempels en woonplaats; dit is geen lokaal juridisch advies. Foto’s, spraaknotities en uw notitieboek blijven op het apparaat. Yamadori verkoopt of deelt uw persoonsgegevens niet voor reclame in de zin van CCPA/CPRA (« do not sell or share »). De uitgever beroept zich niet op CCPA-« business »-status; dit beschrijft de praktijk, geen drempelcertificaat.</p></article>
+<article class="card"><h4>Inwoners van Californië</h4><p>Als u in Californië woont: afhankelijk van de functies die u inschakelt, kan Yamadori locatie (GPS), foto’s, spraaknotities, notitieboek, een Play-aankooptoken en, bij een ingeschakelde API, het technische IP-adres naar de aanbieder verwerken. Gegevens blijven op het apparaat, tenzij u ze vrijwillig naar een API stuurt (kaarten, weer, kadaster, beschermde gebieden, geocodering). Yamadori verkoopt of deelt uw persoonsgegevens niet voor reclame. U kunt gegevens in de app inzien, corrigeren, exporteren en wissen (notitieboek, caches, de-installatie). Verzoeken: david.voisard2@gmail.com. De uitgever claimt geen CCPA/CPRA-« business »-status; dit blok beschrijft de praktijk, geen drempelcertificaat. Dit is geen juridisch advies.</p></article>
+<article class="card"><h4>Doorgiften buiten de EU</h4><p>Yamadori heeft geen server. Als u een API inschakelt, ontvangt de geraadpleegde aanbieder uw gps-coördinaten en het technische IP-adres van het verzoek. Sommige zijn buiten de EU gevestigd of dragen daarheen over, waaronder Google Play (facturatie), GitHub Pages (hosting van deze juridische pagina's), USGS, Nominatim/OpenStreetMap en andere kaartdiensten. Die stromen vallen onder elke aanbieder (adequaatheidsbesluit, standaardcontractbepalingen of andere waarborg). U kunt ze vermijden door de API uit te schakelen. Foto's, spraaknotities en het notitieboek worden zo nooit verzonden.</p></article>
+<article class="card"><h4>In-app-aankopen</h4><p>Yamadori Pro is een eenmalige aankoop via Google Play Billing. Transacties worden door Google verwerkt; Yamadori verzamelt of bewaart geen betaalgegevens. Alleen een aankooptoken blijft lokaal om Pro-functies te activeren.</p></article>
+<article class="card"><h4>Wijzigingen</h4><p>Dit beleid kan worden bijgewerkt bij nieuwe app-versies. De datum van de laatste update staat bovenaan de pagina.</p></article></section>
 		<section>
 			<h2>Yamadori-manifest</h2>
 			<p class="intro">Yamadori synchroniseert uw scoutinggegevens niet met de cloud. Uw veldnotitieboekje zit in uw zak.</p>
+			<p class="intro">Yamadori is uitsluitend een hulpmiddel voor terreinverkenning. Het is geen juridisch advies, vergunning, juridische ondersteuning of nauwkeurigheidsgarantie. De uitgever wijst aansprakelijkheid op dat punt af: u bent zelf verantwoordelijk om de regels bij de bevoegde autoriteiten te controleren.</p>
 		</section>
-
-		<section class="section"><h3>Op uw apparaat</h3><article class="card"><h4>Je notitieboekje, je telefoon</h4><p>Geen account, geen Yamadori-server. Je scoutinggegevens, foto’s, gesproken notities en startpunt blijven op dit apparaat staan. Standaard worden gegevens onversleuteld opgeslagen in het lokale geheugen; je kunt lokale versleuteling inschakelen in Instellingen (optioneel, Android) — het beschermt bomen, parkeerplaatsen, exportwachtwoord en GPS-instellingen, maar geen weer- of kaartcaches.</p></article>
+		<section class="section"><h3>Op uw apparaat</h3><article class="card"><h4>Je notitieboekje, je telefoon</h4><p>Geen account, geen Yamadori-server. Je scoutinggegevens, foto’s, gesproken notities en startpunt blijven op dit apparaat staan. Op een nieuwe Android-installatie staat lokale versleuteling standaard aan (KeyStore, zonder pincode); bestaande installaties blijven ongewijzigd. Je kunt het uitzetten in Instellingen — het beschermt bomen, parkeerplaatsen, exportwachtwoord en GPS-instellingen, maar geen weer- of kaartcaches.</p></article>
 <article class="card"><h4>Gebouwd voor het bos</h4><p>Kaart-, weer- en kadastergegevens worden lokaal in de cache opgeslagen. GPS werkt zonder netwerk, zelfs diep in het bos.</p></article>
 <article class="card"><h4>Bescherm uw notebook</h4><p>Exporteer regelmatig een back-up (USB-stick, persoonlijke cloud). Zonder exportwachtwoord garandeert het bestand alleen de integriteit (controlesommen) en niet de vertrouwelijkheid: iedereen die het bestand heeft, kan de gegevens extraheren. Met een wachtwoord wordt het gehele archief versleuteld (PBKDF2 + AES-GCM). De hint is alleen een geheugensteuntje; het kan het wachtwoord niet herstellen.</p></article>
 <article class="card"><h4>Volledige transparantie</h4><p>Net als een papieren notitieboekje in je tas blijven je scoutinggegevens leesbaar op een ontgrendeld apparaat. Yamadori maakt geen gebruik van de automatische back-up van Android naar Google. We raden een schermvergrendeling en met een wachtwoord beveiligde export aan.</p></article>
 <article class="card"><h4>Android-machtigingen</h4><p>Camera: alleen boomfoto's, wanneer u op Vastleggen tikt. Microfoon: spraaknotities (max. 30 sec.) over uw actie. Locatie: scouting, kaart en weer, alleen terwijl de app op de voorgrond staat. Kompas: koers tijdens vastleggen, lokaal verwerkt. De machtigingenwizard bij de eerste keer opstarten begeleidt u; er wordt niets zonder reden gevraagd.</p></article></section>
 <section class="section"><h3>Op het net</h3><article class="card"><h4>Minimale connectiviteit</h4><p>Online worden alleen uw GPS-coördinaten naar openbare diensten gestuurd voor weer, agronomie, kaarten, kadaster, beschermde gebieden en geocodering — nooit uw foto’s of notities. Per land o.a. Open-Meteo, IGN / CNIG / basemap.de / OS / swisstopo / basemap.at / OpenTopo (BE, SE, JP, AU, DK, FI, IE, CA, NZ) / PDOK BRT (NL) / Kartverket (NO) / USGS (US), EEA, Natural England, FOEN, CadGIS, Nominatim (OpenStreetMap).</p></article>
-<article class="card"><h4>Geraadpleegde diensten van derden</h4><p>Open-Meteo (voorspellingen en klimaatgeschiedenis; commercieel gebruik onder abonnement van de uitgever), nationale kaarten (IGN FR, CNIG ES, basemap.de, Ordnance Survey / OSM, swisstopo CH, basemap.at AT, OpenTopo BE/SE/JP/AU/DK/FI/IE/CA/NZ, PDOK BRT NL, Kartverket NO, USGS US), kadaster (IGN Apicarto, Catastro ES, Catasto IT, partieel ALKIS DE, HMLR GB, AV/EGRID CH + ZH AVWFS, AT-gemeente, CadGIS BE, BRK NL, kommun SE, matrikkel NO, DGT PT, Nominatim DK/FI/IE/JP, CAPAD AU, PAD-US, CPCAD CA, DOC NZ), beschermde gebieden (IGN FR, EEA, Natural England, FOEN/Pro Natura CH, CAPAD AU, MOE/KSJ A10 JP, PAD-US, CPCAD CA, DOC NZ), Nominatim/OpenStreetMap (plaatsnamen), gemeentelijke gidsen per land. Yamadori heeft geen tussenserver: uw coördinaten gaan rechtstreeks naar deze openbare diensten, elk met eigen privacybeleid. Foto’s en notities verlaten zo het apparaat niet.</p></article>
+<article class="card"><h4>Geraadpleegde diensten van derden</h4><p>Open-Meteo (voorspellingen en klimaatgeschiedenis), nationale kaarten (IGN FR, CNIG ES, basemap.de, Ordnance Survey / OSM, swisstopo CH, basemap.at AT, OpenTopo BE/SE/JP/AU/DK/FI/IE/CA/NZ, PDOK BRT NL, Kartverket NO, USGS US), kadaster (IGN Apicarto, Catastro ES, Catasto IT, partieel ALKIS DE, HMLR GB, AV/EGRID CH + ZH AVWFS, AT-gemeente, CadGIS BE, BRK NL, kommun SE, matrikkel NO, DGT PT, Nominatim DK/FI/IE/JP, CAPAD AU, PAD-US, CPCAD CA, DOC NZ), beschermde gebieden (IGN FR, EEA, Natural England, FOEN/Pro Natura CH, CAPAD AU, MOE/KSJ A10 JP, PAD-US, CPCAD CA, DOC NZ), Nominatim/OpenStreetMap (plaatsnamen), gemeentelijke gidsen per land. Yamadori heeft geen tussenserver: uw coördinaten gaan rechtstreeks naar deze openbare diensten, elk met eigen privacybeleid. Foto’s en notities verlaten zo het apparaat niet.</p></article>
 <article class="card"><h4>Geen tracking</h4><p>Geen Yamadori-account, geen advertenties, geen analyses (Firebase, crashreporters, enz.). Geen gegevensdoorverkoop. Geen cookies van derden: de app draait lokaal in een Android WebView.</p></article></section>
-<section class="section"><h3>Jij hebt de controle</h3><article class="card"><h4>Jij bepaalt wie jouw spots ziet</h4><p>Het delen van een boom of het exporteren van een back-up is geheel uw keuze. Niets wordt automatisch naar derden verzonden.</p></article>
-<article class="card"><h4>Transparante GPS</h4><p>Op de voorgrond wordt GPS gebruikt om een boom te verkennen, de kaart weer te geven en het weer in context te plaatsen. Het volgen stopt wanneer de app op de achtergrond staat. Er wordt geen locatie naar een Yamadori-server verzonden.</p></article>
+<section class="section"><h3>Jij hebt de controle</h3><article class="card"><h4>Jij bepaalt wie jouw spots ziet</h4><p>Een boombestand (foto’s en gps) versturen of een back-up exporteren is geheel uw keuze. Niets wordt automatisch naar derden verzonden.</p></article>
+<article class="card"><h4>Transparante GPS</h4><p>Op de voorgrond kan GPS bij het openen starten om een positie voor te bereiden, en daarna een boom verkennen, de kaart weergeven en het weer in context plaatsen. Het volgen stopt wanneer de app op de achtergrond staat. Er wordt geen locatie naar een Yamadori-server verzonden.</p></article>
 <article class="card"><h4>Je hebt het netwerk verbroken</h4><p>Elke netwerkverbinding kan afzonderlijk worden uitgeschakeld in Instellingen. Als je een API uitzet, geen live verzoeken meer; reeds gedownloade cache blijft offline beschikbaar.</p></article></section>
-
 		<section class="inventory">
 			<div>
 				<h2>Gegevensinventarisatie</h2>
@@ -146,9 +119,10 @@
 <article class="card"><h4>Weer en klimaat</h4><p>Lokaal in cache opgeslagen na een verzoek. Coördinaten verzonden naar Open-Meteo wanneer die API is ingeschakeld. Niet gedeeld. Verwijderen: Instellingen → weerscache wissen.</p></article>
 <article class="card"><h4>Kaart tegels</h4><p>Lokaal in cache opgeslagen. Tegelverzoeken voor het zichtbare kaartgebied per land (IGN, CNIG, basemap.de, OS…). Niet gedeeld. Verwijderen: Instellingen → kaartcache wissen.</p></article>
 <article class="card"><h4>Kadaster en beschermde gebieden</h4><p>Lokaal in cache opgeslagen. Coördinaten worden verzonden naar nationale kadaster-/beschermde gebieden wanneer ingeschakeld. Niet gedeeld. Verwijderen: Instellingen → kadastercache wissen.</p></article>
+<article class="card"><h4>Pro-aankooptoken</h4><p>Lokaal bewaard om Pro te activeren. Yamadori ontvangt uw betaalgegevens niet (Google Play). Lokaal wissen: de app verwijderen. De aankoop blijft gekoppeld aan uw Google-account en kan worden hersteld.</p></article>
+<article class="card"><h4>IP-adres</h4><p>Yamadori verzamelt uw IP-adres niet. Het wordt ontvangen door de derdediensten die u raadpleegt (kaarten, weer, kadaster, Google Play, GitHub Pages), zoals bij elke HTTPS-aanvraag. De uitgever slaat het niet op.</p></article>
 		</section>
-
-		<footer>Yamadori-manifest — versie 0.7.8</footer>
+		<footer>Yamadori-manifest — versie 1.0.0</footer>
 	</main>
 </body>
 </html>
