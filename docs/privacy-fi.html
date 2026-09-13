@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<title>Tietosuojakäytäntö — Yamadori Scouting</title>
+	<title>Yksityisyys - Yamadori Scouting</title>
 	<style>
 		:root {
 			color-scheme: light;
@@ -22,23 +22,10 @@
 			color: var(--forest-900);
 			line-height: 1.55;
 		}
-		main {
-			max-width: 42rem;
-			margin: 0 auto;
-			padding: 1.5rem 1rem 3rem;
-		}
-		header {
-			margin-bottom: 1.5rem;
-		}
-		h1 {
-			margin: 0 0 0.75rem;
-			font-size: 1.5rem;
-			line-height: 1.25;
-		}
-		h2 {
-			margin: 0 0 0.5rem;
-			font-size: 1.125rem;
-		}
+		main { max-width: 42rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+		header { margin-bottom: 1.5rem; }
+		h1 { margin: 0 0 0.75rem; font-size: 1.5rem; line-height: 1.25; }
+		h2 { margin: 0 0 0.5rem; font-size: 1.125rem; }
 		h3 {
 			margin: 0 0 0.75rem;
 			font-size: 0.75rem;
@@ -47,29 +34,18 @@
 			text-transform: uppercase;
 			color: var(--muted);
 		}
-		h4 {
-			margin: 0;
-			font-size: 0.95rem;
-		}
-		p {
-			margin: 0.5rem 0 0;
-		}
-		.meta {
-			font-size: 0.875rem;
-			color: var(--muted);
-		}
+		h4 { margin: 0; font-size: 0.95rem; }
+		p { margin: 0.5rem 0 0; }
+		.meta { font-size: 0.875rem; color: var(--muted); }
 		.meta p { margin: 0.25rem 0; }
-		.lang-switch {
-			margin-bottom: 1rem;
-			font-size: 0.875rem;
-		}
-		.lang-switch a {
+		.lang-switch, .doc-nav { margin-bottom: 1rem; font-size: 0.875rem; }
+		.lang-switch a, .doc-nav a {
 			color: var(--forest-800);
 			font-weight: 600;
 			text-decoration: none;
 		}
-		.lang-switch a:hover { text-decoration: underline; }
-		.lang-switch [aria-current="page"] {
+		.lang-switch a:hover, .doc-nav a:hover { text-decoration: underline; }
+		.lang-switch [aria-current="page"], .doc-nav [aria-current="page"] {
 			font-weight: 700;
 			color: var(--forest-900);
 		}
@@ -86,55 +62,52 @@
 			border-radius: 0.75rem;
 			padding: 0.875rem 1rem;
 		}
-		.card p {
-			color: var(--muted);
-			font-size: 0.9rem;
-		}
-		footer {
-			margin-top: 2rem;
-			text-align: center;
-			font-size: 0.75rem;
-			color: var(--muted);
-		}
+		.card p { color: var(--muted); font-size: 0.9rem; }
+		footer { margin-top: 2rem; text-align: center; font-size: 0.75rem; color: var(--muted); }
 		a { color: var(--forest-800); }
 	</style>
 </head>
 <body>
 	<main>
 		<div class="lang-switch">Kieli : <a href="privacy.html">Français</a> · <a href="privacy-en.html">English</a> · <a href="privacy-de.html">Deutsch</a> · <a href="privacy-es.html">Español</a> · <a href="privacy-it.html">Italiano</a> · <a href="privacy-nl.html">Nederlands</a> · <a href="privacy-sv.html">Svenska</a> · <a href="privacy-nb.html">Norsk</a> · <a href="privacy-pt.html">Português</a> · <a href="privacy-da.html">Dansk</a> · <span aria-current="page">Suomi</span></div>
+		<nav class="doc-nav"><span aria-current="page">Tietosuoja</span> · <a href="mentions-legales-fi.html">Oikeudelliset tiedot</a> · <a href="cgu-fi.html">Käyttöehdot</a> · <a href="cgv-fi.html">Myyntiehdot</a></nav>
 		<header>
-			<h1>Tietosuojakäytäntö</h1>
+			<h1>Yksityisyys - Yamadori Scouting</h1>
 			<div class="meta">
 				<p><strong>Sovellus :</strong> Yamadori Scouting (fr.yamadori.scouting)</p>
-				<p><strong>Julkaisija / yhteystiedot :</strong> <a href="mailto:david.voisard2@gmail.com">david.voisard2@gmail.com</a></p>
-				<p><strong>Viimeksi päivitetty :</strong> 13. elokuuta 2026</p>
-				<p><strong>Sovellusversio :</strong> 0.7.8</p>
+				<p><strong>Julkaisija / yhteystiedot :</strong> David Voisard — <a href="mailto:david.voisard2@gmail.com">david.voisard2@gmail.com</a></p>
+				<p><strong>Viimeksi päivitetty :</strong> 13. syyskuuta 2026</p>
+				<p><strong>Sovellusversio :</strong> 1.0.0</p>
 			</div>
 		</header>
-
-		<section class="legal">
-			<article class="card"><h4>Sovelluksen sisäiset ostot</h4><p>Yamadori Pro on kertaluonteinen ostos Google Play Billingin kautta. Tapahtumat käsittelee Google; Yamadori ei kerää eikä tallenna maksutietojasi. Vain ostotunnus säilytetään paikallisesti laitteella Pro-ominaisuuksien käyttöönottoa varten.</p></article>
-			<article class="card"><h4>Oikeutesi</h4><p>Yamadori ei luo käyttäjätilejä eikä lähetä inventointitietojasi julkaisijan palvelimelle. Voit tarkastella, muokata ja poistaa tietojasi suoraan sovelluksessa (puut, valokuvat, äänimuistiinpanot, välimuistit). Kysymyksissä ota yhteyttä yllä olevaan osoitteeseen.</p></article>
-			<article class="card"><h4>Muutokset</h4><p>Tätä käytäntöä voidaan päivittää uusien sovellusversioiden yhteydessä. Viimeisimmän päivityksen päivämäärä on sivun yläosassa.</p></article>
-		</section>
-
+		
+		
+		<section class="legal"><article class="card"><h4>Rekisterinpitäjä</h4><p>Rekisterinpitäjä on David Voisard, luonnollinen henkilö ja Yamadori Scoutingin julkaisija (tunniste fr.yamadori.scouting). Yhteystiedot: david.voisard2@gmail.com. Haasteosoite: Yamadori Scoutingin Google Play -sivulla (fr.yamadori.scouting) ilmoitettu osoite.</p></article>
+<article class="card"><h4>Oikeusperusteet (GDPR)</h4><p>Muistikirjan paikallinen tallennus (puut, valokuvat, äänimuistiinpanot, pysäköinti, asetukset) perustuu pyytämäsi palvelun täyttämiseen (GDPR 6 artikla 1 kohta b). Sijainnin, kameran, mikrofonin ja ilmoitusten käyttö perustuu suostumukseesi järjestelmän lupien kautta, peruutettavissa laitteen asetuksista (kohta a). Kartta-, sää-, kiinteistörekisteri-, suojelualue- ja geokoodauskutsut perustuvat oikeutettuun etuun tarjota kenttäpalvelua, vain jos vastaava API on päällä (kohta f). Google Play -ostotunnusta käsitellään Yamadori Pro -ostosopimuksen täyttämiseksi (kohta b).</p></article>
+<article class="card"><h4>Säilytysajat</h4><p>Muistikirjan tiedot (puut, valokuvat, äänimuistiinpanot, pysäköinti, asetukset, paikallinen ostotunnus) säilyvät laitteella, kunnes poistat ne, poistat sovelluksen tai tyhjennät sovelluksen tallennustilan. Välimuistit (kartta, sää, kiinteistörekisteri, geokoodaus, suojelualueet) säilyvät, kunnes tyhjennät ne Asetuksissa tai ne vanhenevat. Yamadori ei säilytä kopiota julkaisijan palvelimella: asennuksen poisto poistaa paikalliset tiedot.</p></article>
+<article class="card"><h4>Oikeutesi</h4><p>Voit tarkastella, oikaista, poistaa ja viedä (siirrettävyys) tietosi sovelluksessa. Voit rajoittaa verkossa tapahtuvaa käsittelyä tai vastustaa sitä poistamalla API:t käytöstä Asetuksissa ja peruuttaa GPS-, kamera-, mikrofoni- tai ilmoitussuostumuksen Android-luvista. Oikeuksien käyttämiseksi: david.voisard2@gmail.com. Voit myös tehdä valituksen CNIL:lle (https://www.cnil.fr) tai asuinmaasi EU/ETA-tietosuojaviranomaiselle.</p></article>
+<article class="card"><h4>Alaikäiset</h4><p>Yamadori Scouting ei ole tarkoitettu alle 16-vuotiaille (GDPR) eikä alle 13-vuotiaille (COPPA). Julkaisija ei tietoisesti kerää lasten henkilötietoja. Jos uskot lapsen antaneen tietoja, kirjoita osoitteeseen david.voisard2@gmail.com, jotta ne voidaan poistaa laitteelta (tiedot pysyvät paikallisina).</p></article>
+<article class="card"><h4>Asukkaat EU/ETA-alueen ulkopuolella</h4><p>Jos asut EU/ETA-alueen ulkopuolella, GDPR ei välttämättä sovellu samalla tavalla. Yamadori ei myy henkilötietojasi. Voit tarkastella, oikaista, poistaa ja viedä tietoja sovelluksessa ja kirjoittaa osoitteeseen david.voisard2@gmail.com. Yhdistyneessä kuningaskunnassa voit myös valittaa ICO:lle (https://ico.org.uk). Sveitsissä EDÖB:lle (https://www.edoeb.admin.ch). Yhdysvalloissa, Kanadassa, Australiassa, Uudessa-Seelannissa ja Japanissa paikalliset lait (CCPA/CPRA, PIPEDA, Privacy Act, APPI ym.) voivat soveltua kynnysten ja asuinpaikan mukaan; tämä ei ole paikallista oikeudellista neuvontaa. Valokuvat, äänimuistiinpanot ja muistikirja pysyvät laitteella. Yamadori ei myy eikä jaa henkilötietojasi mainontaan CCPA/CPRA:n mielessä (« do not sell or share »). Julkaisija ei vedota CCPA-« business »-asemaan; lause kuvaa käytäntöä, ei kynnystodistusta.</p></article>
+<article class="card"><h4>Kalifornian asukkaat</h4><p>Jos asut Kaliforniassa: käyttöön ottamistasi toiminnoista riippuen Yamadori voi käsitellä sijaintia (GPS), valokuvia, äänimuistiinpanoja, muistikirjaa, Play-ostotunnusta ja, jos API on päällä, teknisen IP-osoitteen palveluntarjoajalle. Tiedot pysyvät laitteella, ellet vapaaehtoisesti lähetä niitä API:lle (kartat, sää, kiinteistörekisteri, suojelualueet, geokoodaus). Yamadori ei myy eikä jaa henkilötietojasi mainontaan. Voit tarkastella, oikaista, viedä ja poistaa tietoja sovelluksessa (muistikirja, välimuistit, asennuksen poisto). Pyynnöt: david.voisard2@gmail.com. Julkaisija ei väitä CCPA/CPRA-« business »-asemaa; lohko kuvaa käytäntöä, ei kynnystodistusta. Tämä ei ole oikeudellista neuvontaa.</p></article>
+<article class="card"><h4>Siirrot EU:n ulkopuolelle</h4><p>Yamadorilla ei ole palvelinta. Jos otat API:n käyttöön, kysytty palveluntarjoaja vastaanottaa GPS-koordinaattisi ja pyynnön teknisen IP-osoitteen. Osa on sijoittautunut EU:n ulkopuolelle tai siirtää tietoja sinne, muun muassa Google Play (laskutus), GitHub Pages (näiden oikeudellisten sivujen ylläpito), USGS, Nominatim/OpenStreetMap ja muut karttapalvelut. Nämä siirrot kuuluvat kullekin palveluntarjoajalle (riittävyyspäätös, vakiosopimuslausekkeet tai muu suoja). Voit välttää ne poistamalla API:n käytöstä. Valokuvia, äänimuistiinpanoja ja muistikirjaa ei koskaan lähetetä tällä tavalla.</p></article>
+<article class="card"><h4>Sovelluksen sisäiset ostot</h4><p>Yamadori Pro on kertaluonteinen osto Google Play Billingin kautta. Tapahtumat käsittelee Google; Yamadori ei kerää eikä tallenna maksutietoja. Vain ostotunnus säilytetään paikallisesti Pro-ominaisuuksien käyttöönottoa varten.</p></article>
+<article class="card"><h4>Muutokset</h4><p>Tätä käytäntöä voidaan päivittää uusien sovellusversioiden yhteydessä. Viimeisimmän päivityksen päivämäärä on sivun yläosassa.</p></article></section>
 		<section>
 			<h2>Yamadorin manifesti</h2>
 			<p class="intro">Yamadori ei synkronoi tiedustelutietojasi pilveen. Kenttämuistikirjasi asuu taskussasi.</p>
+			<p class="intro">Yamadori on vain maastotiedustelun apuväline. Se ei ole oikeudellista neuvontaa, lupaa, oikeudellista tukea eikä tarkkuustakuuta. Julkaisija vapauttaa itsensä vastuusta tältä osin: olet yksin vastuussa sääntöjen tarkistamisesta toimivaltaisilta viranomaisilta.</p>
 		</section>
-
-		<section class="section"><h3>laitteellasi</h3><article class="card"><h4>Muistikirjasi, puhelimesi</h4><p>Ei tiliä, ei Yamadori-palvelinta. Tutkimusmerkintäsi, valokuvasi, äänimuistiinpanosi ja lähtöpisteesi pysyvät tällä laitteella. Oletuksena tiedot tallennetaan salaamattomina paikalliseen tallennustilaan; voit ottaa paikallisen salauksen käyttöön Asetuksista (valinnainen, Android) — se suojaa puita, pysäköintiä, vientisalasanaa ja GPS-asetuksia, mutta ei sää- tai karttavälimuisteja.</p></article>
+		<section class="section"><h3>laitteellasi</h3><article class="card"><h4>Muistikirjasi, puhelimesi</h4><p>Ei tiliä, ei Yamadori-palvelinta. Tutkimusmerkintäsi, valokuvasi, äänimuistiinpanosi ja lähtöpisteesi pysyvät tällä laitteella. Uudessa Android-asennuksessa paikallinen salaus on oletuksena päällä (KeyStore, ei PIN-koodia); olemassa olevat asennukset jäävät ennalleen. Voit kytkeä sen pois Asetuksista — se suojaa puita, pysäköintiä, vientisalasanaa ja GPS-asetuksia, mutta ei sää- tai karttavälimuisteja.</p></article>
 <article class="card"><h4>Rakennettu metsää varten</h4><p>Kartta-, sää- ja maarekisteritiedot tallennetaan paikallisesti välimuistiin. GPS toimii ilman verkkoa – jopa syvällä metsässä.</p></article>
 <article class="card"><h4>Suojaa muistikirjaasi</h4><p>Vie varmuuskopio säännöllisesti (USB-asema, henkilökohtainen pilvi). Ilman vientisalasanaa tiedosto takaa vain eheyden (tarkistussummat), ei luottamuksellisuutta: kuka tahansa tiedoston haltija voi purkaa tiedot. Salasanalla koko arkisto salataan (PBKDF2 + AES-GCM). Vihje on vain muistin tuki; se ei palauta salasanaa.</p></article>
 <article class="card"><h4>Täysi läpinäkyvyys</h4><p>Kuten paperimuistivihko laukussasi, tutkimustietosi pysyvät luettavissa lukitsemattomalla laitteella. Yamadori ei käytä Androidin automaattista varmuuskopiointia Googleen. Suosittelemme näytön lukitusta ja salasanalla suojattua vientiä.</p></article>
 <article class="card"><h4>Android-käyttöoikeudet</h4><p>Kamera: vain puukuvat, kun napautat Ota. Mikrofoni: äänimuistiinpanot (enintään 30 s) toiminnastasi. Sijainti: partio, kartta ja sää, vain sovelluksen ollessa etualalla. Kompassi: suunnan näyttö kaappauksen aikana, käsitelty paikallisesti. Ohjattu käyttöoikeustoiminto opastaa sinua ensimmäisen käynnistyksen yhteydessä – mitään ei pyydetä ilman syytä.</p></article></section>
 <section class="section"><h3>verkossa</h3><article class="card"><h4>Minimaalinen liitettävyys</h4><p>Kun olet verkossa, vain GPS-koordinaatit lähetetään julkisille sää-, maatalous-, kartta-, kiinteistö-, suojelualue- ja geokoodauspalveluille — ei koskaan valokuviasi tai muistiinpanojasi. Maittain: Open-Meteo, IGN / CNIG / basemap.de / OS / swisstopo / basemap.at / OpenTopo (BE, SE, JP, AU, DK, FI, IE, CA, NZ) / PDOK BRT (NL) / Kartverket (NO) / USGS (US), EEA, Natural England, FOEN, CadGIS, Nominatim (OpenStreetMap) ja muut.</p></article>
-<article class="card"><h4>Kolmannen osapuolen palveluita on kuultu</h4><p>Open-Meteo (ennusteet ja ilmastohistoria; kaupallinen käyttö kustantajan tilauksella), kansalliset kartat (IGN FR, CNIG ES, basemap.de, Ordnance Survey / OSM-varaus, swisstopo CH, basemap.at AT, OpenTopo BE/SE/JP/AU/DK/FI/IE/CA/NZ, PDOK BRT NL, Kartverket NO, USGS US), kiinteistö (IGN Apicarto, Catastro ES, Catasto IT, osittainen ALKIS DE, HMLR GB, AV/EGRID CH + ZH AVWFS, AT-kunta, CadGIS BE, BRK NL, kommun SE, matrikkel NO, DGT PT, Nominatim DK/FI/IE/JP, CAPAD AU, PAD-US, CPCAD CA, DOC NZ), suojelualueet (IGN FR, EEA, Natural England, FOEN/Pro Natura CH, CAPAD AU, MOE/KSJ A10 JP, PAD-US, CPCAD CA, DOC NZ), Nominatim/OpenStreetMap (paikannimet), kuntahakemistot maittain. Yamadorilla ei ole välipalvelinta: koordinaatit menevät suoraan näihin julkisiin palveluihin, joista jokaisella on oma tietosuojakäytäntönsä. Valokuvasi ja muistiinpanosi eivät koskaan poistu laitteesta tällä tavalla.</p></article>
+<article class="card"><h4>Kolmannen osapuolen palveluita on kuultu</h4><p>Open-Meteo (ennusteet ja ilmastohistoria), kansalliset kartat (IGN FR, CNIG ES, basemap.de, Ordnance Survey / OSM-varaus, swisstopo CH, basemap.at AT, OpenTopo BE/SE/JP/AU/DK/FI/IE/CA/NZ, PDOK BRT NL, Kartverket NO, USGS US), kiinteistö (IGN Apicarto, Catastro ES, Catasto IT, osittainen ALKIS DE, HMLR GB, AV/EGRID CH + ZH AVWFS, AT-kunta, CadGIS BE, BRK NL, kommun SE, matrikkel NO, DGT PT, Nominatim DK/FI/IE/JP, CAPAD AU, PAD-US, CPCAD CA, DOC NZ), suojelualueet (IGN FR, EEA, Natural England, FOEN/Pro Natura CH, CAPAD AU, MOE/KSJ A10 JP, PAD-US, CPCAD CA, DOC NZ), Nominatim/OpenStreetMap (paikannimet), kuntahakemistot maittain. Yamadorilla ei ole välipalvelinta: koordinaatit menevät suoraan näihin julkisiin palveluihin, joista jokaisella on oma tietosuojakäytäntönsä. Valokuvasi ja muistiinpanosi eivät koskaan poistu laitteesta tällä tavalla.</p></article>
 <article class="card"><h4>Ei seurantaa</h4><p>Ei Yamadori-tiliä, ei mainoksia, ei analytiikkaa (Firebase, kaatumistoimittajat jne.). Ei datan jälleenmyyntiä. Ei kolmannen osapuolen evästeitä: sovellus toimii paikallisesti Android WebView'ssa.</p></article></section>
-<section class="section"><h3>Sinä hallitset</h3><article class="card"><h4>Sinä päätät, kuka näkee paikkasi</h4><p>Puun jakaminen tai varmuuskopion vieminen on täysin sinun valintasi. Mitään ei lähetetä automaattisesti kolmansille osapuolille.</p></article>
-<article class="card"><h4>Läpinäkyvä GPS</h4><p>Etualalla GPS:ää käytetään puun etsimiseen, kartan näyttämiseen ja sään asettamiseen kontekstiin. Seuranta pysähtyy, kun sovellus on taustalla. Sijaintia ei lähetetä Yamadori-palvelimelle.</p></article>
+<section class="section"><h3>Sinä hallitset</h3><article class="card"><h4>Sinä päätät, kuka näkee paikkasi</h4><p>Puutiedoston (kuvat ja GPS) lähettäminen tai varmuuskopion vieminen on täysin sinun valintasi. Mitään ei lähetetä automaattisesti kolmansille osapuolille.</p></article>
+<article class="card"><h4>Läpinäkyvä GPS</h4><p>Etualalla GPS voi käynnistyä avattaessa sijainnin valmistelemiseksi; sen jälkeen sitä käytetään puun etsimiseen, kartan näyttämiseen ja sään asettamiseen kontekstiin. Seuranta pysähtyy, kun sovellus on taustalla. Sijaintia ei lähetetä Yamadori-palvelimelle.</p></article>
 <article class="card"><h4>Katkaisit verkon</h4><p>Jokainen verkkoyhteys voidaan poistaa käytöstä yksitellen asetuksista. Jos poistat API:n käytöstä, ei enää reaaliaikaisia ​​pyyntöjä. jo ladattu välimuisti on edelleen käytettävissä offline-tilassa.</p></article></section>
-
 		<section class="inventory">
 			<div>
 				<h2>Tietojen inventaario</h2>
@@ -146,9 +119,10 @@
 <article class="card"><h4>Sää ja ilmasto</h4><p>Välimuistissa paikallisesti pyynnön jälkeen. Koordinaatit lähetetään Open-Meteolle, kun kyseinen API on käytössä. Ei jaettu. Poisto: Asetukset → tyhjennä säävälimuisti.</p></article>
 <article class="card"><h4>Karttalaatat</h4><p>Välimuistissa paikallisesti. Näkyvän kartta-alueen laattapyynnöt maittain (IGN, CNIG, basemap.de, OS…). Ei jaettu. Poistaminen: Asetukset → tyhjennä karttavälimuisti.</p></article>
 <article class="card"><h4>Maarekisteri ja suojelualueet</h4><p>Välimuistissa paikallisesti. Koordinaatit lähetetään kansallisiin kiinteistö-/suojelualuepalveluihin, kun ne ovat käytössä. Ei jaettu. Poisto: Asetukset → tyhjennä kiinteistön välimuisti.</p></article>
+<article class="card"><h4>Pro-ostotunnus</h4><p>Säilytetään paikallisesti Pro-ominaisuuksien avaamiseksi. Yamadori ei vastaanota maksutietojasi (Google Play). Paikallinen poisto: poista sovellus. Ostos pysyy Google-tiliisi sidottuna ja se voidaan palauttaa.</p></article>
+<article class="card"><h4>IP-osoite</h4><p>Yamadori ei kerää IP-osoitettasi. Sen vastaanottavat kolmannen osapuolen palvelut, joita kysyt (kartat, sää, kiinteistörekisteri, Google Play, GitHub Pages), kuten missä tahansa HTTPS-pyynnössä. Julkaisija ei tallenna sitä.</p></article>
 		</section>
-
-		<footer>Yamadori-manifesti — versio 0.7.8</footer>
+		<footer>Yamadori-manifesti — versio 1.0.0</footer>
 	</main>
 </body>
 </html>

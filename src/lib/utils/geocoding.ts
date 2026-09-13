@@ -3,13 +3,14 @@ import { getApiDisabledError, isApiEnabled } from '$lib/utils/apiPolicy';
 import type { Tree } from '$lib/types/tree';
 import { getCachedGeocodeLabel, saveCachedGeocodeLabel, getCachedGeocodeRaw, saveCachedGeocodeRaw } from '$lib/utils/geocodingCache';
 import { regionalApiCoordinates } from '$lib/utils/geo';
+import { HTTP_USER_AGENT } from '$lib/constants/app';
 import { getAcceptLanguage } from '$lib/utils/i18n/locale';
 import { createTimedAbortSignal, isAbortError, throwIfAborted } from '$lib/utils/abortSignal';
 import { createInFlightMap } from '$lib/utils/inFlight';
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
 const FETCH_TIMEOUT_MS = 10_000;
-const USER_AGENT = 'Yamadori/0.7.8 (bonsai field app)';
+const USER_AGENT = HTTP_USER_AGENT;
 const MIN_REQUEST_INTERVAL_MS = 1_000;
 
 export type NominatimAddress = {

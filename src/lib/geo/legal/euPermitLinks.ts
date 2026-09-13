@@ -398,7 +398,7 @@ const NL_PROVINCE_LINKS: Record<NlProvinceCode, EuPermitLink> = {
 	FL: {
 		id: 'nl_prov_fl',
 		label: 'Flevoland — Natuur',
-		url: 'https://www.flevoland.nl/loket/producten-en-diensten/natuur'
+		url: 'https://www.flevoland.nl/loket/loketoverview/flora-en-fauna-activiteit'
 	},
 	FR: {
 		id: 'nl_prov_fr',

@@ -25,7 +25,7 @@
 		return (
 			climate?.yearlyStats
 				.map((year) =>
-					m.climate_frost_year({ days: String(year.frostDays), year: String(year.year) })
+					m.climate_frost_year({ days: String(year.frostDays) })
 				)
 				.join(' · ') ?? ''
 		);
