@@ -1291,7 +1291,7 @@
 				{m.veto_species_regional_pdl()}
 			</p>
 		{:else}
-			<p class="text-xs leading-relaxed text-muted">{m.veto_species_regional_generic()}</p>
+			<p class="text-xs leading-relaxed text-muted">{m.veto_species_regional_generic({ source: legalPack.speciesSourceName })}</p>
 		{/if}
 
 		<details class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-forest-800">
@@ -1404,7 +1404,7 @@
 				<span>
 					{speciesHit?.level === 'caution'
 						? m.veto_check_species_caution()
-						: m.veto_check_species()}
+						: m.veto_check_species({ source: legalPack.speciesSourceName })}
 				</span>
 			</label>
 		{/if}
