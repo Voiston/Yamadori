@@ -28,22 +28,22 @@
 		"test:watch": "npm run i18n:compile && vitest"
 	},
 	"devDependencies": {
-		"@capacitor/android": "^8.4.1",
-		"@capacitor/cli": "^8.4.1",
+		"@capacitor/android": "^8.5.3",
+		"@capacitor/cli": "^8.5.3",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
 		"@tailwindcss/vite": "^4.3.1",
 		"@types/node": "^26.0.0",
 		"jsdom": "^29.1.1",
-		"sharp": "^0.35.2",
+		"sharp": "^0.35.5",
 		"svelte": "^5.56.1",
 		"svelte-check": "^4.6.0",
 		"tailwindcss": "^4.3.1",
 		"topojson-client": "^3.1.0",
 		"typescript": "^6.0.3",
 		"vite": "^8.0.16",
-		"vitest": "^4.1.9"
+		"vitest": "^4.1.12"
 	},
 	"dependencies": {
 		"@capacitor-community/keep-awake": "^7.1.0",
@@ -51,7 +51,7 @@
 		"@capacitor-community/volume-buttons": "^8.0.0",
 		"@capacitor/app": "^8.1.0",
 		"@capacitor/camera": "^8.2.0",
-		"@capacitor/core": "^8.4.1",
+		"@capacitor/core": "^8.5.3",
 		"@capacitor/device": "^8.0.2",
 		"@capacitor/filesystem": "^8.1.2",
 		"@capacitor/geolocation": "^8.2.0",
@@ -69,15 +69,19 @@
 		"fflate": "^0.8.3",
 		"geomagnetism": "^0.2.0",
 		"idb-keyval": "^6.2.5",
-		"maplibre-gl": "^5.6.0",
+		"maplibre-gl": "^6.14.0",
 		"suncalc": "^2.0.0",
 		"valibot": "^1.4.2"
 	},
 	"overrides": {
 		"tar": "7.5.22",
-		"brace-expansion": "5.0.9",
+		"brace-expansion": "5.0.12",
+		"devalue": "5.9.4",
 		"nanoid": "3.3.18",
 		"postcss": "8.5.26",
-		"undici": "7.29.0"
+		"@babel/runtime": "7.29.10",
+		"@xmldom/xmldom": "0.9.12",
+		"source-map-js": "1.2.2",
+		"undici": "7.30.1"
 	}
 }

@@ -103,10 +103,13 @@
 	import { nativeTap } from '$lib/utils/native-touch';
 	import { MOTION_MS, prefersReducedMotion } from '$lib/utils/motion';
 	import { MAP_ONBOARDING_STEPS } from '$lib/utils/mapOnboarding';
-	import maplibregl from 'maplibre-gl';
+	import * as maplibregl from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
+	import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 	import { onMount } from 'svelte';
 	import type { GeoJSONSource, Map as MaplibreMap, Marker, Popup, RasterTileSource } from 'maplibre-gl';
+
+	maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 	type ViewMode = 'topdown' | 'oblique';
 
