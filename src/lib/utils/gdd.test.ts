@@ -308,6 +308,14 @@ describe('getGddSeasonZone', () => {
 		expect(getGddSeasonZone(100, 'montagnarde').tone).toBe('good');
 		expect(getGddSeasonZone(100, 'standard').tone).toBe('muted');
 	});
+
+	it('labels an out-of-window cumulative as late season when that concession applies', () => {
+		const pinWindow = { earlyMin: 50, optimalMin: 100, optimalMax: 450, lateMax: 650 };
+		expect(getGddSeasonZone(420, 'montagnarde').label).toBe('Saison avancée');
+		expect(getGddSeasonZone(420, 'montagnarde', { window: pinWindow }).tone).toBe('good');
+		expect(getGddSeasonZone(30, 'standard', { lateSeason: true }).label).toBe('Saison avancée');
+		expect(getGddSeasonZone(30, 'standard').label).toBe('Dormance tardive');
+	});
 });
 
 describe('buildTransitionLabel', () => {

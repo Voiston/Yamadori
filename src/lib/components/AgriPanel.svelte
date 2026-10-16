@@ -5,7 +5,6 @@
 	import type { EnvironmentExposure } from '$lib/types/environment';
 	import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
 	import { getAgriMetricHelp } from '$lib/constants/agri-metric-help';
-	import { getGddSeasonZone } from '$lib/constants/gdd-config';
 	import { agriData } from '$lib/stores/agriData.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import { getIntlLocale } from '$lib/utils/i18n/locale';
@@ -14,6 +13,7 @@
 		assessYrsDetailRisks,
 		computeEffectiveSoilStabilityScore,
 		getSoil18cmZoneLabel,
+		getYrsGddSeasonZone,
 		worstAgriRisk
 	} from '$lib/utils/agri';
 	import {
@@ -246,9 +246,7 @@
 		NO_GO: 'bg-red-50 text-red-800 border-red-200'
 	}));
 
-	const gddSeasonZone = $derived(
-		data?.gdd ? getGddSeasonZone(data.gdd.cumulativeSinceJan1, data.gdd.baseCategory) : null
-	);
+	const gddSeasonZone = $derived(data ? getYrsGddSeasonZone(data, species) : null);
 
 	const gddSeasonZoneClass = $derived(
 		gddSeasonZone?.tone === 'good'

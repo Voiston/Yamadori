@@ -70,6 +70,7 @@ const GENUS_DEFAULTS: Record<string, SpeciesGddProfile> = {
 		{
 			dormance: 30,
 			bourgeon_gonfle: 100,
+			pointe_verte: 150,
 			debourrement: 200,
 			feuillaison: 320,
 			croissance_active: 460
@@ -88,6 +89,7 @@ const GENUS_DEFAULTS: Record<string, SpeciesGddProfile> = {
 		{
 			dormance: 25,
 			bourgeon_gonfle: 90,
+			pointe_verte: 133,
 			debourrement: 175,
 			feuillaison: 280,
 			croissance_active: 400
@@ -106,6 +108,7 @@ const GENUS_DEFAULTS: Record<string, SpeciesGddProfile> = {
 		{
 			dormance: 20,
 			bourgeon_gonfle: 70,
+			pointe_verte: 105,
 			debourrement: 140,
 			feuillaison: 250,
 			croissance_active: 380
@@ -124,6 +127,7 @@ const GENUS_DEFAULTS: Record<string, SpeciesGddProfile> = {
 		{
 			dormance: 25,
 			bourgeon_gonfle: 85,
+			pointe_verte: 123,
 			debourrement: 160,
 			feuillaison: 270,
 			croissance_active: 400
@@ -162,6 +166,7 @@ const GENUS_DEFAULTS: Record<string, SpeciesGddProfile> = {
 		{
 			dormance: 22,
 			bourgeon_gonfle: 75,
+			pointe_verte: 115,
 			debourrement: 155,
 			feuillaison: 270,
 			croissance_active: 410
@@ -180,6 +185,7 @@ const GENUS_DEFAULTS: Record<string, SpeciesGddProfile> = {
 		{
 			dormance: 25,
 			bourgeon_gonfle: 85,
+			pointe_verte: 125,
 			debourrement: 165,
 			feuillaison: 275,
 			croissance_active: 410
@@ -265,6 +271,7 @@ const SPECIES_OVERRIDES: Record<string, SpeciesGddProfile> = {
 		{
 			dormance: 28,
 			bourgeon_gonfle: 95,
+			pointe_verte: 143,
 			debourrement: 190,
 			feuillaison: 310,
 			croissance_active: 450
@@ -277,6 +284,7 @@ const SPECIES_OVERRIDES: Record<string, SpeciesGddProfile> = {
 		{
 			dormance: 32,
 			bourgeon_gonfle: 105,
+			pointe_verte: 155,
 			debourrement: 210,
 			feuillaison: 330,
 			croissance_active: 470
@@ -285,6 +293,11 @@ const SPECIES_OVERRIDES: Record<string, SpeciesGddProfile> = {
 		'Quercus petraea — later than robur within Quercus band'
 	)
 };
+
+/** Catalog names that resolve to a genus default or a species override. */
+export function listProfiledSpeciesNames(): string[] {
+	return [...new Set([...Object.keys(SPECIES_GENUS), ...Object.keys(SPECIES_OVERRIDES)])];
+}
 
 function catalogNamesForAlias(): string[] {
 	return [
@@ -336,9 +349,11 @@ export function resolvePhenologyLogisticParams(
 	category: GddBaseCategory,
 	species?: string | null
 ): Record<GddPhenologyStageId, { midpoint: number; steepness: number }> {
-	const base = PHENOLOGY_LOGISTIC_PARAMS[category];
 	const profile = resolveSpeciesGddProfile(species);
 	const midpoints = profile?.phenologyMidpoints;
+	// Omitted species midpoints fall back to the profile category, so a caller
+	// category of `standard` cannot invert a narrower genus curve.
+	const base = PHENOLOGY_LOGISTIC_PARAMS[midpoints ? (profile?.category ?? category) : category];
 	if (!midpoints) return base;
 
 	return {

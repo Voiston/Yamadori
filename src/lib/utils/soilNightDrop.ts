@@ -4,6 +4,7 @@ import type { PhenologyStageId } from '$lib/types/gdd';
 import type { YrsPlantInputs } from '$lib/types/yrs';
 import {
 	SOIL_NIGHT_DROP_GDD_WEIGHT_ANCHORS,
+	SOIL_NIGHT_DROP_LATE_SEASON_WEIGHT,
 	SOIL_NIGHT_DROP_PHENOLOGY_WEIGHT,
 	SOIL_NIGHT_DROP_RISK_WEIGHT
 } from '$lib/constants/agri-thresholds';
@@ -50,7 +51,7 @@ function getGddNightDropWeight(gddCumulative: number): number {
 
 /**
  * Poids d'activation du malus chute nocturne (0–1).
- * Phénologie (observée ou estimée) > GDD progressif > 1.0 si indisponible.
+ * Phénologie (observée ou estimée) > vigilance arrière-saison > GDD progressif > 1.0 si indisponible.
  */
 export function getSoilNightDropActivationWeight(
 	data: Pick<AgriData, 'gdd'>,
@@ -63,6 +64,10 @@ export function getSoilNightDropActivationWeight(
 	const estimatedStage = resolveDominantPhenologyStage(data as AgriData, inputs);
 	if (estimatedStage) {
 		return getPhenologyNightDropWeight(estimatedStage);
+	}
+
+	if (data.gdd?.phenologyUnavailableCode === 'late_season') {
+		return SOIL_NIGHT_DROP_LATE_SEASON_WEIGHT;
 	}
 
 	const gdd = data.gdd?.cumulativeSinceJan1;
@@ -114,6 +119,9 @@ export function formatSoilNightDropAttenuationLabel(
 		return m.yrs_soil_night_ignored();
 	}
 	if (inputs.observedPhenologyStage || stage) {
+		return m.yrs_soil_night_attenuated();
+	}
+	if (data.gdd?.phenologyUnavailableCode === 'late_season') {
 		return m.yrs_soil_night_attenuated();
 	}
 	const gdd = data.gdd?.cumulativeSinceJan1;

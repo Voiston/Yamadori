@@ -54,7 +54,7 @@ export interface AgriData {
 	soilHeatBufferC: number;
 	/** Score de stabilité du sol 0–100 (jours stables, absence de chute, tendance). */
 	soilStabilityScore: number;
-	/** Humidité du sol 0–7 cm (%, Open-Meteo) — null si indisponible. */
+	/** Eau disponible 0–7 cm (0–100), déjà normalisée depuis la teneur volumique Open-Meteo — null si indisponible. */
 	soilMoisture7cmPct: number | null;
 	/** Tendance — gel sévère (≤ -3 °C) prévu dans les 7 prochains jours. */
 	frostRiskNext7d: boolean;

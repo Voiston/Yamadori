@@ -371,11 +371,18 @@ export function computeClimateScore(data: AgriData, inputs: YrsPlantInputs = {})
 	return getClimateScoreBreakdown(data, inputs).total;
 }
 
+/** Température sol 18 cm jugée : moyenne 7 jours, sinon l'instantané. */
+export function getEffectiveSoil18cmTemp(
+	data: Pick<AgriData, 'soilMean18cm7dC' | 'soilTemperature18cmC'>
+): number {
+	return data.soilMean18cm7dC ?? data.soilTemperature18cmC;
+}
+
 /** SoilScore (0–25) : zone 18 cm, activité 6 cm, stabilité. */
 export function getSoilScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 	const thresholds = thresholdsFor(data);
 	const { excellentMin, excellentMax, passableMax, stressMin } = thresholds.soil18cmTempC;
-	const soil18C = data.soilMean18cm7dC ?? data.soilTemperature18cmC;
+	const soil18C = getEffectiveSoil18cmTemp(data);
 	const soil6C = data.soilMean6cm7dC ?? data.soilTemperature6cmC;
 	const temp = String(soil18C);
 	let soil18Points = 3;
@@ -517,11 +524,14 @@ export function getPhenologyScoreBreakdown(
 	} else {
 		const stagePoints = phenologyStagePoints(scoredStage, category);
 		const stageLabel = phenologyStageLabel(scoredStage);
+		const lateSeasonNeutral = lateSeason && !inputs.observedPhenologyStage && !scoredStage;
 		items.push({
 			id: 'phenologyStage',
-			label: inputs.observedPhenologyStage
-				? m.yrs_breakdown_stage_observed({ stage: stageLabel })
-				: m.yrs_breakdown_stage_estimated({ stage: stageLabel }),
+			label: lateSeasonNeutral
+				? m.yrs_phenology_unavailable()
+				: inputs.observedPhenologyStage
+					? m.yrs_breakdown_stage_observed({ stage: stageLabel })
+					: m.yrs_breakdown_stage_estimated({ stage: stageLabel }),
 			points: stagePoints
 		});
 	}
@@ -790,6 +800,13 @@ export function getYrsScoreBreakdown(
 
 export type YrsConfidenceGap = 'gdd' | 'wsi' | 'observedPhenology' | 'speciesMapped';
 
+/** Lignification or leaf-fall fills the phenology observation inside the late-season window. */
+function hasLateSeasonPhenologyObservation(data: AgriData, inputs: YrsPlantInputs): boolean {
+	if (inputs.aoutementStatus == null && inputs.leafFallPct == null) return false;
+	const referenceDate = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
+	return isLateSeasonPhenologyContext(data.latitude, referenceDate);
+}
+
 /** Missing inputs that currently limit YRS confidence. */
 export function getYrsConfidenceGaps(
 	data: AgriData,
@@ -805,7 +822,11 @@ export function getYrsConfidenceGaps(
 		gaps.push('wsi');
 	}
 	const speciesForGap = inputs.species?.trim() ?? '';
-	if (!inputs.observedPhenologyStage && !(speciesForGap && isEvergreenSpecies(speciesForGap))) {
+	if (
+		!inputs.observedPhenologyStage &&
+		!hasLateSeasonPhenologyObservation(data, inputs) &&
+		!(speciesForGap && isEvergreenSpecies(speciesForGap))
+	) {
 		gaps.push('observedPhenology');
 	}
 	if (!speciesForGap || !isSpeciesInYrsCatalog(speciesForGap)) {
@@ -849,8 +870,15 @@ export function computeYrsConfidence(
 	if (data.hydricStressKs !== null || data.wsi !== null) points += 2;
 	else if (data.waterBalance7dMm !== null) points += 1;
 
-	if (inputs.observedPhenologyStage) points += 2;
-	else if (data.gdd?.phenology) points += 1;
+	if (inputs.observedPhenologyStage || hasLateSeasonPhenologyObservation(data, inputs)) {
+		points += 2;
+	} else if (
+		data.gdd?.phenology ||
+		data.gdd?.phenologyUnavailableCode === 'late_season' ||
+		data.gdd?.phenologyUnavailableCode === 'evergreen'
+	) {
+		points += 1;
+	}
 
 	if (inputs.species?.trim() && isSpeciesInYrsCatalog(inputs.species)) {
 		points += 1;
@@ -938,10 +966,11 @@ function buildYrsSummary(
 	}
 
 	const thresholds = thresholdsFor(data);
-	if (data.soilTemperature18cmC < thresholds.soil18cmTempC.excellentMin) {
+	const soil18C = getEffectiveSoil18cmTemp(data);
+	if (soil18C < thresholds.soil18cmTempC.excellentMin) {
 		return m.yrs_climate_summary_cold_soil({
 			label,
-			temp: String(data.soilTemperature18cmC)
+			temp: String(soil18C)
 		});
 	}
 

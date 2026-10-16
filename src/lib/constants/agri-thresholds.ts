@@ -66,6 +66,9 @@ export const SOIL_NIGHT_DROP_GDD_WEIGHT_ANCHORS = [
 	{ value: 550, score: 0 }
 ] as const;
 
+/** Poids de vigilance en arrière-saison, quand la phénologie GDD est indisponible. */
+export const SOIL_NIGHT_DROP_LATE_SEASON_WEIGHT = 0.75;
+
 /** Seuils de poids pour les niveaux de risque ordinaux. */
 export const SOIL_NIGHT_DROP_RISK_WEIGHT = {
 	dangerousMin: 0.75,

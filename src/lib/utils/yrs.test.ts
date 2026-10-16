@@ -10,6 +10,7 @@ import {
 	determineYrsDecision,
 	getClimateScoreBreakdown,
 	getCombinedYamadoriVerdict,
+	getEffectiveSoil18cmTemp,
 	getHydricScoreBreakdown,
 	getPhenologyScoreBreakdown,
 	getPrimaryYrsConfidenceGap,
@@ -170,6 +171,7 @@ describe('computeYamadoriReadinessScore', () => {
 		const result = computeYamadoriReadinessScore({
 			...buildIdealAgriData(),
 			soilTemperature18cmC: 6,
+			soilMean18cm7dC: 6,
 			frostEventsPast7d: 4
 		});
 
@@ -220,6 +222,7 @@ describe('computeYamadoriReadinessScore', () => {
 		const result = computeYamadoriReadinessScore({
 			...buildIdealAgriData(),
 			soilTemperature18cmC: 6,
+			soilMean18cm7dC: 6,
 			frostEventsPast7d: 2,
 			frostRiskNext7d: true,
 			frostMinNext7dC: -8,
@@ -283,6 +286,27 @@ describe('computeYamadoriReadinessScore', () => {
 		expect(open.score).toBeLessThan(100);
 		expect(forest.score).toBeGreaterThan(open.score);
 		expect(forest.layers.stressPenalty).toBeLessThanOrEqual(open.layers.stressPenalty);
+	});
+
+	it('raises the soil layer when forest shade cools a hot 18 cm mean', () => {
+		const base = {
+			...buildIdealAgriData(),
+			airTemperatureC: 8,
+			soilTemperature18cmC: 22,
+			soilMean18cm7dC: 22
+		};
+		const openAdjusted = applyEnvironmentExposure(base, base.gdd, 'OPEN');
+		const forestAdjusted = applyEnvironmentExposure(base, base.gdd, 'FOREST_DENSE');
+		const open = computeYamadoriReadinessScore(
+			{ ...openAdjusted.data, gdd: openAdjusted.gdd },
+			{ environmentExposure: 'OPEN' }
+		);
+		const forest = computeYamadoriReadinessScore(
+			{ ...forestAdjusted.data, gdd: forestAdjusted.gdd },
+			{ environmentExposure: 'FOREST_DENSE' }
+		);
+
+		expect(forest.layers.soil).toBeGreaterThan(open.layers.soil);
 	});
 
 	it('applies harvest-calendar malus when outside regional window', () => {
@@ -704,6 +728,91 @@ describe('getSoilScoreBreakdown soil18 bands', () => {
 		expect(shoulder?.points).toBe(3);
 		expect(hot?.points).toBe(0);
 	});
+
+	it('falls back to the instantaneous 18 cm temperature when the 7-day mean is missing', () => {
+		expect(
+			getEffectiveSoil18cmTemp({
+				soilMean18cm7dC: null,
+				soilTemperature18cmC: 6
+			})
+		).toBe(6);
+
+		const item = findYrsBreakdownItem(
+			getSoilScoreBreakdown({
+				...buildIdealAgriData(),
+				soilTemperature18cmC: 6,
+				soilMean18cm7dC: null
+			}),
+			'soil18'
+		);
+		expect(item).toEqual({
+			id: 'soil18',
+			points: 2,
+			label: m.yrs_breakdown_soil18_too_cold({ temp: '6' })
+		});
+	});
+
+	it('lowers the 18 cm band when forest exposure cools a warm 7-day mean', () => {
+		const base = {
+			...buildIdealAgriData(),
+			airTemperatureC: 4,
+			soilTemperature6cmC: 11,
+			soilTemperature18cmC: 11,
+			soilMean6cm7dC: 11,
+			soilMean18cm7dC: 11
+		};
+		const open = applyEnvironmentExposure(base, base.gdd, 'OPEN').data;
+		const forest = applyEnvironmentExposure(base, base.gdd, 'FOREST_DENSE').data;
+
+		expect(findYrsBreakdownItem(getSoilScoreBreakdown(open), 'soil18')?.points).toBe(15);
+		expect(findYrsBreakdownItem(getSoilScoreBreakdown(forest), 'soil18')?.points).toBe(8);
+	});
+});
+
+describe('cold-soil summary vs 7-day mean', () => {
+	function coldSoilSummary(
+		decision: ReturnType<typeof computeYamadoriReadinessScore>['decision'],
+		temp: string
+	) {
+		return m.yrs_climate_summary_cold_soil({
+			label: getYrsDecisionLabels()[decision],
+			temp
+		});
+	}
+
+	it('does not call the soil cold when the 7-day mean is fine and the morning reading is not', () => {
+		const result = computeYamadoriReadinessScore({
+			...buildIdealAgriData(),
+			soilTemperature18cmC: 8.5,
+			soilMean18cm7dC: 9.5,
+			frostEventsPast7d: 4
+		});
+
+		expect(result.decision).not.toBe('OPTIMAL');
+		expect(
+			findYrsBreakdownItem(
+				getSoilScoreBreakdown({
+					...buildIdealAgriData(),
+					soilTemperature18cmC: 8.5,
+					soilMean18cm7dC: 9.5
+				}),
+				'soil18'
+			)?.points
+		).toBe(15);
+		expect(result.summary).not.toBe(coldSoilSummary(result.decision, '8.5'));
+		expect(result.summary).not.toBe(coldSoilSummary(result.decision, '9.5'));
+	});
+
+	it('cites the 7-day mean when it is cold and the morning reading is not', () => {
+		const result = computeYamadoriReadinessScore({
+			...buildIdealAgriData(),
+			soilTemperature18cmC: 9.5,
+			soilMean18cm7dC: 8.5,
+			frostEventsPast7d: 4
+		});
+
+		expect(result.summary).toBe(coldSoilSummary(result.decision, '8.5'));
+	});
 });
 
 describe('getClimateScoreBreakdown ET0 windows', () => {
@@ -801,6 +910,10 @@ describe('evergreen phenology score', () => {
 		expect(findYrsBreakdownItem(beech, 'phenologyStage')?.points).not.toBe(12);
 	});
 
+	it('counts a disabled evergreen model toward high confidence', () => {
+		expect(computeYrsConfidence(evergreenData(), { species: 'Pin sylvestre' })).toBe('high');
+	});
+
 	it('does not ask evergreens to fill a deciduous phenology gap', () => {
 		const gaps = getYrsConfidenceGaps(buildIdealAgriData(), { species: 'Pin sylvestre' });
 		expect(gaps).not.toContain('observedPhenology');
@@ -822,6 +935,19 @@ describe('late-season GDD and phenology', () => {
 				...buildIdealAgriData().gdd!,
 				cumulativeSinceJan1: 1800,
 				phenology: estimatePhenology(1800, 'foret', 'Hêtre commun')
+			}
+		};
+	}
+
+	function lateSeasonSnapshot(): AgriData {
+		return {
+			...buildIdealAgriData(),
+			fetchedAt: '2026-10-15T12:00:00.000Z',
+			gdd: {
+				...buildIdealAgriData().gdd!,
+				phenology: null,
+				phenologyUnavailableReason: 'late season',
+				phenologyUnavailableCode: 'late_season'
 			}
 		};
 	}
@@ -880,8 +1006,75 @@ describe('late-season GDD and phenology', () => {
 		);
 
 		expect(findYrsBreakdownItem(estimated, 'phenologyStage')?.points).toBe(8);
+		expect(findYrsBreakdownItem(estimated, 'phenologyStage')?.label).toBe(
+			m.yrs_phenology_unavailable()
+		);
 		expect(findYrsBreakdownItem(observed, 'phenologyStage')?.points).toBe(-5);
 		expect(findYrsBreakdownItem(july, 'phenologyStage')?.points).toBe(-5);
 		expect(findYrsBreakdownItem(april, 'phenologyStage')?.points).not.toBe(8);
+	});
+
+	it('treats autumn lignification or leaf-fall as the phenology observation', () => {
+		const data = lateSeasonSnapshot();
+		const beech = { species: 'Hêtre commun' as const };
+
+		expect(
+			computeYrsConfidence(data, {
+				...beech,
+				aoutementStatus: 'aoute',
+				leafFallPct: 100
+			})
+		).toBe('high');
+		expect(
+			getYrsConfidenceGaps(data, {
+				...beech,
+				aoutementStatus: 'aoute',
+				leafFallPct: 100
+			})
+		).not.toContain('observedPhenology');
+
+		for (const inputs of [
+			{ ...beech, aoutementStatus: 'non_aoute' as const },
+			{ ...beech, leafFallPct: 0 as const }
+		]) {
+			expect(computeYrsConfidence(data, inputs)).toBe('high');
+			expect(getYrsConfidenceGaps(data, inputs)).not.toContain('observedPhenology');
+			expect(getPrimaryYrsConfidenceGap(data, inputs)).not.toBe('observedPhenology');
+		}
+	});
+
+	it('keeps the model point and the phenology gap when autumn indicators are empty', () => {
+		const data = lateSeasonSnapshot();
+		const inputs = { species: 'Hêtre commun' };
+
+		expect(computeYrsConfidence(data, inputs)).toBe('high');
+		expect(getYrsConfidenceGaps(data, inputs)).toContain('observedPhenology');
+		expect(getPrimaryYrsConfidenceGap(data, inputs)).toBe('observedPhenology');
+
+		const stage = findYrsBreakdownItem(
+			getPhenologyScoreBreakdown(data, inputs),
+			'phenologyStage'
+		);
+		expect(stage?.points).toBe(8);
+		expect(stage?.label).toBe(m.yrs_phenology_unavailable());
+	});
+
+	it('does not credit autumn indicators outside the late-season window', () => {
+		const june: AgriData = {
+			...buildIdealAgriData(),
+			gdd: {
+				...buildIdealAgriData().gdd!,
+				phenology: null,
+				phenologyUnavailableCode: null
+			}
+		};
+		const inputs = {
+			species: 'Hêtre commun',
+			aoutementStatus: 'aoute' as const,
+			leafFallPct: 100 as const
+		};
+
+		expect(computeYrsConfidence(june, inputs)).toBe('medium');
+		expect(getYrsConfidenceGaps(june, inputs)).toContain('observedPhenology');
 	});
 });

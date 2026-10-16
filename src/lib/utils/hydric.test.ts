@@ -24,15 +24,11 @@ const baseHydricData: Pick<
 
 describe('availableWaterPctFromSoilMoisture', () => {
 	it('normalizes Open-Meteo m³/m³ between wilting point and field capacity', () => {
+		expect(availableWaterPctFromSoilMoisture(0.102)).toBe(1);
 		expect(availableWaterPctFromSoilMoisture(0.274)).toBe(79);
 		expect(availableWaterPctFromSoilMoisture(0.08)).toBe(0);
 		expect(availableWaterPctFromSoilMoisture(0.4)).toBe(100);
 		expect(availableWaterPctFromSoilMoisture(0.32)).toBe(100);
-	});
-
-	it('keeps an already-normalized reserve percent above 1', () => {
-		expect(availableWaterPctFromSoilMoisture(42)).toBe(42);
-		expect(availableWaterPctFromSoilMoisture(100)).toBe(100);
 	});
 });
 
@@ -41,8 +37,8 @@ describe('computeSoilBufferScore', () => {
 		expect(computeSoilBufferScore({ ...baseHydricData, soilMoisture7cmPct: 42 })).toBe(42);
 	});
 
-	it('scores volumetric water content as available water, not as a raw percent', () => {
-		expect(computeSoilBufferScore({ ...baseHydricData, soilMoisture7cmPct: 0.274 })).toBe(79);
+	it('keeps a 1% available-water reserve', () => {
+		expect(computeSoilBufferScore({ ...baseHydricData, soilMoisture7cmPct: 1 })).toBe(1);
 	});
 
 	it('falls back to rain and soil temperature proxy', () => {
@@ -102,25 +98,13 @@ describe('computeSoilMoistureCreditMm', () => {
 		).toBe(HYDRIC_AWC_MM);
 	});
 
-	it('credits most of the AWC near field capacity and none below wilting point', () => {
+	it('credits 1% of AWC for a 1% available-water reserve', () => {
 		expect(
 			computeSoilMoistureCreditMm({
 				...baseHydricData,
-				soilMoisture7cmPct: 0.274
+				soilMoisture7cmPct: 1
 			})
-		).toBe(31.6);
-		expect(
-			computeSoilMoistureCreditMm({
-				...baseHydricData,
-				soilMoisture7cmPct: 0.08
-			})
-		).toBe(0);
-		expect(
-			computeSoilMoistureCreditMm({
-				...baseHydricData,
-				soilMoisture7cmPct: 0.4
-			})
-		).toBe(HYDRIC_AWC_MM);
+		).toBe(0.4);
 	});
 });
 
