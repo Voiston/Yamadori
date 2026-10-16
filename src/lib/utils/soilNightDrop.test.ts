@@ -135,6 +135,48 @@ describe('getSoilNightDropActivationWeight', () => {
 		expect(getSoilNightDropActivationWeight(data)).toBe(1);
 	});
 
+	it('applies late-season vigilance instead of the summer GDD anchor', () => {
+		const data = buildAgriData({
+			phenology: {
+				baseTempC: 4.5,
+				baseCategory: 'foret',
+				cumulativeSinceJan1: 1800,
+				last7dSum: 5,
+				dailySeries: [],
+				phenology: null,
+				phenologyUnavailableReason: 'Cumul GDD hors propos en arrière-saison',
+				phenologyUnavailableCode: 'late_season',
+				speciesLabel: 'Hêtre commun'
+			}
+		});
+		const weight = getSoilNightDropActivationWeight(data);
+		expect(weight).toBe(0.75);
+		expect(getSoilNightDropStressPoints(weight)).toBe(4);
+		expect(isSoilNightDropPenalized(data)).toBe(true);
+	});
+
+	it('keeps an observed stage ahead of the late-season vigilance weight', () => {
+		const data = buildAgriData({
+			phenology: {
+				baseTempC: 4.5,
+				baseCategory: 'foret',
+				cumulativeSinceJan1: 1800,
+				last7dSum: 5,
+				dailySeries: [],
+				phenology: null,
+				phenologyUnavailableReason: 'Cumul GDD hors propos en arrière-saison',
+				phenologyUnavailableCode: 'late_season',
+				speciesLabel: 'Hêtre commun'
+			}
+		});
+		expect(getSoilNightDropActivationWeight(data, { observedPhenologyStage: 'dormance' })).toBe(
+			1
+		);
+		expect(
+			getSoilNightDropActivationWeight(data, { observedPhenologyStage: 'croissance_active' })
+		).toBe(0);
+	});
+
 	it('prioritizes observed phenology over GDD estimate', () => {
 		const data = buildAgriData({ gddCumulative: 620 });
 		expect(
@@ -206,5 +248,22 @@ describe('soil night drop helpers', () => {
 		});
 		const label = formatSoilNightDropAttenuationLabel(spring, {}, 0.25);
 		expect(label).toContain('GDD 450');
+
+		const lateSeason = buildAgriData({
+			phenology: {
+				baseTempC: 4.5,
+				baseCategory: 'foret',
+				cumulativeSinceJan1: 1800,
+				last7dSum: 5,
+				dailySeries: [],
+				phenology: null,
+				phenologyUnavailableReason: 'Cumul GDD hors propos en arrière-saison',
+				phenologyUnavailableCode: 'late_season',
+				speciesLabel: 'Hêtre commun'
+			}
+		});
+		const lateSeasonLabel = formatSoilNightDropAttenuationLabel(lateSeason, {}, 0.75);
+		expect(lateSeasonLabel).toBe('critère atténué (saison avancée)');
+		expect(lateSeasonLabel).not.toContain('1800');
 	});
 });

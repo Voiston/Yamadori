@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+	listProfiledSpeciesNames,
 	resolvePhenologyLogisticParams,
 	resolveSpeciesGddProfile,
 	resolveYrsGddWindowForSpecies
 } from '$lib/constants/species-gdd-profiles';
 import { YRS_GDD_WINDOWS } from '$lib/constants/gdd-config';
+import type { GddBaseCategory, GddPhenologyStageId } from '$lib/types/gdd';
 import { estimatePhenology } from '$lib/utils/gdd';
 
 describe('resolveSpeciesGddProfile', () => {
@@ -68,24 +70,46 @@ describe('species phenology midpoints', () => {
 		);
 	});
 
-	it('keeps resolved stage midpoints strictly ordered', () => {
-		const species = [
-			'Chêne pubescent',
-			'Chêne pédonculé',
-			'Chêne sessile',
-			'Hêtre commun',
-			'Érable sycomore',
-			'Japanese maple',
-			'Bouleau',
-			'Charme commun',
-			'Zelkova'
+	it('keeps every profiled species stage midpoint strictly ordered', () => {
+		const stages: GddPhenologyStageId[] = [
+			'dormance',
+			'bourgeon_gonfle',
+			'pointe_verte',
+			'debourrement',
+			'feuillaison',
+			'croissance_active'
 		];
+		const categories: GddBaseCategory[] = ['montagnarde', 'foret', 'standard'];
+		const names = listProfiledSpeciesNames();
+		expect(names.length).toBeGreaterThan(0);
 
-		for (const name of species) {
-			const params = resolvePhenologyLogisticParams('foret', name);
-			expect(params.bourgeon_gonfle.midpoint).toBeLessThan(params.pointe_verte.midpoint);
-			expect(params.pointe_verte.midpoint).toBeLessThan(params.debourrement.midpoint);
+		for (const name of names) {
+			for (const category of categories) {
+				const params = resolvePhenologyLogisticParams(category, name);
+				for (let index = 1; index < stages.length; index += 1) {
+					const previous = stages[index - 1];
+					const current = stages[index];
+					expect(
+						params[previous].midpoint,
+						`${name} / ${category}: ${previous} < ${current}`
+					).toBeLessThan(params[current].midpoint);
+				}
+			}
 		}
+	});
+
+	it('centers green tip on the species curve, including a standard caller category', () => {
+		const sessile = resolvePhenologyLogisticParams('foret', 'Chêne sessile');
+		expect(sessile.pointe_verte.midpoint).toBe(155);
+		expect(sessile.bourgeon_gonfle.midpoint).toBeLessThan(sessile.pointe_verte.midpoint);
+		expect(sessile.pointe_verte.midpoint).toBeLessThan(sessile.debourrement.midpoint);
+
+		const maple = resolvePhenologyLogisticParams('standard', 'Érable sycomore');
+		expect(maple.pointe_verte.midpoint).toBe(105);
+		expect(maple.pointe_verte.midpoint).toBeLessThan(maple.debourrement.midpoint);
+		expect(maple.pointe_verte.steepness).toBe(
+			resolvePhenologyLogisticParams('foret', 'Érable sycomore').pointe_verte.steepness
+		);
 	});
 
 	it('keeps birch green tip inside the probability budget at budbreak', () => {

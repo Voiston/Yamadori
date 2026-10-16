@@ -87,6 +87,14 @@ export function applyEnvironmentExposure(
 		airC,
 		soilCoeff
 	);
+	const soilMean6cm7dC =
+		data.soilMean6cm7dC === null
+			? null
+			: adjustSoilTemperature(data.soilMean6cm7dC, airC, soilCoeff);
+	const soilMean18cm7dC =
+		data.soilMean18cm7dC === null
+			? null
+			: adjustSoilTemperature(data.soilMean18cm7dC, airC, soilCoeff);
 	const soilHeatBufferC = round1(soilTemperature6cmC - soilTemperature18cmC);
 
 	const et0TodayMm = round1(data.et0TodayMm * coeffs.et0);
@@ -106,6 +114,8 @@ export function applyEnvironmentExposure(
 		...data,
 		soilTemperature6cmC,
 		soilTemperature18cmC,
+		soilMean6cm7dC,
+		soilMean18cm7dC,
 		soilHeatBufferC
 	};
 

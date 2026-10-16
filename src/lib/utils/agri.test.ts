@@ -22,6 +22,7 @@ import {
 	getForecastFrostMin,
 	getAgriMetricCardClass,
 	getSoil18cmZoneLabel,
+	getYrsGddSeasonZone,
 	isSoilTrend7dRising,
 	parseAgriForecastResponse,
 	piecewiseLinearScore,
@@ -347,6 +348,62 @@ describe('parseAgriForecastResponse', () => {
 		);
 
 		expect(parsed.soilMoisture7cmPct).toBe(79);
+		expect(parsed.soilBufferScore).toBe(79);
+	});
+
+	it('keeps a near-wilting volumetric reading as a 1% reserve', () => {
+		const referenceDate = new Date('2026-06-22T12:00:00');
+		const body = buildMockBody(referenceDate);
+		const parsed = parseAgriForecastResponse(
+			{
+				...body,
+				hourly: {
+					...body.hourly,
+					soil_moisture_0_to_7cm: body.hourly.time.map(() => 0.102)
+				}
+			},
+			47.5,
+			-0.5,
+			referenceDate
+		);
+
+		expect(parsed.soilMoisture7cmPct).toBe(1);
+		expect(parsed.soilBufferScore).toBe(1);
+	});
+
+	it('lowers Ks for a near-wilting soil when ET₀ exceeds rain, and not at field capacity', () => {
+		const referenceDate = new Date('2026-06-22T12:00:00');
+		const body = buildMockBody(referenceDate);
+		const dry = {
+			...body,
+			daily: {
+				...body.daily,
+				precipitation_sum: body.daily.time.map(() => 0),
+				et0_fao_evapotranspiration: body.daily.time.map(() => 3)
+			}
+		};
+		const parseMoisture = (volumetric: number) =>
+			parseAgriForecastResponse(
+				{
+					...dry,
+					hourly: {
+						...dry.hourly,
+						soil_moisture_0_to_7cm: dry.hourly.time.map(() => volumetric)
+					}
+				},
+				47.5,
+				-0.5,
+				referenceDate
+			);
+
+		const wilting = parseMoisture(0.102);
+		const fieldCapacity = parseMoisture(0.32);
+
+		expect(wilting.soilMoisture7cmPct).toBe(1);
+		expect(wilting.soilBufferScore).toBe(1);
+		expect(wilting.hydricStressKs).toBeLessThan(1);
+		expect(fieldCapacity.soilMoisture7cmPct).toBe(100);
+		expect(fieldCapacity.hydricStressKs).toBe(1);
 	});
 });
 
@@ -398,7 +455,11 @@ describe('assessYamadoriMetricRisks', () => {
 
 	it('flags soil as Passable when 18 cm is in stress hydrique zone', () => {
 		expect(
-			assessYamadoriMetricRisks({ ...idealConditions, soilTemperature18cmC: 19 }).soil
+			assessYamadoriMetricRisks({
+				...idealConditions,
+				soilTemperature18cmC: 19,
+				soilMean18cm7dC: 19
+			}).soil
 		).toBe('Passable');
 	});
 
@@ -517,7 +578,8 @@ describe('assessYamadoriRisk', () => {
 	it('returns Passable for 18 cm soil stress hydrique', () => {
 		const details = assessYamadoriRiskDetails({
 			...idealConditions,
-			soilTemperature18cmC: 20
+			soilTemperature18cmC: 20,
+			soilMean18cm7dC: 20
 		});
 		expect(details.level).toBe('Passable');
 		expect(details.reason).toContain('stress hydrique');
@@ -821,6 +883,58 @@ describe('assessYrsDetailRisks', () => {
 		expect(assessYrsDetailRisks(data, { species: 'Mélèze' }).gddSeason).toBe('Excellent');
 	});
 
+	it('scores a wide species window as Excellent while the category window is dangerous', () => {
+		const data = {
+			...idealConditions,
+			gdd: {
+				cumulativeSinceJan1: 420,
+				last7dSum: 20,
+				baseTempC: 5,
+				baseCategory: 'montagnarde' as const,
+				speciesLabel: 'Pin sylvestre',
+				dailySeries: [],
+				phenology: null,
+				phenologyUnavailableReason: null
+			}
+		};
+		// 420 is past montagnarde lateMax (400) and inside Pinus optimalMax (450)
+		expect(assessYrsDetailRisks(data).gddSeason).toBe('Dangereux');
+		expect(assessYrsDetailRisks(data, { species: 'Pin sylvestre' }).gddSeason).toBe('Excellent');
+		expect(getYrsGddSeasonZone(data, 'Pin sylvestre')?.tone).toBe('good');
+	});
+
+	it('keeps a narrow species window passable inside the category optimal band', () => {
+		const data = {
+			...idealConditions,
+			gdd: springGdd(340)
+		};
+		expect(assessYrsDetailRisks(data).gddSeason).toBe('Excellent');
+		expect(assessYrsDetailRisks(data, { species: 'Hêtre commun' }).gddSeason).toBe('Passable');
+	});
+
+	it('concedes a passable badge in late season when GDD is outside the window', () => {
+		const gdd = {
+			cumulativeSinceJan1: 1800,
+			last7dSum: 10,
+			baseTempC: 4.5,
+			baseCategory: 'foret' as const,
+			speciesLabel: 'Hêtre commun',
+			dailySeries: [],
+			phenology: null,
+			phenologyUnavailableReason: null
+		};
+		const october = {
+			...idealConditions,
+			fetchedAt: '2026-10-15T12:00:00.000Z',
+			gdd
+		};
+		const june = { ...october, fetchedAt: '2026-06-22T12:00:00.000Z' };
+
+		expect(assessYrsDetailRisks(october).gddSeason).toBe('Passable');
+		expect(getYrsGddSeasonZone(october)?.label).toBe('Saison avancée');
+		expect(assessYrsDetailRisks(june).gddSeason).toBe('Dangereux');
+	});
+
 	it('flags negative water balance as Dangereux', () => {
 		expect(
 			assessYrsDetailRisks({ ...idealConditions, waterBalance7dMm: -10 }).hydricBalance
@@ -889,23 +1003,64 @@ describe('regional risk thresholds', () => {
 	};
 
 	it('scores Mediterranean soil and air on the regional bands', () => {
-		expect(assessYrsDetailRisks({ ...mediterranean, soilTemperature18cmC: 15 }).soil).toBe(
-			'Excellent'
-		);
+		expect(
+			assessYrsDetailRisks({
+				...mediterranean,
+				soilTemperature18cmC: 15,
+				soilMean18cm7dC: 15
+			}).soil
+		).toBe('Excellent');
 		expect(assessYrsDetailRisks({ ...mediterranean, airTemperatureC: 33 }).air).toBe('Passable');
 	});
 
 	it('keeps boreal soil at 6 °C out of the dangerous band', () => {
-		expect(assessYrsDetailRisks({ ...boreal, soilTemperature18cmC: 6 }).soil).toBe('Excellent');
+		expect(
+			assessYrsDetailRisks({ ...boreal, soilTemperature18cmC: 6, soilMean18cm7dC: 6 }).soil
+		).toBe('Excellent');
 	});
 
 	it('explains a Mediterranean soil just under the regional minimum as cold', () => {
 		const details = assessYamadoriRiskDetails({
 			...mediterranean,
-			soilTemperature18cmC: 9.5
+			soilTemperature18cmC: 9.5,
+			soilMean18cm7dC: 9.5
 		});
 		expect(details.level).toBe('Dangereux');
 		expect(details.reason).toBe(m.agri_verdict_soil_cold({ temp: '9.5' }));
+	});
+
+	it('explains a cold 7-day soil mean even when the morning reading is warmer', () => {
+		const details = assessYamadoriRiskDetails({
+			...idealConditions,
+			soilTemperature18cmC: 9.5,
+			soilMean18cm7dC: 8.5
+		});
+		expect(details.level).toBe('Dangereux');
+		expect(details.reason).toBe(m.agri_verdict_soil_cold({ temp: '8.5' }));
+	});
+
+	it('does not call the soil cold when only the morning reading is below the band', () => {
+		const details = assessYamadoriRiskDetails({
+			...idealConditions,
+			soilTemperature18cmC: 8.5,
+			soilMean18cm7dC: 9.5
+		});
+		expect(details.level).toBe('Excellent');
+		expect(details.reason).toBeNull();
+	});
+
+	it('scores soil viability from the 7-day mean', () => {
+		const fromMean = computeMetricViabilityScores({
+			...idealConditions,
+			soilTemperature18cmC: 8.5,
+			soilMean18cm7dC: 11
+		});
+		const fromInstant = computeMetricViabilityScores({
+			...idealConditions,
+			soilTemperature18cmC: 8.5,
+			soilMean18cm7dC: null
+		});
+		expect(fromMean.soil).toBeGreaterThan(fromInstant.soil);
 	});
 
 	it('keeps Mediterranean ET0 of 1.2 mm/day inside the regional excellent band', () => {

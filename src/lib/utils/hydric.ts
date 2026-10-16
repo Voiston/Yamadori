@@ -24,15 +24,19 @@ export const HYDRIC_WILTING_POINT_M3 = 0.1;
 export const HYDRIC_FIELD_CAPACITY_M3 = 0.32;
 
 /**
- * Map a soil-moisture reading to available-water percent (0–100).
- * Values ≤ 1 are Open-Meteo m³/m³, normalized between wilting point and field capacity.
- * Values > 1 are an already-normalized reserve percent (tests and stored snapshots).
+ * Map Open-Meteo volumetric water content (m³/m³) to available-water percent (0–100).
+ * Normalized between wilting point and field capacity; values at or above field capacity are 100.
+ * Call once, when reading `soil_moisture_0_to_7cm`. Stored `soilMoisture7cmPct` is already this percent.
  */
-export function availableWaterPctFromSoilMoisture(soilMoisture: number): number {
-	if (soilMoisture > 1) return clamp(Math.round(soilMoisture), 0, 100);
+export function availableWaterPctFromSoilMoisture(soilMoistureM3: number): number {
 	const span = HYDRIC_FIELD_CAPACITY_M3 - HYDRIC_WILTING_POINT_M3;
-	const fraction = clamp((soilMoisture - HYDRIC_WILTING_POINT_M3) / span, 0, 1);
+	const fraction = clamp((soilMoistureM3 - HYDRIC_WILTING_POINT_M3) / span, 0, 1);
 	return Math.round(fraction * 100);
+}
+
+/** Stored available-water percent, already normalized at the API boundary. */
+function clampAvailableWaterPct(pct: number): number {
+	return clamp(Math.round(pct), 0, 100);
 }
 
 /** Tampon hydrique du sol (0–100) : humidité mesurée ou proxy pluie + température racinaire. */
@@ -40,7 +44,7 @@ export function computeSoilBufferScore(
 	data: Pick<AgriData, 'soilMoisture7cmPct' | 'rainPast7dMm' | 'soilTemperature18cmC'>
 ): number {
 	if (data.soilMoisture7cmPct !== null) {
-		return availableWaterPctFromSoilMoisture(data.soilMoisture7cmPct);
+		return clampAvailableWaterPct(data.soilMoisture7cmPct);
 	}
 
 	const rainScore = clamp(Math.round((data.rainPast7dMm / 30) * 100), 0, 100);
@@ -68,7 +72,7 @@ export function computeSoilMoistureCreditMm(
 	awcMm: number = HYDRIC_AWC_MM
 ): number {
 	if (data.soilMoisture7cmPct !== null) {
-		const availablePct = availableWaterPctFromSoilMoisture(data.soilMoisture7cmPct);
+		const availablePct = clampAvailableWaterPct(data.soilMoisture7cmPct);
 		return round1((availablePct / 100) * awcMm);
 	}
 	const buffer = computeSoilBufferScore(data);

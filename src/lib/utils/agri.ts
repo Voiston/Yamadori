@@ -16,9 +16,11 @@ import { applyEnvironmentExposure } from '$lib/utils/adjustedClimate';
 import type { YrsPlantInputs } from '$lib/types/yrs';
 import { YAMADORI_RISK_THRESHOLDS, SOIL_NIGHT_DROP_RISK_WEIGHT } from '$lib/constants/agri-thresholds';
 import {
-	getYrsGddWindow,
-	resolveYrsGddCategory
+	getGddSeasonZone,
+	resolveYrsGddCategory,
+	type GddSeasonZone
 } from '$lib/constants/gdd-config';
+import { resolveYrsGddWindowForSpecies } from '$lib/constants/species-gdd-profiles';
 import type { GddBaseCategory } from '$lib/types/gdd';
 import {
 	resolveYamadoriRiskThresholds,
@@ -34,7 +36,11 @@ import {
 	computeRadiationStressIndex,
 	computeWindStressIndex
 } from '$lib/utils/hydric';
-import { computeYamadoriReadinessScore } from '$lib/utils/yrs';
+import {
+	computeYamadoriReadinessScore,
+	getEffectiveSoil18cmTemp,
+	isLateSeasonPhenologyContext
+} from '$lib/utils/yrs';
 import {
 	assessSoilNightDropRiskLevel,
 	getSoilNightDropActivationWeight,
@@ -684,7 +690,7 @@ function assessSoilRisk(
 ): MetricRisk {
 	return worstRisk(
 		assessSoilTrendRisk(data, inputs, thresholds),
-		assessSoil18cmRisk(data.soilTemperature18cmC, thresholds)
+		assessSoil18cmRisk(getEffectiveSoil18cmTemp(data), thresholds)
 	);
 }
 
@@ -737,6 +743,7 @@ function primaryRiskReason(
 	inputs: YrsPlantInputs = {},
 	thresholds: YamadoriRiskThresholds = YAMADORI_RISK_THRESHOLDS
 ): string | null {
+	const soil18C = getEffectiveSoil18cmTemp(data);
 	if (risks.frost === 'Dangereux') {
 		return m.agri_verdict_frost({ temp: String(data.frostMinNext7dC) });
 	}
@@ -750,8 +757,8 @@ function primaryRiskReason(
 		return m.agri_verdict_waterlogged({ rain: String(data.rainPast3dMm) });
 	}
 	if (risks.soil === 'Dangereux') {
-		if (data.soilTemperature18cmC < thresholds.soil18cmTempC.excellentMin) {
-			return m.agri_verdict_soil_cold({ temp: String(data.soilTemperature18cmC) });
+		if (soil18C < thresholds.soil18cmTempC.excellentMin) {
+			return m.agri_verdict_soil_cold({ temp: String(soil18C) });
 		}
 		return m.agri_verdict_soil_warming({ days: String(data.soilConsecutiveStableDays) });
 	}
@@ -771,14 +778,14 @@ function primaryRiskReason(
 		return m.agri_verdict_rain_limits({ rain: String(data.rainPast3dMm) });
 	}
 	if (risks.soil === 'Passable') {
-		if (data.soilTemperature18cmC >= thresholds.soil18cmTempC.stressMin) {
-			return m.agri_verdict_soil_high({ temp: String(data.soilTemperature18cmC) });
+		if (soil18C >= thresholds.soil18cmTempC.stressMin) {
+			return m.agri_verdict_soil_high({ temp: String(soil18C) });
 		}
 		if (
-			data.soilTemperature18cmC > thresholds.soil18cmTempC.excellentMax &&
-			data.soilTemperature18cmC < thresholds.soil18cmTempC.stressMin
+			soil18C > thresholds.soil18cmTempC.excellentMax &&
+			soil18C < thresholds.soil18cmTempC.stressMin
 		) {
-			return m.agri_verdict_soil_high_exploitable({ temp: String(data.soilTemperature18cmC) });
+			return m.agri_verdict_soil_high_exploitable({ temp: String(soil18C) });
 		}
 		if (
 			isSoilNightDropPenalized(data, inputs, SOIL_NIGHT_DROP_RISK_WEIGHT.passableMin)
@@ -897,12 +904,28 @@ function assessFrostPastRisk(frostEventsPast7d: number): MetricRisk {
 	return 'Dangereux';
 }
 
+function gddSeasonContext(
+	data: Pick<AgriData, 'gdd' | 'latitude' | 'fetchedAt'>,
+	species?: string
+) {
+	const category = resolveYrsGddCategory(species, data.gdd?.baseCategory);
+	const referenceDate = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
+	return {
+		gdd: data.gdd?.cumulativeSinceJan1 ?? null,
+		category,
+		window: resolveYrsGddWindowForSpecies(species, category),
+		lateSeason: isLateSeasonPhenologyContext(data.latitude, referenceDate)
+	};
+}
+
 function assessGddSeasonRisk(
 	gddCumulative: number | null,
-	category: GddBaseCategory = 'standard'
+	category: GddBaseCategory = 'standard',
+	species?: string,
+	lateSeason = false
 ): MetricRisk {
 	if (gddCumulative === null) return 'Passable';
-	const window = getYrsGddWindow(category);
+	const window = resolveYrsGddWindowForSpecies(species, category);
 	if (gddCumulative >= window.optimalMin && gddCumulative <= window.optimalMax) {
 		return 'Excellent';
 	}
@@ -912,7 +935,20 @@ function assessGddSeasonRisk(
 	) {
 		return 'Passable';
 	}
+	// Same +8 concession as getGddClimatePoints when the cumulative is outside the window.
+	if (lateSeason) return 'Passable';
 	return 'Dangereux';
+}
+
+/** Zone label aligned with the YRS GDD line: species window, late-season concession. */
+export function getYrsGddSeasonZone(
+	data: Pick<AgriData, 'gdd' | 'latitude' | 'fetchedAt'>,
+	species?: string
+): GddSeasonZone | null {
+	if (!data.gdd) return null;
+	const { gdd, category, window, lateSeason } = gddSeasonContext(data, species);
+	if (gdd === null) return null;
+	return getGddSeasonZone(gdd, category, { window, lateSeason });
 }
 
 function assessSoilNightDropRisk(
@@ -929,9 +965,9 @@ export function assessYrsDetailRisks(
 	inputs: YrsPlantInputs = {}
 ): YrsDetailMetricRisks {
 	const thresholds = resolveYamadoriRiskThresholds(data.latitude, data.longitude);
-	const gddCategory = resolveYrsGddCategory(inputs.species, data.gdd?.baseCategory);
+	const gdd = gddSeasonContext(data, inputs.species);
 	return {
-		gddSeason: assessGddSeasonRisk(data.gdd?.cumulativeSinceJan1 ?? null, gddCategory),
+		gddSeason: assessGddSeasonRisk(gdd.gdd, gdd.category, inputs.species, gdd.lateSeason),
 		et0Mean: assessEt0Risk(data, thresholds),
 		air: assessAirTempRisk(data.airTemperatureC, thresholds),
 		soil: assessSoilRisk(data, inputs, thresholds),
@@ -1130,7 +1166,7 @@ function scoreSoilTrendViability(data: AgriData, inputs: YrsPlantInputs = {}): n
 }
 
 function scoreSoilViability(data: AgriData, inputs: YrsPlantInputs = {}): number {
-	const soil18cmScore = scoreSoil18cmViability(data.soilTemperature18cmC);
+	const soil18cmScore = scoreSoil18cmViability(getEffectiveSoil18cmTemp(data));
 	const soilTrendScore = scoreSoilTrendViability(data, inputs);
 	return Math.round((soil18cmScore + soilTrendScore) / 2);
 }

@@ -158,7 +158,7 @@ describe('applyEnvironmentExposure', () => {
 		expect(edge.soilTemperature18cmC).toBe(10);
 	});
 
-	it('dampens instantaneous forest soil toward colder air without rewriting history', () => {
+	it('dampens forest soil and 7-day means toward colder air without rewriting history', () => {
 		expect(adjustSoilTemperature(11, 4, 0.65)).toBe(8.6);
 		expect(adjustSoilTemperature(11, 2, 0.65)).toBe(7.9);
 
@@ -187,8 +187,8 @@ describe('applyEnvironmentExposure', () => {
 		expect(forest.soilTemperature6cmC).toBe(8.6);
 		expect(forest.soilTemperature18cmC).toBe(8.6);
 		expect(forest.soilMean5dC).toBe(11);
-		expect(forest.soilMean6cm7dC).toBe(11);
-		expect(forest.soilMean18cm7dC).toBe(11);
+		expect(forest.soilMean6cm7dC).toBe(8.6);
+		expect(forest.soilMean18cm7dC).toBe(8.6);
 		expect(forest.soilDailyHistory7d).toEqual(history);
 		expect(forest.soilConsecutiveStableDays).toBe(5);
 		expect(forest.soilTrend7dRising).toBe(true);
@@ -221,6 +221,19 @@ describe('applyEnvironmentExposure', () => {
 		expect(edge.soilConsecutiveStableDays).toBe(4);
 		expect(edge.soilTrend7dRising).toBe(true);
 		expect(edge.soilTemperature6cmC).toBe(17);
+	});
+
+	it('leaves null 7-day soil means null under shade', () => {
+		const base = {
+			...buildBaseAgriData(),
+			airTemperatureC: 4,
+			soilMean6cm7dC: null,
+			soilMean18cm7dC: null
+		};
+		const forest = applyEnvironmentExposure(base, base.gdd, 'FOREST_DENSE').data;
+
+		expect(forest.soilMean6cm7dC).toBeNull();
+		expect(forest.soilMean18cm7dC).toBeNull();
 	});
 });
 

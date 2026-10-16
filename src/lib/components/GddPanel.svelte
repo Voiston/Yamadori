@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Skeleton from '$lib/components/Skeleton.svelte';
-	import { getGddBaseCategoryLabels, getGddSeasonZone } from '$lib/constants/gdd-config';
+	import { getGddBaseCategoryLabels } from '$lib/constants/gdd-config';
+	import { getYrsGddSeasonZone } from '$lib/utils/agri';
 	import { getGdd7dMetricHelp, getGddMetricHelp } from '$lib/constants/gdd-metric-help';
 	import { speciesDisplayName } from '$lib/constants/species-i18n';
 	import { agriData } from '$lib/stores/agriData.svelte';
@@ -63,9 +64,7 @@
 		return raw ? speciesDisplayName(raw) : null;
 	});
 
-	const seasonZone = $derived(
-		gdd ? getGddSeasonZone(gdd.cumulativeSinceJan1, gdd.baseCategory) : null
-	);
+	const seasonZone = $derived(data ? getYrsGddSeasonZone(data, species) : null);
 
 	const seasonZoneClass = $derived(
 		seasonZone?.tone === 'good'

@@ -442,12 +442,24 @@ export function resolveYrsGddCategory(
 	return fallbackCategory ?? 'standard';
 }
 
+export type GddSeasonZoneOptions = {
+	/** Species window when it differs from the category catalog. */
+	window?: YrsGddWindow;
+	/** Same concession as the YRS GDD line: outside the window in late season. */
+	lateSeason?: boolean;
+};
+
 /** Yamadori-oriented interpretation of cumulative GDD (category-aware optimal window). */
 export function getGddSeasonZone(
 	gdd: number,
-	category: GddBaseCategory = 'standard'
+	category: GddBaseCategory = 'standard',
+	options?: GddSeasonZoneOptions
 ): GddSeasonZone {
-	const window = getYrsGddWindow(category);
+	const window = options?.window ?? getYrsGddWindow(category);
+	const outsideWindow = gdd < window.earlyMin || gdd > window.lateMax;
+	if (options?.lateSeason && outsideWindow) {
+		return { label: m.gdd_zone_late_season(), tone: 'warn' };
+	}
 	if (gdd < window.earlyMin) {
 		return { label: m.gdd_zone_late_dormancy(), tone: 'muted' };
 	}
