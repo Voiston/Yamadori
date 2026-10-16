@@ -1,4 +1,6 @@
 import * as m from '$lib/paraglide/messages.js';
+import { UserFacingError } from '$lib/utils/userFacingError';
+import { photoFailedCopy } from '$lib/utils/errorCopy';
 
 /** Max width for list thumbnails (TreeCard, gallery strip). */
 export const PHOTO_THUMB_MAX_WIDTH = 128;
@@ -25,6 +27,10 @@ export type PhotoEncodingResult = PhotoEncoding & {
 	previewFile: File;
 };
 
+function throwPhotoError(why: string): never {
+	throw new UserFacingError(photoFailedCopy(why));
+}
+
 function readFileAsDataUrl(file: File): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
@@ -33,9 +39,9 @@ function readFileAsDataUrl(file: File): Promise<string> {
 				resolve(reader.result);
 				return;
 			}
-			reject(new Error(m.error_photo_read()));
+			reject(new UserFacingError(photoFailedCopy(m.error_photo_read())));
 		};
-		reader.onerror = () => reject(new Error(m.error_photo_read()));
+		reader.onerror = () => reject(new UserFacingError(photoFailedCopy(m.error_photo_read())));
 		reader.readAsDataURL(file);
 	});
 }
@@ -72,7 +78,7 @@ function loadImageElement(file: File): Promise<HTMLImageElement> {
 
 		img.onerror = () => {
 			URL.revokeObjectURL(url);
-			reject(new Error(m.error_photo_load()));
+			reject(new UserFacingError(photoFailedCopy(m.error_photo_load())));
 		};
 
 		img.src = url;
@@ -89,7 +95,7 @@ function loadSizedCanvas(file: File, maxWidth = PHOTO_MAX_WIDTH): Promise<SizedI
 
 		const ctx = canvas.getContext('2d');
 		if (!ctx) {
-			throw new Error(m.error_photo_canvas());
+			throwPhotoError(m.error_photo_canvas());
 		}
 
 		ctx.drawImage(img, 0, 0, width, height);
@@ -108,7 +114,7 @@ function canvasToBlob(
 					resolve(blob);
 					return;
 				}
-				reject(new Error(m.error_photo_canvas()));
+				reject(new UserFacingError(photoFailedCopy(m.error_photo_canvas())));
 			},
 			'image/jpeg',
 			quality
@@ -163,7 +169,7 @@ function withCompressTimeout<T>(promise: Promise<T>): Promise<T> {
 	return Promise.race([
 		promise,
 		new Promise<T>((_, reject) => {
-			setTimeout(() => reject(new Error(m.error_compression_timeout())), COMPRESS_TIMEOUT_MS);
+			setTimeout(() => reject(new UserFacingError(photoFailedCopy(m.error_compression_timeout()))), COMPRESS_TIMEOUT_MS);
 		})
 	]);
 }
@@ -196,7 +202,7 @@ export async function encodeNativeCameraFile(file: File): Promise<PhotoEncodingR
 		thumbCanvas.height = thumbDims.height;
 		const ctx = thumbCanvas.getContext('2d');
 		if (!ctx) {
-			throw new Error(m.error_photo_canvas());
+			throwPhotoError(m.error_photo_canvas());
 		}
 		ctx.drawImage(img, 0, 0, thumbDims.width, thumbDims.height);
 		const thumb = thumbCanvas.toDataURL('image/jpeg', PHOTO_THUMB_JPEG_QUALITY);

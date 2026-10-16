@@ -99,7 +99,7 @@ export function getUsPermitLinks(input: {
 			links.push({
 				id: 'usfs_find',
 				label: 'Find your National Forest / Ranger District',
-				url: 'https://www.fs.usda.gov/visit/forests-grasslands'
+				url: 'https://www.fs.usda.gov/visit/find-forest'
 			});
 			break;
 		case 'blm':

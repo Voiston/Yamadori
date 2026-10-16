@@ -5,7 +5,6 @@
 	import { formatDate } from '$lib/utils/date';
 	import { photoFileToStorageWithThumb } from '$lib/utils/photo';
 	import { updateVisit } from '$lib/stores/trees.svelte';
-	import { showDetailFeedback } from '$lib/stores/appToast.svelte';
 	import { portal, APP_SHELL_PORTAL_TARGET } from '$lib/utils/portal';
 	import { modalFocus } from '$lib/utils/modalFocus';
 	import { sheetBackdrop, sheetPanel } from '$lib/utils/motion';
@@ -99,7 +98,6 @@
 				photos,
 				photoThumbs: photoThumbs.length > 0 ? photoThumbs : undefined
 			});
-			showDetailFeedback(m.tree_saved());
 			closeEditPhotos();
 		} finally {
 			savingEdit = false;

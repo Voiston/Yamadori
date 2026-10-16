@@ -44,7 +44,9 @@ export interface GddSnapshot {
 	last7dSum: number;
 	dailySeries: GddDailyPoint[];
 	phenology: GddPhenologyEstimate | null;
-	/** Message when phenology is disabled (e.g. evergreen species). */
+	/** Message when phenology is disabled (evergreen species or late-season cumulative GDD). */
 	phenologyUnavailableReason: string | null;
+	/** Stable reason code. Absent on older snapshots, which used the reason string for evergreens only. */
+	phenologyUnavailableCode?: 'evergreen' | 'late_season' | null;
 	speciesLabel: string | null;
 }

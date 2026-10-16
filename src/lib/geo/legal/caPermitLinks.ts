@@ -36,7 +36,7 @@ const PROVINCE_CROWN_LINKS: Record<string, { label: string; url: string }> = {
 	},
 	NB: {
 		label: 'New Brunswick — Crown lands',
-		url: 'https://www2.gnb.ca/content/gnb/en/departments/erd/natural_resources/content/CrownLands.html'
+		url: 'https://www.gnb.ca/en/topic/environment-resources/crown-land.html'
 	},
 	NS: {
 		label: 'Nova Scotia — Crown land',

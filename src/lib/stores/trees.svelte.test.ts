@@ -10,10 +10,14 @@ import {
 	clearAllLocationLabels,
 	ensureTreeHydrated,
 	isTreeStoreFullyMediaHydrated,
+	mergeDiskTreeWithCurrent,
+	applyThumbsBootTrees,
 	mergeTreesFromBackup,
 	runPersistBatch,
 	sortedTrees,
 	toggleFavorite,
+	updateTree,
+	flushTreesPersist,
 	treeStore,
 	__resetTreesStoreForTests
 } from './trees.svelte';
@@ -40,10 +44,6 @@ vi.mock('$lib/utils/secure-idb', () => ({
 	secureIdbSet: vi.fn().mockResolvedValue(undefined),
 	isMigrationBlockedError: vi.fn().mockReturnValue(false),
 	isLocalEncryptionKeyMissingError: vi.fn().mockReturnValue(false)
-}));
-
-vi.mock('$lib/utils/featurePolicy', () => ({
-	canAddTree: vi.fn().mockReturnValue(true)
 }));
 
 vi.mock('@capacitor/app', () => ({
@@ -151,6 +151,39 @@ describe('trees persist scheduling', () => {
 		expect(mockPersistDirtyTrees).toHaveBeenCalledTimes(1);
 	});
 
+	it('does not drop notifyOnWindow edited during an in-flight persist', async () => {
+		treeStore.trees = [createBackupTree('tree-1', 'Oak')];
+
+		let releasePersist: () => void = () => {};
+		mockPersistDirtyTrees.mockImplementationOnce(
+			() =>
+				new Promise<void>((resolve) => {
+					releasePersist = resolve;
+				})
+		);
+
+		try {
+			await updateTree('tree-1', { notes: 'first' });
+			const inFlight = flushTreesPersist();
+			for (let i = 0; i < 12; i += 1) {
+				await Promise.resolve();
+				if (mockPersistDirtyTrees.mock.calls.length === 1) break;
+			}
+			expect(mockPersistDirtyTrees).toHaveBeenCalledTimes(1);
+
+			await updateTree('tree-1', { notifyOnWindow: true, windowNotifyArmed: true });
+			releasePersist();
+			await inFlight;
+			await flushDeferredPersist();
+
+			expect(mockPersistDirtyTrees.mock.calls.length).toBeGreaterThanOrEqual(2);
+			const lastTrees = mockPersistDirtyTrees.mock.calls.at(-1)![0] as Tree[];
+			expect(lastTrees[0]?.notifyOnWindow).toBe(true);
+		} finally {
+			releasePersist();
+		}
+	});
+
 	it('flushes immediately when merging backup trees', async () => {
 		const mergePromise = mergeTreesFromBackup([createBackupTree('tree-1', 'Maple')]);
 		await vi.runAllTimersAsync();
@@ -256,6 +289,42 @@ describe('trees hydrate and enrichment no-ops', () => {
 		await ensureTreeHydrated('tree-full');
 
 		expect(treeStore.trees[0]?.photos[0]).toBe(photo);
+	});
+
+	it('preserves in-memory revisit fields while hydrate loads photos', async () => {
+		const tree = createBackupTree('tree-1', 'Oak');
+		tree.mediaHydration = 'thumbs';
+		tree.notifyOnWindow = false;
+		treeStore.trees = [tree];
+		const photo = 'data:image/jpeg;base64,QUJD';
+
+		let resolveHydrate: (value: Tree) => void = () => {};
+		mockHydrateTreeMedia.mockReturnValue(
+			new Promise<Tree>((resolve) => {
+				resolveHydrate = resolve;
+			})
+		);
+
+		const hydratePromise = ensureTreeHydrated('tree-1');
+		await updateTree('tree-1', {
+			notifyOnWindow: true,
+			nextRevisitAt: '2026-09-01',
+			windowNotifyArmed: true
+		});
+
+		resolveHydrate({
+			...tree,
+			photos: [photo],
+			visits: [{ ...tree.visits[0]!, photos: [photo], photoThumbs: [photo] }]
+		});
+
+		await hydratePromise;
+
+		expect(treeStore.trees[0]?.notifyOnWindow).toBe(true);
+		expect(treeStore.trees[0]?.nextRevisitAt).toBe('2026-09-01');
+		expect(treeStore.trees[0]?.windowNotifyArmed).toBe(true);
+		expect(treeStore.trees[0]?.photos[0]).toBe(photo);
+		expect(treeStore.trees[0]?.mediaHydration).toBe('full');
 	});
 
 	it('does not persist when enrichment patch is a no-op null cadastre', async () => {
@@ -369,5 +438,92 @@ describe('trees hydrate and enrichment no-ops', () => {
 		expect(mockPersistDirtyTrees).toHaveBeenCalledTimes(1);
 		const [, dirty] = mockPersistDirtyTrees.mock.calls[0]!;
 		expect(dirty).toEqual(new Set(['tree-full']));
+	});
+});
+
+describe('mergeDiskTreeWithCurrent and thumbs boot', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.clearAllMocks();
+		__resetTreesStoreForTests();
+		treeStore.loaded = true;
+		mockGetTreeStorageVersion.mockResolvedValue(1);
+		mockPersistDirtyTrees.mockResolvedValue(undefined);
+	});
+
+	it('keeps in-memory revisit fields over a stale disk snapshot', () => {
+		const disk = createBackupTree('tree-1', 'Oak');
+		disk.notifyOnWindow = false;
+		disk.nextRevisitAt = null;
+		disk.mediaHydration = 'full';
+		disk.photos = ['data:image/jpeg;base64,DISK'];
+
+		const current = createBackupTree('tree-1', 'Oak');
+		current.notifyOnWindow = true;
+		current.nextRevisitAt = '2026-09-01';
+		current.windowNotifyArmed = true;
+		current.notes = 'Edited in memory';
+		current.mediaHydration = 'thumbs';
+
+		const merged = mergeDiskTreeWithCurrent(disk, current, 'hydration');
+		expect(merged.notifyOnWindow).toBe(true);
+		expect(merged.nextRevisitAt).toBe('2026-09-01');
+		expect(merged.windowNotifyArmed).toBe(true);
+		expect(merged.notes).toBe('Edited in memory');
+		expect(merged.photos[0]).toBe('data:image/jpeg;base64,DISK');
+		expect(merged.mediaHydration).toBe('full');
+	});
+
+	it('does not clobber dirty notifyOnWindow during thumbs boot', async () => {
+		treeStore.trees = [createBackupTree('tree-1', 'Oak')];
+		await updateTree('tree-1', {
+			notifyOnWindow: true,
+			nextRevisitAt: '2026-09-01',
+			windowNotifyArmed: true
+		});
+
+		const disk = createBackupTree('tree-1', 'Oak');
+		disk.notifyOnWindow = false;
+		disk.nextRevisitAt = null;
+		disk.photoThumbs = ['data:image/jpeg;base64,thumb'];
+		disk.mediaHydration = 'thumbs';
+
+		const result = applyThumbsBootTrees([disk]);
+		expect(result[0]?.notifyOnWindow).toBe(true);
+		expect(result[0]?.nextRevisitAt).toBe('2026-09-01');
+		expect(result[0]?.windowNotifyArmed).toBe(true);
+		expect(result[0]?.photoThumbs?.[0]).toBe('data:image/jpeg;base64,thumb');
+	});
+
+	it('does not downgrade a fully hydrated tree during thumbs boot', () => {
+		const current = createBackupTree('tree-1', 'Oak');
+		current.mediaHydration = 'full';
+		current.photos = ['data:image/jpeg;base64,FULL'];
+		current.notifyOnWindow = true;
+		treeStore.trees = [current];
+
+		const disk = createBackupTree('tree-1', 'Oak');
+		disk.mediaHydration = 'thumbs';
+		disk.photos = [];
+		disk.photoThumbs = ['data:image/jpeg;base64,thumb'];
+		disk.notifyOnWindow = false;
+
+		const result = applyThumbsBootTrees([disk]);
+		expect(result[0]?.mediaHydration).toBe('full');
+		expect(result[0]?.photos[0]).toBe('data:image/jpeg;base64,FULL');
+		expect(result[0]?.notifyOnWindow).toBe(true);
+	});
+
+	it('takes the thumbs snapshot when the in-memory tree is clean', () => {
+		const current = createBackupTree('tree-1', 'Oak');
+		current.mediaHydration = 'thumbs';
+		treeStore.trees = [current];
+
+		const disk = createBackupTree('tree-1', 'Oak');
+		disk.photoThumbs = ['data:image/jpeg;base64,new-thumb'];
+		disk.mediaHydration = 'thumbs';
+
+		const result = applyThumbsBootTrees([disk]);
+		expect(result[0]?.photoThumbs?.[0]).toBe('data:image/jpeg;base64,new-thumb');
 	});
 });

@@ -2,7 +2,7 @@
 	import { DEFAULT_ASSESSMENT, type TreeAssessment, type VoiceNote } from '$lib/types/tree';
 	import type { ClimateHistory } from '$lib/types/climate';
 	import { DEFAULT_ENVIRONMENT_EXPOSURE, type EnvironmentExposure } from '$lib/types/environment';
-	import { addTree, treeStore } from '$lib/stores/trees.svelte';
+	import { addTree } from '$lib/stores/trees.svelte';
 	import { agriData } from '$lib/stores/agriData.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import { captureSettingsState } from '$lib/stores/captureSettings.svelte';
@@ -35,15 +35,12 @@
 	} from '$lib/utils/headingProvider';
 	import { magneticToTrueHeading } from '$lib/utils/haversine';
 	import { loadMagneticDeclinationDeg } from '$lib/utils/magneticDeclination';
-	import GpsAccuracyBadge from './GpsAccuracyBadge.svelte';
 	import GpsStatusCompact from './GpsStatusCompact.svelte';
 	import { needsLocationPromptBeforePhoto, shouldConfirmGpsBeforeSave, type LocationPromptBeforePhotoReason } from '$lib/utils/capture-gps-confirm';
-	import { formatAccuracy, isBetterAccuracy, isPoorAccuracy } from '$lib/utils/gps';
+	import { formatAccuracy, isPoorAccuracy, shouldReplaceBestCapturePosition } from '$lib/utils/gps';
 	import {
 		getAndroidVolumeButtonHint,
-		getGpsCaptureReadyHint,
-		getGpsCaptureTips,
-		getGpsCaptureWaitingHint
+		getGpsCaptureTips
 	} from '$lib/utils/gps-capture';
 	import { onlineState } from '$lib/utils/online.svelte';
 	import {
@@ -81,13 +78,25 @@
 	} from '$lib/constants/assessment';
 	import { speciesDisplayName } from '$lib/constants/species-i18n';
 	import * as m from '$lib/paraglide/messages.js';
-	import { getSpeciesSuggestionsForPosition } from '$lib/utils/species-suggestions';
+	import {
+		getSpeciesSuggestionsForPosition,
+		normalizeFavoriteSpecies,
+		resolveCaptureSpeciesPills
+	} from '$lib/utils/species-suggestions';
 	import { onMount, tick, untrack } from 'svelte';
 	import { captureFormRoot } from '$lib/utils/native-touch';
 	import { isAndroidApp, isNativeApp } from '$lib/utils/platform';
 	import { App } from '@capacitor/app';
 	import { showAppToast } from '$lib/stores/appToast.svelte';
-	import { hapticError, hapticSuccess } from '$lib/utils/haptics';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
+	import {
+		captureSaveErrorCopy,
+		locationDeniedCopy,
+		locationUnsupportedCopy
+	} from '$lib/utils/errorCopy';
+	import { formatErrorToast, resolveErrorCopy, type ErrorCopy } from '$lib/utils/userFacingError';
+	import { hapticLight, hapticSelection, hapticWarning } from '$lib/utils/haptics';
+	import { cadastreScanHapticKind } from '$lib/utils/cadastreScanFeedback';
 	import { toYrsStoredSnapshot } from '$lib/utils/yrs';
 	import { startVolumeButtonWatch, stopVolumeButtonWatch } from '$lib/utils/volumeButtons';
 	import SpeciesAutocomplete from './SpeciesAutocomplete.svelte';
@@ -97,8 +106,6 @@
 	import MultiPhotoPreview, { type MultiPhotoSlot } from './MultiPhotoPreview.svelte';
 	import VoiceNoteRecorderLazy from './VoiceNoteRecorderLazy.svelte';
 	import YrsScoreBanner from './YrsScoreBanner.svelte';
-	import { canAddTree } from '$lib/utils/featurePolicy';
-	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import CadastreBanner from './CadastreBanner.svelte';
 	import { effectiveCollectStatus } from '$lib/utils/cadastreRefs';
 	import VetoLegalChecklist from './VetoLegalChecklist.svelte';
@@ -123,9 +130,9 @@
 	let photoProcessingBusy = $state(false);
 	let submitting = $state(false);
 	let gpsChecking = $state(false);
-	let gpsWarning = $state('');
-	let gpsSuccess = $state('');
-	let error = $state('');
+	let error = $state<ErrorCopy | null>(null);
+	let climateSectionOpen = $state(false);
+	const climateDetailsId = 'capture-climate-details';
 
 	const nebariOptions = $derived.by(() => {
 		void appearanceSettingsState.locale;
@@ -188,7 +195,6 @@
 	let sensorReference = $state<'true' | 'magnetic'>('true');
 	let speciesFeedback = $state('');
 	let speciesHighlight = $state(false);
-	let displayedSpecies = $state<string[]>([]);
 	let climateAnchor = $state<{ latitude: number; longitude: number } | null>(null);
 	let agriFetchAnchor = $state<{ latitude: number; longitude: number } | null>(null);
 	let lastAgriInputsKey = $state('');
@@ -212,7 +218,6 @@
 	let awaitingLocationSettingsReturn = $state(false);
 	let openCameraAfterLocationSettings = $state(false);
 	let showSettingsHint = $state(false);
-	let saveSuccessPulse = $state(false);
 
 	let quickAssessment = $state<TreeAssessment>({ ...DEFAULT_ASSESSMENT });
 	let photoPreviewRef = $state<MultiPhotoPreview | undefined>();
@@ -233,7 +238,6 @@
 
 	const simpleMode = $derived(appearanceSettingsState.simpleMode);
 	const simplified = $derived(simpleMode || tutorialActive);
-	const captureBlocked = $derived(!canAddTree(treeStore.trees.length));
 
 	$effect(() => {
 		if (simplified) {
@@ -247,17 +251,6 @@
 	);
 	let enrichmentPosition = $state<typeof savedPosition>(null);
 	let enrichmentDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-	const gpsCaptureHint = $derived.by(() => {
-		if (simplified) return '';
-		if (gpsLoading) {
-			return getGpsCaptureWaitingHint(onlineState.online);
-		}
-		if (savedPosition) {
-			return getGpsCaptureReadyHint(onlineState.online, savedPosition.accuracyMeters);
-		}
-		return '';
-	});
 
 	const gpsCaptureTips = $derived(simplified ? [] : getGpsCaptureTips());
 	const androidVolumeHint = $derived(
@@ -408,16 +401,23 @@
 		);
 	});
 
-	$effect(() => {
-		const speciesList = suggestions.species;
-		if (speciesList.length === 0) {
-			return;
-		}
-		const nextKey = JSON.stringify(speciesList);
-		if (nextKey !== JSON.stringify(displayedSpecies)) {
-			displayedSpecies = speciesList;
-		}
-	});
+	const displayedSpecies = $derived(
+		resolveCaptureSpeciesPills({
+			enabled: captureSettingsState.speciesShortcutsEnabled,
+			favorites: captureSettingsState.favoriteSpecies,
+			gpsSpecies: suggestions.species,
+			gpsReady: savedPosition !== null && !gpsLoading
+		})
+	);
+
+	const showNoGpsSuggestions = $derived(
+		captureSettingsState.speciesShortcutsEnabled &&
+			normalizeFavoriteSpecies(captureSettingsState.favoriteSpecies).length === 0 &&
+			!gpsLoading &&
+			savedPosition !== null &&
+			suggestions.species.length === 0 &&
+			!species.trim()
+	);
 
 	const frontLabel = $derived(formatFrontLabel(frontHeadingDegrees));
 
@@ -508,7 +508,7 @@
 			return;
 		}
 		const currentBest = bestCapturePosition;
-		if (isBetterAccuracy(position.accuracyMeters, currentBest?.accuracyMeters ?? null)) {
+		if (shouldReplaceBestCapturePosition(currentBest, position)) {
 			bestCapturePosition = position;
 		}
 		if (gpsLoading) {
@@ -518,7 +518,7 @@
 
 	function scheduleBestCapturePosition(position: NonNullable<typeof capturePosition>): void {
 		const currentBest = untrack(() => bestCapturePosition);
-		if (!isBetterAccuracy(position.accuracyMeters, currentBest?.accuracyMeters ?? null)) {
+		if (!shouldReplaceBestCapturePosition(currentBest, position)) {
 			if (gpsLoading) {
 				gpsLoading = false;
 			}
@@ -569,14 +569,9 @@
 			climateAnchor = { latitude, longitude };
 			climateFetchedApproximate = isPoorAccuracy(savedPosition?.accuracyMeters ?? null);
 			climateLocked = !climateFetchedApproximate;
-		} catch (err) {
+		} catch {
 			climateHistory = null;
-			if (typeof navigator !== 'undefined' && !navigator.onLine) {
-				climateError = `${m.tree_climate_unavailable()} — ${m.climate_online_required().toLowerCase()}`;
-			} else {
-				climateError =
-					err instanceof Error ? err.message : m.capture_climate_error();
-			}
+			climateError = 'failed';
 		} finally {
 			climateLoading = false;
 			climateFetchInFlight = false;
@@ -687,6 +682,7 @@
 
 		cadastreFetchKey = key;
 		cadastreLoading = true;
+		void hapticLight();
 
 		try {
 			cadastreInfo = await lookupCadastreForCoords(latitude, longitude);
@@ -694,6 +690,13 @@
 			cadastreInfo = null;
 		} finally {
 			cadastreLoading = false;
+		}
+
+		const settleKind = cadastreScanHapticKind(cadastreInfo);
+		if (settleKind === 'selection') {
+			void hapticSelection();
+		} else {
+			void hapticWarning();
 		}
 	}
 
@@ -773,9 +776,7 @@
 			!mode &&
 			(shouldRefetchAgri(position) || agriInputsKey !== lastAgriInputsKey);
 		const needsCadastreRetry =
-			online &&
-			!cadastreInfo &&
-			!isPoorAccuracy(position.accuracyMeters);
+			!cadastreInfo && !isPoorAccuracy(position.accuracyMeters);
 
 		if (!needsClimate && !needsLocation && !needsLocationReset && !needsAgri && !needsCadastreRetry) {
 			return;
@@ -947,14 +948,7 @@
 	}
 
 	async function saveTree(): Promise<void> {
-		error = '';
-		gpsWarning = '';
-		gpsSuccess = '';
-
-		if (captureBlocked) {
-			openProPaywall('tree_limit');
-			return;
-		}
+		error = null;
 
 		const trimmedSpecies = species.trim();
 
@@ -977,15 +971,6 @@
 			const altitudeMeters = getSmoothedAltitudeMeters();
 
 			const savedCadastreInfo = cadastreInfo;
-
-			if (latitude === null || longitude === null) {
-				gpsWarning =
-					m.gps_no_coords_saved();
-			} else if (isPoorAccuracy(accuracyMeters)) {
-				gpsWarning = m.gps_poor_warning({ accuracy: formatAccuracy(accuracyMeters) });
-			} else {
-				gpsSuccess = m.gps_saved({ accuracy: formatAccuracy(accuracyMeters) });
-			}
 
 			const photos: string[] = [];
 			const photoThumbs: string[] = [];
@@ -1036,8 +1021,6 @@
 			submitLock = false;
 			gpsChecking = false;
 
-			saveSuccessPulse = true;
-			void hapticSuccess();
 			showAppToast('ok', m.capture_tree_saved());
 			await handlePostCaptureSaveNavigation({
 				phase: onboardingState.phase,
@@ -1050,8 +1033,7 @@
 				goHome
 			});
 		} catch (err) {
-			void hapticError();
-			error = err instanceof Error ? err.message : m.capture_save_error();
+			error = resolveErrorCopy(err, captureSaveErrorCopy());
 			submitting = false;
 			submitLock = false;
 			gpsChecking = false;
@@ -1106,6 +1088,13 @@
 		hasLegalRiskSignal(cadastreInfo) && !vetoChecklistOpen && !cadastreLoading
 	);
 
+	const cadastreBannerLoading = $derived.by(() => {
+		if (gpsLoading || cadastreLoading) return true;
+		const position = savedPosition ?? capturePosition;
+		if (!position || isPoorAccuracy(position.accuracyMeters)) return false;
+		return cadastreFetchKey !== positionKey(position.latitude, position.longitude);
+	});
+
 	$effect(() => {
 		if (!showGpsConfirm || gpsAutoSavePending) return;
 		void appearanceSettingsState.locale;
@@ -1133,7 +1122,7 @@
 			return m.gps_enable_before_photo_precise();
 		}
 		if (locationPromptReason === 'unsupported') {
-			return m.location_unsupported();
+			return formatErrorToast(locationUnsupportedCopy());
 		}
 		return m.gps_enable_before_photo_body();
 	});
@@ -1354,29 +1343,13 @@
 <div class="capture-screen">
 	<div class="capture-screen__scroll scroll-pb-safe">
 <div
-	class="flex flex-col gap-6 simple-density md:grid md:grid-cols-2 md:items-start md:gap-6"
+	class="flex flex-col gap-3 simple-density md:grid md:grid-cols-2 md:items-start md:gap-4"
 	use:captureFormRoot={{
 		onSpecies: selectSpecies,
 		onSubmit: (event) => void handleSubmit(event),
 		onClimateRetry: retryClimate
 	}}
 >
-	{#if !simplified || tutorialActive}
-		<div class="order-0 flex flex-col gap-4 md:col-span-2">
-			{#if !simplified}
-				{#if showClimatePanel}
-					<EnvironmentExposureField bind:value={environmentExposure} disabled={submitting} />
-				{/if}
-			{/if}
-			<YrsScoreBanner
-				gpsReady={savedPosition !== null}
-				locationError={savedPosition ? '' : userPositionState.error}
-				potentialScore={quickAssessment.potentialScore}
-				{species}
-			/>
-		</div>
-	{/if}
-
 	<div class="order-1 flex flex-col gap-4">
 		<MultiPhotoPreview
 			bind:this={photoPreviewRef}
@@ -1388,19 +1361,7 @@
 		/>
 
 		{#if error}
-			<p class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>
-		{/if}
-
-		{#if gpsWarning}
-			<p class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status" aria-live="polite">
-				{gpsWarning}
-			</p>
-		{/if}
-
-		{#if gpsSuccess && !simplified}
-			<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800" role="status" aria-live="polite">
-				{gpsSuccess}
-			</p>
+			<ErrorBanner copy={error} />
 		{/if}
 
 		<div>
@@ -1420,12 +1381,11 @@
 		{/if}
 	</div>
 
-	<div class="order-2 flex flex-col gap-6">
+	<div class="order-2 flex flex-col gap-3">
 		<div class="flex flex-col gap-2">
 			<p class="text-sm font-medium text-forest-900">{m.capture_position_label()}</p>
 
-			{#if simplified}
-				<div data-capture-tutorial="gps">
+			<div data-capture-tutorial="gps">
 				<GpsStatusCompact
 					loading={gpsLoading}
 					accuracyMeters={capturePosition?.accuracyMeters ?? null}
@@ -1435,89 +1395,38 @@
 					{locationLabel}
 					{locationLoading}
 				/>
-				</div>
-				{#if savedPosition}
-					<GeoCapabilityBanner country={captureCountry} />
-				{/if}
-				{#if cadastreLoading || cadastreInfo}
-					<CadastreBanner
-						info={cadastreInfo}
-						loading={cadastreLoading}
-						compact
-						minimal
-						checklistOpen={vetoChecklistOpen}
-						onchecklisttoggle={() => (vetoChecklistOpen = !vetoChecklistOpen)}
-					/>
-					{#if vetoChecklistOpen && cadastreInfo && savedPosition}
-						<VetoLegalChecklist
-							cadastreInfo={cadastreInfo}
-							species={species}
-							latitude={savedPosition.latitude}
-							longitude={savedPosition.longitude}
-							onclose={() => (vetoChecklistOpen = false)}
-						/>
-					{/if}
-				{/if}
-			{:else if gpsLoading}
-				<div data-capture-tutorial="gps">
-				<GpsAccuracyBadge accuracyMeters={null} loading={true} />
-				</div>
-			{:else if capturePosition}
-				<div data-capture-tutorial="gps">
-				<GpsAccuracyBadge
-					accuracyMeters={capturePosition.accuracyMeters}
-					bestAccuracyMeters={bestCapturePosition?.accuracyMeters ??
-						capturePosition.accuracyMeters}
+			</div>
+
+			{#if savedPosition}
+				<GeoCapabilityBanner country={captureCountry} />
+			{/if}
+
+			{#if simplified || gpsLoading || capturePosition}
+				<CadastreBanner
+					info={cadastreInfo}
+					loading={cadastreBannerLoading}
+					compact
+					minimal={simplified}
+					checklistOpen={vetoChecklistOpen}
+					onchecklisttoggle={() => (vetoChecklistOpen = !vetoChecklistOpen)}
 				/>
-				{#if locationLoading}
-					<p class="text-sm text-muted" role="status">{m.capture_location_identifying()}</p>
-				{:else if locationLabel}
-					<p class="text-sm font-medium text-forest-800" role="status">
-						{m.share_location({ location: locationLabel })}
-					</p>
-				{/if}
-				</div>
-				{#if savedPosition}
-					<GeoCapabilityBanner country={captureCountry} />
-				{/if}
-				{#if cadastreLoading || cadastreInfo}
-					<CadastreBanner
-						info={cadastreInfo}
-						loading={cadastreLoading}
-						compact
-						checklistOpen={vetoChecklistOpen}
-						onchecklisttoggle={() => (vetoChecklistOpen = !vetoChecklistOpen)}
+				{#if vetoChecklistOpen && cadastreInfo && savedPosition}
+					<VetoLegalChecklist
+						cadastreInfo={cadastreInfo}
+						species={species}
+						latitude={savedPosition.latitude}
+						longitude={savedPosition.longitude}
+						onclose={() => (vetoChecklistOpen = false)}
 					/>
-					{#if vetoChecklistOpen && cadastreInfo && savedPosition}
-						<VetoLegalChecklist
-							cadastreInfo={cadastreInfo}
-							species={species}
-							latitude={savedPosition.latitude}
-							longitude={savedPosition.longitude}
-							onclose={() => (vetoChecklistOpen = false)}
-						/>
-					{/if}
 				{/if}
 			{/if}
 
-			{#if !simplified && gpsCaptureHint}
-				<p class="text-sm text-muted" role="status">{gpsCaptureHint}</p>
-			{/if}
-
-			{#if userPositionState.error}
-				<div class="flex flex-col gap-2">
-					<p class="app-card-muted px-3 py-2 text-sm text-amber-900" role="alert">
-						{userPositionState.error}
-					</p>
-					<button
-						type="button"
-						disabled={locationPromptBusy || submitting}
-						class="btn-secondary"
-						onclick={() => void retryLocationFromBanner()}
-					>
-						{m.action_retry()}
-					</button>
-				</div>
+			{#if userPositionState.errorCopy}
+				<ErrorBanner
+					copy={userPositionState.errorCopy}
+					tone="warning"
+					onretry={() => void retryLocationFromBanner()}
+				/>
 			{/if}
 
 			{#if !simplified}
@@ -1532,14 +1441,58 @@
 			{/if}
 		</div>
 
+		{#if !simpleMode}
+			<YrsScoreBanner
+				gpsReady={savedPosition !== null}
+				locationError={savedPosition
+					? ''
+					: userPositionState.errorCopy?.code === 'location_denied'
+						? formatErrorToast(locationDeniedCopy({ yrs: true }))
+						: userPositionState.error}
+				potentialScore={quickAssessment.potentialScore}
+				{species}
+				expanded={climateSectionOpen}
+				controlsId={climateDetailsId}
+				onclick={() => (climateSectionOpen = !climateSectionOpen)}
+			/>
+			<div
+				id={climateDetailsId}
+				class={climateSectionOpen ? 'flex flex-col gap-3' : 'contents'}
+			>
+				{#if climateSectionOpen}
+					{#if showClimatePanel}
+						<EnvironmentExposureField bind:value={environmentExposure} disabled={submitting} />
+					{/if}
+					<ClimateDataSectionLazy
+						embedded
+						bind:open={climateSectionOpen}
+						climate={climateHistory}
+						loading={climateLoading}
+						error={climateError}
+						approximate={climateApproximate}
+						offline={!onlineState.online}
+						{species}
+						observedPhenologyStage={quickAssessment.observedPhenologyStage}
+						cernageStatus={quickAssessment.cernageStatus}
+						aoutementStatus={quickAssessment.aoutementStatus}
+						leafFallPct={quickAssessment.leafFallPct}
+						environmentExposure={environmentExposure}
+						latitude={savedPosition?.latitude ?? null}
+						longitude={savedPosition?.longitude ?? null}
+						onretry={retryClimate}
+					/>
+				{/if}
+			</div>
+		{/if}
+
 		<div class="flex flex-col gap-2">
 			<label for="species" class="text-sm font-medium text-forest-900">{m.capture_species_optional()}</label>
 
-			{#if !gpsLoading && savedPosition && displayedSpecies.length > 0}
+			{#if displayedSpecies.length > 0}
 				<div
-					class="flex flex-wrap gap-2"
+					class="flex flex-nowrap gap-2 overflow-x-auto"
 					role="group"
-					aria-label={m.capture_species_suggestions()}
+					aria-label={m.capture_species_shortcuts()}
 				>
 						{#each displayedSpecies as suggestion (suggestion)}
 							<button
@@ -1547,7 +1500,7 @@
 								data-capture-action="species"
 								data-species-value={suggestion}
 								disabled={submitting}
-								class="h-10 touch-manipulation rounded-full px-4 text-sm font-medium transition disabled:opacity-50 {species ===
+								class="h-10 shrink-0 touch-manipulation rounded-full px-4 text-sm font-medium transition disabled:opacity-50 {species ===
 								suggestion
 									? 'bg-forest-800 text-white'
 									: 'border border-gray-200 bg-white text-forest-900'}"
@@ -1557,7 +1510,7 @@
 							</button>
 						{/each}
 				</div>
-			{:else if !gpsLoading && savedPosition && displayedSpecies.length === 0 && !species.trim()}
+			{:else if showNoGpsSuggestions}
 				<p class="text-sm text-muted">{m.capture_no_suggestions()}</p>
 			{/if}
 
@@ -1604,26 +1557,6 @@
 		{/if}
 	</div>
 
-	{#if !simplified && showClimatePanel}
-		<div class="order-3 md:col-span-2">
-			<ClimateDataSectionLazy
-				climate={climateHistory}
-				loading={climateLoading}
-				error={climateError}
-				approximate={climateApproximate}
-				offline={!onlineState.online}
-				{species}
-				observedPhenologyStage={quickAssessment.observedPhenologyStage}
-				cernageStatus={quickAssessment.cernageStatus}
-				aoutementStatus={quickAssessment.aoutementStatus}
-				leafFallPct={quickAssessment.leafFallPct}
-				environmentExposure={environmentExposure}
-				latitude={savedPosition?.latitude ?? null}
-				longitude={savedPosition?.longitude ?? null}
-				onretry={retryClimate}
-			/>
-		</div>
-	{/if}
 </div>
 	</div>
 
@@ -1642,7 +1575,7 @@
 			data-capture-tutorial="save"
 			data-capture-action="submit"
 			disabled={submitting || gpsChecking || submitLock}
-			class="btn-primary !h-14 gap-2 {saveSuccessPulse ? 'save-success-pulse' : ''}"
+			class="btn-primary !h-14 gap-2"
 			onclick={(event) => void handleSubmit(event)}
 		>
 			{#if submitting || gpsChecking}

@@ -61,9 +61,11 @@
 	>
 		<div>
 			<h3 class="text-sm font-medium text-forest-900">{m.capture_quick_assessment()}</h3>
-			<p class="mt-1 text-sm text-muted">
-				{!open && assessmentSummary ? assessmentSummary : m.capture_quick_assessment_hint()}
-			</p>
+			{#if !open}
+				<p class="mt-1 text-sm text-muted">
+					{assessmentSummary || m.capture_quick_assessment_hint()}
+				</p>
+			{/if}
 		</div>
 		<svg
 			xmlns="http://www.w3.org/2000/svg"

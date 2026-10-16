@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+	harvestWindowNotifyPlan,
 	isMonthInInclusiveWindow,
 	monthsOutsideInclusiveWindow,
+	nextHarvestWindowStartDate,
 	resolveHarvestCalendarPrior,
 	resolveMacroRegionAt
 } from '$lib/geo/harvestWindowPrior';
@@ -58,6 +60,62 @@ describe('resolveHarvestCalendarPrior', () => {
 		expect(
 			resolveHarvestCalendarPrior('Unknown shrub', -33.87, 151.21, new Date('2026-01-15'))
 		).toEqual({ applicable: false, inWindow: true, monthsFromWindow: 0 });
+	});
+});
+
+describe('nextHarvestWindowStartDate', () => {
+	it('returns the next 1st of the start month at 08:00', () => {
+		const at = nextHarvestWindowStartDate(
+			'Banksia',
+			-33.87,
+			151.21,
+			new Date(2026, 0, 15, 12, 0, 0)
+		);
+		expect(at?.getTime()).toBe(new Date(2026, 5, 1, 8, 0, 0, 0).getTime());
+	});
+
+	it('rolls to next year when this year’s start has passed', () => {
+		const at = nextHarvestWindowStartDate(
+			'Banksia',
+			-33.87,
+			151.21,
+			new Date(2026, 6, 15, 12, 0, 0)
+		);
+		expect(at?.getTime()).toBe(new Date(2027, 5, 1, 8, 0, 0, 0).getTime());
+	});
+
+	it('returns null when no calendar applies', () => {
+		expect(
+			nextHarvestWindowStartDate('Unknown shrub', -33.87, 151.21, new Date(2026, 0, 15))
+		).toBeNull();
+	});
+});
+
+describe('harvestWindowNotifyPlan', () => {
+	it('is unavailable without GPS or a matching species', () => {
+		expect(harvestWindowNotifyPlan('Banksia', null, null)).toEqual({ status: 'unavailable' });
+		expect(
+			harvestWindowNotifyPlan('Unknown shrub', -33.87, 151.21, new Date(2026, 0, 15))
+		).toEqual({ status: 'unavailable' });
+	});
+
+	it('is open during the harvest months', () => {
+		expect(
+			harvestWindowNotifyPlan('Banksia', -33.87, 151.21, new Date(2026, 6, 15, 12, 0, 0))
+		).toEqual({ status: 'open' });
+	});
+
+	it('is upcoming before the harvest months', () => {
+		const plan = harvestWindowNotifyPlan(
+			'Banksia',
+			-33.87,
+			151.21,
+			new Date(2026, 0, 15, 12, 0, 0)
+		);
+		expect(plan.status).toBe('upcoming');
+		if (plan.status === 'upcoming') {
+			expect(plan.at.getTime()).toBe(new Date(2026, 5, 1, 8, 0, 0, 0).getTime());
+		}
 	});
 });
 

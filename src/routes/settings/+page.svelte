@@ -33,6 +33,7 @@
 		setTerrainModeEnabled
 	} from '$lib/stores/captureSettings.svelte';
 	import SettingsApiToggle from '$lib/components/SettingsApiToggle.svelte';
+	import SettingsSpeciesShortcuts from '$lib/components/settings/SettingsSpeciesShortcuts.svelte';
 	import { getAppVersionLabel } from '$lib/utils/nativeInit';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import PasswordPromptDialog from '$lib/components/PasswordPromptDialog.svelte';
@@ -79,11 +80,16 @@
 		reexportArchiveWithPassword,
 		type ArchiveDeliveryMode,
 		type ArchiveDeliveryResult,
+		type ArchiveProgressCallback,
 		type RebuiltArchive,
 		type YamadoriLegacyBackup
 	} from '$lib/utils/archive';
-	import { dismissAppToast, showSettingsToast } from '$lib/stores/appToast.svelte';
+	import { presentTreeShare, incomingTreeShareState } from '$lib/utils/archive/incomingTreeShare.svelte';
+	import { isTreeShareArchive } from '$lib/utils/treeShare';
+	import { dismissAppToast, showErrorToast, showOkToast, showSettingsToast } from '$lib/stores/appToast.svelte';
 	import SettingsCacheSection from '$lib/components/settings/SettingsCacheSection.svelte';
+	import { formatUserFacingError, resolveErrorCopy } from '$lib/utils/userFacingError';
+	import { settingsBackupFailedCopy, settingsRestoreFailedCopy } from '$lib/utils/errorCopy';
 	import { processLegacyImport } from '$lib/utils/settings/legacy-backup-import';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -116,15 +122,11 @@
 		securitySettingsState,
 		setLocalEncryptionEnabled
 	} from '$lib/stores/securitySettings.svelte';
-	import { initBackupReminder, markBackupExported } from '$lib/utils/backupReminder.svelte';
+	import { initBackupReminder, backupReminderState, markBackupExported } from '$lib/utils/backupReminder.svelte';
+	import { daysSince } from '$lib/utils/backupReminder';
+	import { formatDate } from '$lib/utils/i18n/format';
 	import { isAndroidApp, isNativeApp } from '$lib/utils/platform';
-	import ProPurchaseCta from '$lib/components/ProPurchaseCta.svelte';
-	import { proEntitlementState } from '$lib/stores/proEntitlement.svelte';
-	import {
-		devProOverrideState,
-		setDevProOverride
-	} from '$lib/stores/devProOverride.svelte';
-	import { getHiddenTreeCount, isProUnlocked } from '$lib/utils/featurePolicy';
+	import SupportCard from '$lib/components/SupportCard.svelte';
 	import { LOCALE_OPTIONS } from '$lib/utils/i18n/locale';
 	import { getIntlLocale } from '$lib/utils/i18n/locale';
 	import * as m from '$lib/paraglide/messages.js';
@@ -143,6 +145,7 @@
 	let clearingApiCaches = $state(false);
 	let backingUp = $state(false);
 	let restoring = $state(false);
+	let backupProgressPercent = $state<number | null>(null);
 	let showReplaceBackupDialog = $state(false);
 	let pendingArchive = $state<RebuiltArchive | null>(null);
 	let pendingLegacyBackup = $state<YamadoriLegacyBackup | null>(null);
@@ -155,11 +158,13 @@
 	let showPasswordExportDialog = $state(false);
 	let passwordImportError = $state<string | null>(null);
 	let passwordExportError = $state<string | null>(null);
-	/** When true, next export asks for a password (default: unprotected). */
+	/** When true, next export asks for a password (default: unprotected unless already configured). */
 	let exportProtectWithPassword = $state(false);
+	let exportProtectInitialized = $state(false);
 	/** verify = configured backup password; oneshot = password for this export only. */
 	let exportPasswordMode = $state<'verify' | 'oneshot'>('verify');
 	let showLocalEncryptionConfirm = $state(false);
+	let showLocalEncryptionDisableConfirm = $state(false);
 	let showLegalDisclaimerDialog = $state(false);
 	let storageLocked = $derived(securitySettingsState.migrationPending);
 	let pendingPasswordBlob = $state<Blob | null>(null);
@@ -170,6 +175,13 @@
 	let pendingLegacyReexportBlob = $state<Blob | null>(null);
 	let legacyReexportPasswordError = $state<string | null>(null);
 	let backupInput: HTMLInputElement | undefined = $state();
+
+	let lastExportSummary = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		const at = backupReminderState.lastExportAt;
+		if (!at) return null;
+		return { date: formatDate(at), days: daysSince(at) };
+	});
 
 	let intlLocale = $derived.by(() => {
 		void appearanceSettingsState.locale;
@@ -302,11 +314,18 @@
 	}
 
 	$effect(() => {
+		if (exportProtectInitialized || !backupPasswordSettingsState.loaded) return;
+		exportProtectWithPassword = backupPasswordSettingsState.configured;
+		exportProtectInitialized = true;
+	});
+
+	$effect(() => {
 		void initAppearanceSettings();
 		void initApiSettings();
 		void initCompassSettings();
 		void initPowerSavingMode();
 		void initBackupPasswordSettings();
+		void initBackupReminder();
 		void initSecuritySettings();
 		void refreshTileCacheStats();
 		void refreshWeatherCacheStats();
@@ -353,12 +372,17 @@
 			showLocalEncryptionConfirm = true;
 			return;
 		}
-		void applyLocalEncryption(false);
+		showLocalEncryptionDisableConfirm = true;
 	}
 
 	async function confirmLocalEncryption(): Promise<void> {
 		showLocalEncryptionConfirm = false;
 		await applyLocalEncryption(true);
+	}
+
+	async function confirmLocalEncryptionDisable(): Promise<void> {
+		showLocalEncryptionDisableConfirm = false;
+		await applyLocalEncryption(false);
 	}
 
 	async function handleResetOnboarding() {
@@ -375,21 +399,13 @@
 		return appVersion ?? pkg.version;
 	}
 
-	function notifyStorageLocked(): void {
-		showSettingsToast('info', m.settings_storage_locked());
-	}
-
 	function guardStorageLocked(): boolean {
-		if (storageLocked) {
-			notifyStorageLocked();
-			return true;
-		}
-		return false;
+		return storageLocked;
 	}
 
 	function formatExportSuccessMessage(result: ArchiveDeliveryResult): string {
 		if (result === 'saved') {
-			return m.settings_export_saved();
+			return m.settings_export_saved_next();
 		}
 		if (result === 'shared') {
 			return m.settings_export_shared();
@@ -409,6 +425,14 @@
 		const { trees } = treePluralArgs(treeCount);
 		return `${treeCount} ${trees} — ${m.confirm_default_message()}`;
 	}
+
+	let replaceConfirmMessage = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		const count =
+			pendingArchive?.preview.treeCount ?? pendingLegacyBackup?.trees.length ?? 0;
+		const irreversible = m.settings_replace_message();
+		return count > 0 ? `${formatImportConfirmMessage(count)} ${irreversible}` : irreversible;
+	});
 
 	function openPasswordForm(mode: BackupPasswordFormMode) {
 		if (guardStorageLocked()) return;
@@ -454,8 +478,7 @@
 			showPasswordFormDialog = false;
 			showSettingsToast('ok', m.settings_backup_password_remove_ok());
 		} catch (error) {
-			passwordFormError =
-				error instanceof Error ? error.message : m.settings_backup_failed();
+			passwordFormError = formatUserFacingError(error, m.settings_backup_failed());
 		}
 	}
 
@@ -465,17 +488,29 @@
 		showSettingsToast('ok', m.settings_backup_password_reset_ok());
 	}
 
+	function reportArchiveProgress(_phase: Parameters<ArchiveProgressCallback>[0], percent: number): void {
+		backupProgressPercent = percent;
+	}
+
+	function busyProgressLabel(busyLabel: string): string {
+		void appearanceSettingsState.locale;
+		if (backupProgressPercent == null) {
+			return busyLabel;
+		}
+		return m.settings_backup_progress({ label: busyLabel, percent: backupProgressPercent });
+	}
+
 	async function runExportBackup(mode: ArchiveDeliveryMode, exportPassword?: string) {
 		const { delivery } = await exportAppBackup(mode, {
-			password: exportPassword
+			password: exportPassword,
+			onProgress: reportArchiveProgress
 		});
-		showSettingsToast('ok', formatExportSuccessMessage(delivery));
+		showOkToast(formatExportSuccessMessage(delivery));
 	}
 
 	async function handleExportBackup(mode: ArchiveDeliveryMode) {
 		if (guardStorageLocked()) return;
 		if (!treeStore.loaded) {
-			showSettingsToast('error', m.settings_loading_wait());
 			return;
 		}
 
@@ -488,21 +523,21 @@
 		}
 
 		backingUp = true;
+		backupProgressPercent = null;
 		dismissAppToast();
 		try {
 			await runExportBackup(mode);
 		} catch (error) {
-			showSettingsToast(
-				'error',
-				error instanceof Error ? error.message : m.settings_backup_failed()
-			);
+			showErrorToast(resolveErrorCopy(error, settingsBackupFailedCopy()));
 		} finally {
 			backingUp = false;
+			backupProgressPercent = null;
 		}
 	}
 
 	async function handlePasswordExportConfirm(password: string) {
 		backingUp = true;
+		backupProgressPercent = null;
 		passwordExportError = null;
 		dismissAppToast();
 		try {
@@ -518,12 +553,10 @@
 			showPasswordExportDialog = false;
 			await runExportBackup(pendingExportMode, password);
 		} catch (error) {
-			showSettingsToast(
-				'error',
-				error instanceof Error ? error.message : m.settings_backup_failed()
-			);
+			showErrorToast(resolveErrorCopy(error, settingsBackupFailedCopy()));
 		} finally {
 			backingUp = false;
+			backupProgressPercent = null;
 		}
 	}
 
@@ -585,53 +618,57 @@
 		blob: Blob,
 		mode: 'merge' | 'replace',
 		password?: string
-	): Promise<void> {
-		if (guardStorageLocked()) return;
+	): Promise<'applied' | 'deferred'> {
+		if (guardStorageLocked()) return 'deferred';
 		const needsPassword = await isPasswordProtectedBlob(blob);
 		if (needsPassword && !password) {
 			pendingPasswordBlob = blob;
 			pendingPasswordImportMode = mode;
 			passwordImportError = null;
 			showPasswordImportDialog = true;
-			return;
+			return 'deferred';
 		}
 
 		restoring = true;
+		backupProgressPercent = null;
 		dismissAppToast();
 		try {
-			const archive = await parseArchive(blob, password ? { password } : undefined);
+			const archive = await parseArchive(blob, {
+				...(password ? { password } : {}),
+				onProgress: reportArchiveProgress
+			});
 			showPasswordImportDialog = false;
 			pendingPasswordBlob = null;
 			passwordImportError = null;
+			if (isTreeShareArchive(archive)) {
+				presentTreeShare(archive);
+				return 'deferred';
+			}
 			if (mode === 'replace') {
 				pendingArchive = archive;
 				pendingLegacyBackup = null;
 				showReplaceBackupDialog = true;
-				showSettingsToast('info', formatImportConfirmMessage(archive.preview.treeCount));
-				return;
+				return 'deferred';
 			}
 			const treeCount = await applyArchiveData(archive, 'merge');
-			showSettingsToast('ok', formatImportSuccessMessage(treeCount, 'merge'));
+			showOkToast(formatImportSuccessMessage(treeCount, 'merge'));
+			return 'applied';
 		} catch (error) {
 			if (error instanceof ArchiveError && error.code === 'ARCHIVE_WRONG_PASSWORD') {
 				passwordImportError = error.message;
 				pendingPasswordBlob = blob;
 				pendingPasswordImportMode = mode;
 				showPasswordImportDialog = true;
-				return;
+				return 'deferred';
 			}
 			showPasswordImportDialog = false;
 			pendingPasswordBlob = null;
 			passwordImportError = null;
-			const message =
-				error instanceof ArchiveError
-					? error.message
-					: error instanceof Error
-						? error.message
-						: m.settings_restore_failed();
-			showSettingsToast('error', message);
+			showErrorToast(resolveErrorCopy(error, settingsRestoreFailedCopy()));
+			return 'deferred';
 		} finally {
 			restoring = false;
+			backupProgressPercent = null;
 		}
 	}
 
@@ -649,14 +686,14 @@
 	async function handleIncomingImport(mode: 'merge' | 'replace') {
 		const pending = await readPendingBackupBlob();
 		if (!pending) {
-			showSettingsToast('error', m.settings_backup_not_found());
+			showErrorToast(m.settings_backup_not_found());
 			clearPendingIncomingBackup();
 			return;
 		}
 
 		importMode = mode;
-		await importBackupFromBlob(pending.blob, mode);
-		if (mode === 'merge') {
+		const result = await importBackupFromBlob(pending.blob, mode);
+		if (mode === 'merge' && result === 'applied') {
 			await dismissPendingIncomingBackup();
 		}
 	}
@@ -685,11 +722,11 @@
 			const blob = file;
 			const analysis = await analyzeArchiveConfidentiality(blob);
 			if (analysis.kind === 'password_protected') {
-				showSettingsToast('info', m.settings_legacy_archive_reexport_none());
+				showSettingsToast('ok', m.settings_legacy_archive_reexport_none());
 				return;
 			}
 			if (analysis.kind === 'invalid') {
-				showSettingsToast('error', analysis.message);
+				showErrorToast(analysis.message);
 				return;
 			}
 			// weak (legacy crypto-theater) or honest plaintext → offer password envelope
@@ -698,10 +735,7 @@
 			legacyReexportPasswordError = null;
 			showLegacyReexportPasswordDialog = true;
 		} catch (error) {
-			showSettingsToast(
-				'error',
-				error instanceof Error ? error.message : m.settings_backup_failed()
-			);
+			showErrorToast(resolveErrorCopy(error, settingsBackupFailedCopy()));
 		} finally {
 			backingUp = false;
 		}
@@ -722,10 +756,9 @@
 			await deliverArchive(blob, filename, 'share');
 			showLegacyReexportPasswordDialog = false;
 			pendingLegacyReexportBlob = null;
-			showSettingsToast('ok', m.settings_legacy_archive_reexport_ok());
+			showOkToast(m.settings_legacy_archive_reexport_ok());
 		} catch (error) {
-			legacyReexportPasswordError =
-				error instanceof Error ? error.message : m.settings_backup_failed();
+			legacyReexportPasswordError = formatUserFacingError(error, m.settings_backup_failed());
 		} finally {
 			backingUp = false;
 		}
@@ -747,15 +780,11 @@
 				pendingLegacyBackup = result.request.legacy;
 				pendingArchive = null;
 				showReplaceBackupDialog = true;
-				showSettingsToast('info', formatImportConfirmMessage(result.request.treeCount));
 				return;
 			}
-			showSettingsToast('ok', formatImportSuccessMessage(result.treeCount, 'merge'));
+			showOkToast(formatImportSuccessMessage(result.treeCount, 'merge'));
 		} catch (error) {
-			showSettingsToast(
-				'error',
-				error instanceof Error ? error.message : m.settings_restore_failed()
-			);
+			showErrorToast(resolveErrorCopy(error, settingsRestoreFailedCopy()));
 		} finally {
 			restoring = false;
 		}
@@ -793,28 +822,19 @@
 		}
 	});
 
-	let hiddenTreeCount = $derived(getHiddenTreeCount(treeStore.trees));
-	let isPro = $derived(isProUnlocked());
-	let devProTestActive = $derived(
-		devProOverrideState.available && devProOverrideState.enabled && !proEntitlementState.isPro
-	);
-
 	async function handleReplaceBackup() {
 		restoring = true;
 		dismissAppToast();
 		try {
 			if (pendingArchive) {
 				const treeCount = await applyArchiveData(pendingArchive, 'replace');
-				showSettingsToast('ok', formatImportSuccessMessage(treeCount, 'replace'));
+				showOkToast(formatImportSuccessMessage(treeCount, 'replace'));
 			} else if (pendingLegacyBackup) {
 				const treeCount = await applyLegacyBackup(pendingLegacyBackup, 'replace');
-				showSettingsToast('ok', formatImportSuccessMessage(treeCount, 'replace'));
+				showOkToast(formatImportSuccessMessage(treeCount, 'replace'));
 			}
 		} catch (error) {
-			showSettingsToast(
-				'error',
-				error instanceof Error ? error.message : m.settings_restore_failed()
-			);
+			showErrorToast(resolveErrorCopy(error, settingsRestoreFailedCopy()));
 		} finally {
 			restoring = false;
 			clearPendingBackup();
@@ -827,11 +847,12 @@
 		try {
 			await clearWeatherCache();
 			await refreshWeatherCacheStats();
-			showSettingsToast('ok', m.settings_weather_cache_cleared());
+			showSettingsToast('ok', m.settings_weather_cache_cleared(), { haptic: true });
 		} catch (error) {
 			showSettingsToast(
 				'error',
-				error instanceof Error ? error.message : m.settings_weather_cache_clear_failed()
+				formatUserFacingError(error, m.settings_weather_cache_clear_failed()),
+				{ haptic: true }
 			);
 		} finally {
 			clearingWeatherCache = false;
@@ -843,11 +864,12 @@
 		try {
 			await clearTileCache();
 			await refreshTileCacheStats();
-			showSettingsToast('ok', m.settings_map_cache_cleared());
+			showSettingsToast('ok', m.settings_map_cache_cleared(), { haptic: true });
 		} catch (error) {
 			showSettingsToast(
 				'error',
-				error instanceof Error ? error.message : m.settings_map_cache_clear_failed()
+				formatUserFacingError(error, m.settings_map_cache_clear_failed()),
+				{ haptic: true }
 			);
 		} finally {
 			clearingCache = false;
@@ -859,11 +881,12 @@
 		try {
 			await clearCadastreCache();
 			await refreshCadastreCacheStats();
-			showSettingsToast('ok', m.settings_cadastre_cache_cleared());
+			showSettingsToast('ok', m.settings_cadastre_cache_cleared(), { haptic: true });
 		} catch (error) {
 			showSettingsToast(
 				'error',
-				error instanceof Error ? error.message : m.settings_cadastre_cache_clear_failed()
+				formatUserFacingError(error, m.settings_cadastre_cache_clear_failed()),
+				{ haptic: true }
 			);
 		} finally {
 			clearingCadastreCache = false;
@@ -883,11 +906,12 @@
 			clearProtectedAreasMemoryCache();
 			clearProtectedAreasDispatchMemoryCache();
 			await refreshApiCachesStats();
-			showSettingsToast('ok', m.settings_api_caches_cleared());
+			showSettingsToast('ok', m.settings_api_caches_cleared(), { haptic: true });
 		} catch (error) {
 			showSettingsToast(
 				'error',
-				error instanceof Error ? error.message : m.settings_api_caches_clear_failed()
+				formatUserFacingError(error, m.settings_api_caches_clear_failed()),
+				{ haptic: true }
 			);
 		} finally {
 			clearingApiCaches = false;
@@ -934,39 +958,48 @@
 				</span>
 			</label>
 
-			<label class="app-section-row" class:opacity-60={powerSavingModeState.active}>
+			<SettingsSpeciesShortcuts />
+
+			<label
+				class={[
+					'app-section-row',
+					powerSavingModeState.active && 'opacity-60',
+					!(isNativeApp() || powerSavingModeState.active) && '!items-center'
+				]}
+			>
 				<input
 					type="checkbox"
-					class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600 disabled:cursor-not-allowed"
+					class={[
+						'h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600 disabled:cursor-not-allowed',
+						(isNativeApp() || powerSavingModeState.active) && 'mt-1'
+					]}
 					checked={appearanceSettingsState.outdoorMode}
 					disabled={powerSavingModeState.active}
 					onchange={(event) => void setOutdoorMode(event.currentTarget.checked)}
 				/>
 				<span class="text-sm">
 					<span class="font-medium text-forest-900">{m.settings_outdoor_mode()}</span>
-					<span class="mt-0.5 block text-muted">
-						{m.settings_outdoor_hint()}
-						{#if isNativeApp()}
-							{m.settings_outdoor_android_brightness()}
-						{/if}
-						{#if powerSavingModeState.active}
-							{m.settings_power_saving_outdoor_blocked()}
-						{/if}
-					</span>
+					{#if isNativeApp() || powerSavingModeState.active}
+						<span class="mt-0.5 block text-muted">
+							{#if isNativeApp()}
+								{m.settings_outdoor_android_brightness()}
+							{/if}
+							{#if powerSavingModeState.active}
+								{m.settings_power_saving_outdoor_blocked()}
+							{/if}
+						</span>
+					{/if}
 				</span>
 			</label>
 
-			<label class="app-section-row">
+			<label class="app-section-row !items-center">
 				<input
 					type="checkbox"
-					class="mt-1 h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
+					class="h-4 w-4 rounded border-gray-300 text-forest-800 focus:ring-forest-600"
 					checked={appearanceSettingsState.darkMode}
 					onchange={(event) => void setDarkMode(event.currentTarget.checked)}
 				/>
-				<span class="text-sm">
-					<span class="font-medium text-forest-900">{m.settings_dark_mode()}</span>
-					<span class="mt-0.5 block text-muted">{m.settings_dark_hint()}</span>
-				</span>
+				<span class="text-sm font-medium text-forest-900">{m.settings_dark_mode()}</span>
 			</label>
 
 			<label class="app-section-row">
@@ -1006,9 +1039,31 @@
 			<p class="mt-1 text-sm text-muted">
 				{m.settings_backup_hint()}
 			</p>
+			{#if backupReminderState.loaded}
+				<p class="mt-2 text-sm text-forest-800">
+					{#if lastExportSummary}
+						{m.backup_last_export({ date: lastExportSummary.date })}
+						{#if lastExportSummary.days > 0}
+							<span class="text-muted">
+								({m.backup_last_export_days_ago({ days: String(lastExportSummary.days) })})
+							</span>
+						{/if}
+					{:else}
+						{m.backup_last_export_never()}
+					{/if}
+				</p>
+			{/if}
+			{#if storageLocked}
+				<p
+					class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+					role="status"
+				>
+					{m.settings_storage_locked()}
+				</p>
+			{/if}
 		</div>
 
-		{#if isAndroidApp() && incomingBackupState.pending}
+		{#if isAndroidApp() && incomingBackupState.pending && incomingTreeShareState.status !== 'tree-share' && incomingTreeShareState.status !== 'inspecting'}
 			<div class="app-card border-forest-200 bg-forest-50 px-4 py-3">
 				<p class="text-sm font-medium text-forest-900">{m.settings_backup_received()}</p>
 				<p class="mt-1 text-sm text-forest-800">
@@ -1073,17 +1128,19 @@
 						onclick={() => void handleExportBackup('share')}
 						disabled={backingUp || !treeStore.loaded || storageLocked}
 						class="btn-primary !h-11 text-sm"
+						aria-busy={backingUp}
 					>
-						{backingUp ? m.action_exporting() : m.action_export()}
+						{backingUp ? busyProgressLabel(m.action_exporting()) : m.action_export()}
 					</button>
 					<button
 						type="button"
 						onclick={() => void handleExportBackup('local')}
 						disabled={backingUp || !treeStore.loaded || storageLocked}
 						class="btn-secondary !h-11 text-sm"
+						aria-busy={backingUp}
 					>
 						{backingUp
-							? m.action_saving()
+							? busyProgressLabel(m.action_saving())
 							: isAndroidApp()
 								? m.settings_save_downloads()
 								: m.settings_download_backup()}
@@ -1100,8 +1157,9 @@
 						onclick={() => openBackupImport('merge')}
 						disabled={restoring || storageLocked}
 						class="btn-secondary !h-11 text-sm"
+						aria-busy={restoring}
 					>
-						{restoring ? m.action_importing() : m.action_import()}
+						{restoring ? busyProgressLabel(m.action_importing()) : m.action_import()}
 					</button>
 					<button
 						type="button"
@@ -1124,6 +1182,7 @@
 					<button
 						type="button"
 						onclick={() => openPasswordForm('change')}
+						disabled={storageLocked}
 						class="btn-secondary !h-11 text-sm sm:!w-auto"
 					>
 						{m.settings_backup_password_change()}
@@ -1131,6 +1190,7 @@
 					<button
 						type="button"
 						onclick={() => openPasswordForm('remove')}
+						disabled={storageLocked}
 						class="btn-secondary !h-11 text-sm sm:!w-auto"
 					>
 						{m.settings_backup_password_remove()}
@@ -1142,6 +1202,7 @@
 						onclick={() => {
 							showPasswordResetDialog = true;
 						}}
+						disabled={storageLocked}
 						class="text-left text-xs font-medium text-muted underline-offset-2 hover:underline"
 					>
 						{m.settings_backup_password_forgot()}
@@ -1158,6 +1219,7 @@
 				<button
 					type="button"
 					onclick={() => openPasswordForm('setup')}
+					disabled={storageLocked}
 					class="btn-secondary mt-3 !h-11 text-sm sm:!w-auto"
 				>
 					{m.settings_backup_password_setup()}
@@ -1197,10 +1259,7 @@
 	</section>
 
 	<section class="flex flex-col gap-3">
-		<div>
-			<h2 class="text-lg font-semibold text-forest-900">{m.settings_compass_gps_title()}</h2>
-			<p class="mt-1 text-sm text-muted">{m.settings_compass_gps_hint()}</p>
-		</div>
+		<h2 class="text-lg font-semibold text-forest-900">{m.settings_compass_gps_title()}</h2>
 
 		<div class="app-section-list">
 			{#each [
@@ -1224,62 +1283,7 @@
 		</div>
 	</section>
 
-	<section class="flex flex-col gap-3">
-		<div>
-			<h2 class="text-lg font-semibold text-forest-900">{m.pro_title()}</h2>
-			<p class="mt-1 text-sm text-muted">{m.pro_features_hint()}</p>
-			{#if devProTestActive}
-				<p
-					class="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
-				>
-					{m.pro_dev_test_active()}
-				</p>
-			{/if}
-		</div>
-		<div class="pro-surface">
-			<div class="pro-surface-hero">
-				<span class="pro-badge">{m.pro_badge_short()}</span>
-				<p class="mt-2 text-sm font-medium text-white/90">
-					{isPro ? m.pro_status_active() : m.pro_status_free()}
-				</p>
-			</div>
-			<div class="px-4 py-3">
-				<p class="text-sm text-muted">
-					{#if isPro}
-						{m.pro_trees_count_pro({ count: String(treeStore.trees.length) })}
-					{:else if hiddenTreeCount > 0}
-						{m.pro_trees_count({
-							visible: String(treeStore.trees.length - hiddenTreeCount),
-							hidden: String(hiddenTreeCount)
-						})}
-					{:else}
-						{m.pro_trees_count_pro({ count: String(treeStore.trees.length) })}
-					{/if}
-				</p>
-				{#if !isPro}
-					<div class="mt-3">
-						<ProPurchaseCta active={!isPro} />
-					</div>
-				{/if}
-				{#if devProOverrideState.available}
-					<div class="mt-3 border-t border-gray-100 pt-3">
-						<button
-							type="button"
-							class="w-full rounded-lg border px-4 py-2.5 text-sm font-medium transition active:scale-[0.98] {devProOverrideState.enabled
-								? 'border-amber-400 bg-amber-50 text-amber-900'
-								: 'border-gray-300 bg-white text-forest-800'}"
-							onclick={() => void setDevProOverride(!devProOverrideState.enabled)}
-						>
-							{devProOverrideState.enabled
-								? m.pro_dev_test_disable()
-								: m.pro_dev_test_enable()}
-						</button>
-						<p class="mt-1 text-xs text-muted">{m.pro_dev_test_hint()}</p>
-					</div>
-				{/if}
-			</div>
-		</div>
-	</section>
+	<SupportCard />
 
 	<SettingsCacheSection
 		{tileCacheCount}
@@ -1332,10 +1336,7 @@
 	{/if}
 
 	<section class="flex flex-col gap-3">
-		<div>
-			<h2 class="text-lg font-semibold text-forest-900">{m.settings_security_privacy()}</h2>
-			<p class="mt-1 text-sm text-muted">{m.settings_privacy_hint()}</p>
-		</div>
+		<h2 class="text-lg font-semibold text-forest-900">{m.settings_security_privacy()}</h2>
 
 		<div class="app-section-list">
 			{#if isLocalEncryptionAvailable()}
@@ -1379,6 +1380,27 @@
 				{m.settings_privacy_policy_link()}
 			</a>
 
+			<a
+				href={resolve('/settings/legal')}
+				class="block px-4 py-3 text-center text-sm font-medium text-forest-800 transition active:scale-[0.98]"
+			>
+				{m.settings_legal_notice_link()}
+			</a>
+
+			<a
+				href={resolve('/settings/terms')}
+				class="block px-4 py-3 text-center text-sm font-medium text-forest-800 transition active:scale-[0.98]"
+			>
+				{m.settings_terms_link()}
+			</a>
+
+			<a
+				href={resolve('/settings/sale')}
+				class="block px-4 py-3 text-center text-sm font-medium text-forest-800 transition active:scale-[0.98]"
+			>
+				{m.settings_sale_link()}
+			</a>
+
 			<button
 				type="button"
 				onclick={() => {
@@ -1402,6 +1424,17 @@
 	onconfirm={() => void confirmLocalEncryption()}
 	oncancel={() => {
 		showLocalEncryptionConfirm = false;
+	}}
+/>
+
+<ConfirmDialog
+	bind:open={showLocalEncryptionDisableConfirm}
+	title={m.settings_local_encryption_disable_confirm_title()}
+	message={m.settings_local_encryption_disable_confirm_body()}
+	confirmLabel={m.action_confirm()}
+	onconfirm={() => void confirmLocalEncryptionDisable()}
+	oncancel={() => {
+		showLocalEncryptionDisableConfirm = false;
 	}}
 />
 
@@ -1433,6 +1466,9 @@
 				{m.settings_legal_disclaimer_link()}
 			</h2>
 			<p id="legal-disclaimer-dialog-body" class="mt-3 text-sm leading-relaxed text-muted">
+				{m.legal_aid_disclaimer()}
+			</p>
+			<p class="mt-3 text-sm leading-relaxed text-muted">
 				{m.veto_disclaimer_body()}
 			</p>
 			<button
@@ -1449,7 +1485,7 @@
 <ConfirmDialog
 	bind:open={showReplaceBackupDialog}
 	title={m.settings_replace_title()}
-	message={m.settings_replace_message()}
+	message={replaceConfirmMessage}
 	confirmLabel={m.action_replace()}
 	onconfirm={() => void handleReplaceBackup()}
 	oncancel={() => {

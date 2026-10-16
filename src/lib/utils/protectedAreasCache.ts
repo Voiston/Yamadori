@@ -1,7 +1,17 @@
 import type { ProtectedAreaScan } from '$lib/types/harvest-ethics';
-import { createStore, del, get, keys, set } from 'idb-keyval';
+import { createStore } from 'idb-keyval';
+import {
+	encryptedCacheClear,
+	encryptedCacheDel,
+	encryptedCacheEntries,
+	encryptedCacheGet,
+	encryptedCacheSet,
+	GEO_CACHE_STORE_IDS,
+	registerGeoCacheStore
+} from '$lib/utils/encryptedCacheStore';
 
 const protectedAreasStore = createStore('yamadori-protected-areas-cache', 'scans');
+registerGeoCacheStore(protectedAreasStore, GEO_CACHE_STORE_IDS.protected);
 
 /** Zonages protégés : données relativement stables — cache long. */
 export const MAX_PROTECTED_AREAS_CACHE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -20,10 +30,14 @@ export function isProtectedAreasCacheEntryValid(fetchedAt: string, now = Date.no
 export async function getCachedProtectedAreaScan(
 	key: string
 ): Promise<ProtectedAreaScan | undefined> {
-	const entry = await get<CachedProtectedAreaScanEntry>(key, protectedAreasStore);
+	const entry = await encryptedCacheGet<CachedProtectedAreaScanEntry>(
+		protectedAreasStore,
+		GEO_CACHE_STORE_IDS.protected,
+		key
+	);
 	if (!entry) return undefined;
 	if (!isProtectedAreasCacheEntryValid(entry.fetchedAt)) {
-		await del(key, protectedAreasStore);
+		await encryptedCacheDel(protectedAreasStore, GEO_CACHE_STORE_IDS.protected, key);
 		return undefined;
 	}
 	return { ...entry.value, fromCache: true };
@@ -37,21 +51,22 @@ export async function saveCachedProtectedAreaScan(
 		fetchedAt: new Date().toISOString(),
 		value: { ...value, fromCache: false }
 	};
-	await set(key, entry, protectedAreasStore);
+	await encryptedCacheSet(protectedAreasStore, GEO_CACHE_STORE_IDS.protected, key, entry);
 }
 
 export async function clearProtectedAreasPersistentCache(): Promise<void> {
-	const allKeys = await keys(protectedAreasStore);
-	await Promise.all(allKeys.map((key) => del(key, protectedAreasStore)));
+	await encryptedCacheClear(protectedAreasStore);
 }
 
 export async function getProtectedAreasCacheStats(): Promise<{ count: number }> {
-	const allKeys = await keys(protectedAreasStore);
+	const entries = await encryptedCacheEntries<CachedProtectedAreaScanEntry>(
+		protectedAreasStore,
+		GEO_CACHE_STORE_IDS.protected
+	);
 	let count = 0;
-	for (const key of allKeys) {
-		const entry = await get<CachedProtectedAreaScanEntry>(key, protectedAreasStore);
-		if (!entry || !isProtectedAreasCacheEntryValid(entry.fetchedAt)) {
-			await del(key, protectedAreasStore);
+	for (const { key, value } of entries) {
+		if (!isProtectedAreasCacheEntryValid(value.fetchedAt)) {
+			await encryptedCacheDel(protectedAreasStore, GEO_CACHE_STORE_IDS.protected, key);
 			continue;
 		}
 		count += 1;

@@ -1,31 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { LOCAL_ENCRYPTION_KEY_MISSING_ERROR } from '$lib/utils/secure-idb';
-import { resolveParkingLoadError, resolveTreesLoadError } from '$lib/utils/storageLoadError';
+import { resolveParkingLoadError, resolveTreesLoadError } from './storageLoadError';
 
 describe('resolveTreesLoadError', () => {
-	it('returns encryption-specific message when key is missing', () => {
+	it('returns encryption-specific copy when key is missing', () => {
 		const result = resolveTreesLoadError(new Error(LOCAL_ENCRYPTION_KEY_MISSING_ERROR));
 		expect(result.suggestImport).toBe(true);
-		expect(result.message).toContain('Chiffrement');
+		expect(result.what).toContain('inaccessibles');
+		expect(result.action.kind).toBe('link');
 	});
 
-	it('returns corrupt message for other errors', () => {
+	it('returns corrupt copy for other errors', () => {
 		const result = resolveTreesLoadError(new Error('parse failed'));
 		expect(result.suggestImport).toBe(true);
-		expect(result.message).toContain('illisibles');
+		expect(result.what).toContain('illisibles');
 	});
 });
 
 describe('resolveParkingLoadError', () => {
-	it('returns encryption-specific message when key is missing', () => {
+	it('returns encryption-specific copy when key is missing', () => {
 		const result = resolveParkingLoadError(new Error(LOCAL_ENCRYPTION_KEY_MISSING_ERROR));
 		expect(result.suggestImport).toBe(true);
-		expect(result.message).toContain('chiffr');
+		expect(result.action.kind).toBe('link');
 	});
 
-	it('returns generic parking message for other errors', () => {
+	it('returns generic parking copy for other errors', () => {
 		const result = resolveParkingLoadError(new Error('parse failed'));
 		expect(result.suggestImport).toBe(false);
-		expect(result.message).toContain('départ');
+		expect(result.what).toContain('départ');
 	});
 });

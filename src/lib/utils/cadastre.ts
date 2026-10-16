@@ -123,20 +123,29 @@ function pickProperty(properties: Record<string, unknown>, keys: string[]): stri
 async function fetchGeoJson(
 	url: string,
 	options?: { signal?: AbortSignal }
-): Promise<GeoJsonFeatureCollection | null> {
+): Promise<GeoJsonFeatureCollection> {
 	const { signal, dispose } = createTimedAbortSignal(FETCH_TIMEOUT_MS, options?.signal);
 
 	try {
 		const response = await fetch(url, { signal });
-		if (!response.ok) return null;
-		return (await response.json()) as GeoJsonFeatureCollection;
-	} catch (error) {
-		if (isAbortError(error)) {
-			throw error;
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}`);
 		}
-		return null;
+		return (await response.json()) as GeoJsonFeatureCollection;
 	} finally {
 		dispose();
+	}
+}
+
+async function fetchGeoJsonOrNull(
+	url: string,
+	options?: { signal?: AbortSignal }
+): Promise<GeoJsonFeatureCollection | null> {
+	try {
+		return await fetchGeoJson(url, options);
+	} catch (error) {
+		if (isAbortError(error)) throw error;
+		return null;
 	}
 }
 
@@ -171,7 +180,7 @@ async function fetchCommuneName(
 		geom: pointGeometry(longitude, latitude),
 		_limit: '1'
 	});
-	const data = await fetchGeoJson(`${APICARTO_COMMUNE_URL}?${params}`, options);
+	const data = await fetchGeoJsonOrNull(`${APICARTO_COMMUNE_URL}?${params}`, options);
 	const properties = data?.features?.[0]?.properties;
 	if (!properties) return '';
 
@@ -192,7 +201,7 @@ async function fetchPublicForestFeature(
 			geom,
 			_limit: '1'
 		});
-		const data = await fetchGeoJson(`${APICARTO_WFS_URL}?${params}`, options);
+		const data = await fetchGeoJsonOrNull(`${APICARTO_WFS_URL}?${params}`, options);
 		const feature = data?.features?.[0];
 		if (feature) return feature;
 	}
@@ -485,9 +494,34 @@ async function lookupCadastreUncached(
 	};
 }
 
+async function lookupFromOfflineIndex(
+	latitude: number,
+	longitude: number
+): Promise<CadastreInfo | null> {
+	const { findOfflineParcelAt } = await import('$lib/utils/offlineParcels');
+	const hit = await findOfflineParcelAt(latitude, longitude);
+	if (!hit) return null;
+
+	const zoneType = hit.forestProperties
+		? classifyForestZone(hit.forestProperties)
+		: 'private';
+	const commune = hit.commune || hit.codeInsee || m.cadastre_unavailable();
+	return {
+		commune,
+		section: hit.section,
+		parcelNumber: hit.parcelNumber,
+		codeInsee: hit.codeInsee,
+		zoneType,
+		fetchedAt: new Date().toISOString(),
+		collectStatus: collectStatusForZone(zoneType)
+	};
+}
+
 /**
  * Interroge le cadastre PCI Express et la couche forêts publiques ONF.
  * Ne divulgue aucune donnée personnelle — uniquement parcelle et régime foncier.
+ * Une fiche déjà en cache prime. Sinon, l’index téléchargé avec la zone est lu
+ * avant le réseau. Un échec réseau n’enregistre pas « aucune parcelle ».
  */
 export async function lookupCadastre(
 	latitude: number,
@@ -501,15 +535,24 @@ export async function lookupCadastre(
 
 	const key = cadastreCacheKey(latitude, longitude);
 	const cached = readCached(key);
-	if (cached !== undefined) {
-		return cached;
+	if (cached) return cached;
+
+	let knownEmpty = cached === null;
+	if (cached === undefined) {
+		const persisted = await readPersistentCache(key);
+		if (persisted) {
+			writeCache(key, persisted);
+			return persisted;
+		}
+		knownEmpty = persisted === null;
 	}
 
-	const persisted = await readPersistentCache(key);
-	if (persisted !== undefined) {
-		writeCache(key, persisted);
-		return persisted;
+	const offline = await lookupFromOfflineIndex(latitude, longitude);
+	if (offline) {
+		writeCache(key, offline);
+		return offline;
 	}
+	if (knownEmpty) return null;
 
 	if (!isApiEnabled('ignCadastre')) {
 		throw new Error(getApiDisabledError('ignCadastre'));
@@ -518,13 +561,15 @@ export async function lookupCadastre(
 	return throttleRequest(async () => {
 		throwIfAborted(options?.signal);
 		const again = readCached(key);
-		if (again !== undefined) return again;
+		if (again) return again;
+		if (again === null) return null;
 
 		const persistedAgain = await readPersistentCache(key);
-		if (persistedAgain !== undefined) {
+		if (persistedAgain) {
 			writeCache(key, persistedAgain);
 			return persistedAgain;
 		}
+		if (persistedAgain === null) return null;
 
 		const result = await lookupCadastreUncached(latitude, longitude, options);
 		writeCache(key, result);

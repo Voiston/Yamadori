@@ -1,3 +1,4 @@
+import { App } from '@capacitor/app';
 import { DeviceOrientation } from 'capacitor-community-device-orientation';
 import type { DeviceOrientationData } from 'capacitor-community-device-orientation';
 import {
@@ -77,4 +78,90 @@ export async function requestFusedHeadingPermission(): Promise<boolean> {
 		return true;
 	}
 	return requestWebOrientationPermission();
+}
+
+export type WatchFusedHeadingHandlers = {
+	onSample: (sample: HeadingSample) => void;
+	onPause?: () => void;
+	onDenied?: () => void;
+};
+
+/**
+ * Request heading permission, subscribe while the app is visible/active,
+ * and pause when backgrounded. Returns a teardown function.
+ */
+export function watchFusedHeading(handlers: WatchFusedHeadingHandlers): () => void {
+	let stop: (() => void) | null = null;
+	let cancelled = false;
+	let permissionGranted = false;
+	let appActive = typeof document === 'undefined' || document.visibilityState === 'visible';
+
+	const startSubscription = () => {
+		if (cancelled || !permissionGranted || !appActive || stop) {
+			return;
+		}
+		stop = subscribeFusedHeading(handlers.onSample);
+	};
+
+	const pauseSubscription = () => {
+		stop?.();
+		stop = null;
+		handlers.onPause?.();
+	};
+
+	const handleAppActiveChange = (isActive: boolean) => {
+		appActive = isActive;
+		if (appActive) {
+			startSubscription();
+		} else {
+			pauseSubscription();
+		}
+	};
+
+	const handleVisibilityChange = () => {
+		if (typeof document === 'undefined') {
+			return;
+		}
+		handleAppActiveChange(document.visibilityState === 'visible');
+	};
+
+	void requestFusedHeadingPermission().then((granted) => {
+		if (cancelled) {
+			return;
+		}
+		if (!granted) {
+			handlers.onDenied?.();
+			return;
+		}
+		permissionGranted = true;
+		startSubscription();
+	});
+
+	if (typeof document !== 'undefined') {
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+	}
+
+	let removeAppListener: (() => void) | undefined;
+	if (isNativeApp()) {
+		void App.addListener('appStateChange', ({ isActive }) => {
+			handleAppActiveChange(isActive);
+		}).then((handle) => {
+			if (cancelled) {
+				void handle.remove();
+				return;
+			}
+			removeAppListener = () => {
+				void handle.remove();
+			};
+		});
+	}
+
+	return () => {
+		cancelled = true;
+		if (typeof document !== 'undefined') {
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
+		}
+		removeAppListener?.();
+		pauseSubscription();
+	};
 }

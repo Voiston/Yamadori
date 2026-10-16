@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { App } from '@capacitor/app';
 	import { onMount } from 'svelte';
-	import { hapticLight } from '$lib/utils/haptics';
+	import { hapticError, hapticLight } from '$lib/utils/haptics';
 	import { nativeTap } from '$lib/utils/native-touch';
 	import { isNativeApp } from '$lib/utils/platform';
 	import { capturePhoto } from '$lib/utils/nativeCamera';
@@ -13,6 +13,9 @@
 	import { MAX_VISIT_PHOTOS } from '$lib/types/tree';
 	import * as m from '$lib/paraglide/messages.js';
 	import Skeleton from '$lib/components/Skeleton.svelte';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
+	import { photoFailedCopy } from '$lib/utils/errorCopy';
+	import { resolveErrorCopy, type ErrorCopy } from '$lib/utils/userFacingError';
 
 	export type MultiPhotoSlot = {
 		previewUrl: string;
@@ -41,7 +44,15 @@
 	let cameraInputEl: HTMLInputElement | undefined = $state();
 	let picking = $state(false);
 	let processingPhoto = $state(false);
-	let error = $state('');
+	let error = $state<ErrorCopy | null>(null);
+
+	function setPhotoError(cause: unknown): void {
+		error =
+			typeof cause === 'string'
+				? photoFailedCopy(cause)
+				: resolveErrorCopy(cause, photoFailedCopy());
+		void hapticError();
+	}
 	/** Slot index being replaced, or null when adding a new slot. */
 	let pendingSlotIndex: number | null = $state(null);
 	let pickingTimeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -107,7 +118,7 @@
 			pendingSlotIndex = null;
 			setProcessing(false);
 			endCameraCapture();
-			error = m.photo_interrupted();
+			setPhotoError(m.photo_interrupted());
 		}, PICKING_TIMEOUT_MS);
 	}
 
@@ -165,7 +176,8 @@
 			void hapticLight();
 		} catch (err) {
 			console.error('Photo preview prepare failed:', err);
-			error = err instanceof Error ? err.message : m.photo_not_received();
+			setPhotoError(err);
+			void hapticError();
 		} finally {
 			setProcessing(false);
 			endCameraCapture();
@@ -183,7 +195,7 @@
 		}
 
 		picking = true;
-		error = '';
+		error = null;
 		blurActiveField();
 		pendingSlotIndex = index;
 		beginCameraCapture();
@@ -196,7 +208,7 @@
 					revokePreviewUrl(result.previewUrl);
 					await applySlotFromFile(result.file, index);
 				} else {
-					error = m.photo_not_received();
+					setPhotoError(m.photo_not_received());
 					endCameraCapture();
 					pendingSlotIndex = null;
 				}
@@ -206,7 +218,8 @@
 			cameraInputEl?.click();
 		} catch (err) {
 			console.error('Photo capture failed:', err);
-			error = err instanceof Error ? err.message : m.photo_not_received();
+			setPhotoError(err);
+			void hapticError();
 			endCameraCapture();
 			pendingSlotIndex = null;
 		} finally {
@@ -224,7 +237,7 @@
 			pendingSlotIndex = null;
 			return;
 		}
-		error = '';
+		error = null;
 		beginCameraCapture();
 		void applySlotFromFile(file, index);
 	}
@@ -725,7 +738,7 @@
 	{/if}
 
 	{#if error}
-		<p class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>
+		<ErrorBanner copy={error} />
 	{/if}
 
 	{#if frontLabel}

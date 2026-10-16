@@ -2,13 +2,9 @@ import {
 
 	getCurrentPosition as readCurrentPosition,
 
-	geolocationErrorMessage,
-
 	getLocationPermissionStatus,
 
 	isLocationSupported,
-
-	locationPermissionErrorMessage,
 
 	requestLocationPermissions,
 
@@ -21,6 +17,12 @@ import {
 	type LocationWatchHandle
 
 } from '$lib/utils/locationProvider';
+import { formatErrorToast, type ErrorCopy } from '$lib/utils/userFacingError';
+import {
+	geolocationErrorCopy,
+	locationPermissionErrorCopy,
+	locationUnsupportedCopy
+} from '$lib/utils/errorCopy';
 
 import {
 
@@ -115,7 +117,8 @@ export const userPositionState = $state({
 
 	watching: false,
 
-	error: '' as string
+	error: '' as string,
+	errorCopy: null as ErrorCopy | null
 
 });
 
@@ -463,9 +466,14 @@ function toUserPosition(reading: LocationReading): UserPosition {
 
 
 
+function setUserPositionError(copy: ErrorCopy | null): void {
+	userPositionState.errorCopy = copy;
+	userPositionState.error = copy ? formatErrorToast(copy) : '';
+}
+
 function publishUserPosition(position: UserPosition): void {
 	userPositionState.position = position;
-	userPositionState.error = '';
+	setUserPositionError(null);
 	lastPublishedAt = Date.now();
 	lastPublishedCoords = {
 		latitude: position.latitude,
@@ -538,7 +546,7 @@ function handleLocationPermissionFailure(): void {
 
 	void getLocationPermissionStatus().then((status) => {
 
-		userPositionState.error = locationPermissionErrorMessage(status);
+		setUserPositionError(locationPermissionErrorCopy(status));
 
 	});
 
@@ -564,10 +572,8 @@ async function ensureLocationPermission(): Promise<boolean> {
 
 
 
-function handleLocationError(message: string): void {
-
-	userPositionState.error = message;
-
+function handleLocationError(copy: ErrorCopy): void {
+	setUserPositionError(copy);
 }
 
 
@@ -628,13 +634,13 @@ async function startHardwareWatch(profile: GpsProfile): Promise<void> {
 
 		userPositionState.watching = true;
 
-		userPositionState.error = '';
+		setUserPositionError(null);
 
 		syncGpsTimers(profile, consumers);
 
 	} catch (error) {
 
-		userPositionState.error = geolocationErrorMessage(error);
+		setUserPositionError(geolocationErrorCopy(error));
 
 		userPositionState.watching = false;
 
@@ -769,7 +775,7 @@ export function acquireLocationWatch(consumerId: string, profile: GpsProfile): (
 
 	if (!isLocationSupported()) {
 
-		userPositionState.error = m.geo_not_supported();
+		setUserPositionError(locationUnsupportedCopy());
 
 		return () => {};
 
@@ -877,7 +883,7 @@ export async function requestCurrentPosition(
 
 	if (!isLocationSupported()) {
 
-		userPositionState.error = m.geo_not_supported();
+		setUserPositionError(locationUnsupportedCopy());
 
 		return null;
 
@@ -923,7 +929,7 @@ export async function requestCurrentPosition(
 
 	} catch (error) {
 
-		userPositionState.error = geolocationErrorMessage(error);
+		setUserPositionError(geolocationErrorCopy(error));
 
 		return null;
 
@@ -985,6 +991,7 @@ export function __resetUserPositionForTests(): void {
 	userPositionState.position = null;
 	userPositionState.watching = false;
 	userPositionState.error = '';
+	userPositionState.errorCopy = null;
 	watchHandle = null;
 	positionListeners.clear();
 	lastWatchCoords = null;

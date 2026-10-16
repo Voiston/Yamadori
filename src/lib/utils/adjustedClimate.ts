@@ -1,19 +1,14 @@
 import { ENVIRONMENT_EXPOSURE_COEFFICIENTS } from '$lib/constants/environment-exposure';
-import type { AgriData, SoilDailySample } from '$lib/types/agri';
+import type { AgriData } from '$lib/types/agri';
 import type { EnvironmentExposure } from '$lib/types/environment';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
 import type { GddSnapshot } from '$lib/types/gdd';
-import {
-	countConsecutiveSoilStableDays,
-	isSoilTrend7dRising
-} from '$lib/utils/agri';
-import { estimatePhenology } from '$lib/utils/gdd';
+import { refreshSnapshotPhenology } from '$lib/utils/gdd';
 import {
 	computeFutureStressRisk,
+	computeHydricFromAgriInputs,
 	computeRadiationStressIndex,
-	computeSoilBufferScore,
-	computeWindStressIndex,
-	computeWSI
+	computeWindStressIndex
 } from '$lib/utils/hydric';
 
 function round1(value: number): number {
@@ -41,52 +36,10 @@ export function adjustSoilTemperature(
 	return round1(airC + (soilC - airC) * coefficient);
 }
 
-function adjustSoilNullable(
-	soilC: number | null,
-	airC: number,
-	coefficient: number
-): number | null {
-	if (soilC === null) return null;
-	return adjustSoilTemperature(soilC, airC, coefficient);
-}
-
-function adjustSoilDailyHistory(
-	history: SoilDailySample[],
-	airC: number,
-	coefficient: number
-): SoilDailySample[] {
-	return history.map((sample) => ({
-		...sample,
-		mean6cmC: adjustSoilNullable(sample.mean6cmC, airC, coefficient),
-		mean18cmC: adjustSoilNullable(sample.mean18cmC, airC, coefficient)
-	}));
-}
-
-function recomputeSoilTrendMetrics(
-	data: Pick<
-		AgriData,
-		'soilDailyHistory7d' | 'soilBrutalNightDrop' | 'soilConsecutiveStableDays' | 'soilTrend7dRising'
-	>
-): Pick<AgriData, 'soilConsecutiveStableDays' | 'soilTrend7dRising'> {
-	const past6cmMeans = data.soilDailyHistory7d.map((sample) => sample.mean6cmC);
-	const past18cmMeans = data.soilDailyHistory7d.map((sample) => sample.mean18cmC);
-	const past5Means6cm = past6cmMeans.slice(-5);
-
-	return {
-		soilConsecutiveStableDays:
-			past5Means6cm.length > 0
-				? countConsecutiveSoilStableDays(past5Means6cm)
-				: data.soilConsecutiveStableDays,
-		soilTrend7dRising:
-			past18cmMeans.length > 0
-				? isSoilTrend7dRising(past18cmMeans)
-				: data.soilTrend7dRising
-	};
-}
-
 export function scaleGddSnapshot(
 	gdd: GddSnapshot | null,
-	coefficient: number
+	coefficient: number,
+	context?: { latitude: number; referenceDate: Date }
 ): GddSnapshot | null {
 	if (!gdd || coefficient === 1) return gdd;
 
@@ -97,17 +50,17 @@ export function scaleGddSnapshot(
 	}));
 	const cumulativeSinceJan1 = round1(gdd.cumulativeSinceJan1 * coefficient);
 	const last7dSum = round1(gdd.last7dSum * coefficient);
-
-	const phenology = gdd.phenologyUnavailableReason
-		? null
-		: estimatePhenology(cumulativeSinceJan1, gdd.baseCategory);
+	const phenologyFields = refreshSnapshotPhenology(gdd, cumulativeSinceJan1, {
+		latitude: context?.latitude,
+		referenceDate: context?.referenceDate
+	});
 
 	return {
 		...gdd,
 		cumulativeSinceJan1,
 		last7dSum,
 		dailySeries,
-		phenology
+		...phenologyFields
 	};
 }
 
@@ -134,14 +87,6 @@ export function applyEnvironmentExposure(
 		airC,
 		soilCoeff
 	);
-	const soilDailyHistory7d = adjustSoilDailyHistory(
-		data.soilDailyHistory7d,
-		airC,
-		soilCoeff
-	);
-	const soilMean5dC = adjustSoilNullable(data.soilMean5dC, airC, soilCoeff);
-	const soilMean6cm7dC = adjustSoilNullable(data.soilMean6cm7dC, airC, soilCoeff);
-	const soilMean18cm7dC = adjustSoilNullable(data.soilMean18cm7dC, airC, soilCoeff);
 	const soilHeatBufferC = round1(soilTemperature6cmC - soilTemperature18cmC);
 
 	const et0TodayMm = round1(data.et0TodayMm * coeffs.et0);
@@ -161,32 +106,34 @@ export function applyEnvironmentExposure(
 		...data,
 		soilTemperature6cmC,
 		soilTemperature18cmC,
-		soilDailyHistory7d,
-		soilMean5dC,
-		soilMean6cm7dC,
-		soilMean18cm7dC,
 		soilHeatBufferC
 	};
-	const soilTrendMetrics = recomputeSoilTrendMetrics(partialSoilData);
 
 	const waterBalance7dMm =
 		et0Past7dSumMm === null
 			? null
 			: round1(data.rainPast7dMm - et0Past7dSumMm);
-	const soilBufferScore = computeSoilBufferScore(partialSoilData);
-	const wsi = computeWSI(waterBalance7dMm, soilBufferScore);
+	const { soilBufferScore, hydricStressKs, wsi } = computeHydricFromAgriInputs({
+		et0Past7dSumMm,
+		rainPast7dMm: data.rainPast7dMm,
+		soilMoisture7cmPct: data.soilMoisture7cmPct,
+		soilTemperature18cmC,
+		waterBalance7dMm
+	});
 	const futureStressRiskMm = computeFutureStressRisk(et0Forecast7dSumMm);
 	const windStressIndex = computeWindStressIndex(windSpeedKmh, data.relativeHumidityPct);
 	const radiationStressIndex = computeRadiationStressIndex(
 		shortwaveRadiationMaxTodayWm2,
 		et0TodayMm
 	);
-	const scaledGdd = scaleGddSnapshot(gdd, coeffs.gdd);
+	const scaledGdd = scaleGddSnapshot(gdd, coeffs.gdd, {
+		latitude: data.latitude,
+		referenceDate: data.fetchedAt ? new Date(data.fetchedAt) : new Date()
+	});
 
 	return {
 		data: {
 			...partialSoilData,
-			...soilTrendMetrics,
 			windSpeedKmh,
 			et0TodayMm,
 			et0Past7dMeanMm,
@@ -199,6 +146,7 @@ export function applyEnvironmentExposure(
 			windStressIndex,
 			radiationStressIndex,
 			soilBufferScore,
+			hydricStressKs,
 			wsi,
 			futureStressRiskMm,
 			gdd: scaledGdd

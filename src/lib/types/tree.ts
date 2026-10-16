@@ -187,6 +187,14 @@ export interface Tree {
 	environmentExposure: EnvironmentExposure;
 	/** YRS au moment du premier repérage, si disponible. */
 	yrsAtCapture: YrsStoredSnapshot | null;
+	/** Local calendar date `YYYY-MM-DD` for the next revisit, if set. */
+	nextRevisitAt?: string | null;
+	/** Local notification when the harvest window opens. */
+	notifyOnWindow?: boolean;
+	/** True until the current window opening has been notified. */
+	windowNotifyArmed?: boolean;
+	/** `nextRevisitAt` value for which the date notification has already fired. */
+	dateNotifySentFor?: string | null;
 	capturedAt: string;
 	/**
 	 * How far media payloads are loaded in memory.

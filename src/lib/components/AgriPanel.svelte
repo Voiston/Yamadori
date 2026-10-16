@@ -20,9 +20,19 @@
 		formatSoilNightDropAttenuationLabel,
 		getSoilNightDropActivationWeight
 	} from '$lib/utils/soilNightDrop';
-	import { getYrsScoreBreakdown, getYrsDecisionLabels, getYrsConfidenceLabels, getYrsScoreLabel, getPrimaryYrsConfidenceGap, getYrsConfidenceGapCta, type YrsLayerKey } from '$lib/utils/yrs';
-	import { canViewYrsDetails } from '$lib/utils/featurePolicy';
-	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
+	import {
+		getYrsScoreBreakdown,
+		getYrsDecisionLabels,
+		getYrsConfidenceLabels,
+		getYrsScoreLabel,
+		getPrimaryYrsConfidenceGap,
+		getYrsConfidenceGapCta,
+		findYrsBreakdownItem,
+		findYrsBreakdownItems,
+		type YrsBreakdownItemId,
+		type YrsLayerKey,
+		type YrsScoreBreakdownItem
+	} from '$lib/utils/yrs';
 	import AgriMetricCard from './AgriMetricCard.svelte';
 	import GddPanel from './GddPanel.svelte';
 	import Skeleton from './Skeleton.svelte';
@@ -30,6 +40,26 @@
 	import ViabilityWeekChart from './ViabilityWeekChart.svelte';
 	import YrsLayerScoreCell from './YrsLayerScoreCell.svelte';
 	import * as m from '$lib/paraglide/messages.js';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
+	import { agriErrorCopy } from '$lib/utils/errorCopy';
+
+	const CLIMATE_MAPPED_IDS = ['gdd', 'air', 'et0Climate'] as const satisfies readonly YrsBreakdownItemId[];
+	const SOIL_MAPPED_IDS = ['soil18', 'soil6', 'soilStableDays'] as const satisfies readonly YrsBreakdownItemId[];
+	const PHENOLOGY_MAPPED_IDS = ['phenologyStage'] as const satisfies readonly YrsBreakdownItemId[];
+	const HYDRIC_MAPPED_IDS = [
+		'ks',
+		'wsi',
+		'waterBalance',
+		'hydricUnavailable',
+		'et0ForecastStress'
+	] as const satisfies readonly YrsBreakdownItemId[];
+	const PENALTY_MAPPED_IDS = [
+		'frost',
+		'heat',
+		'windStress',
+		'radiationStress',
+		'soilNightDrop'
+	] as const satisfies readonly YrsBreakdownItemId[];
 
 	interface Props {
 		approximate?: boolean;
@@ -42,6 +72,8 @@
 		environmentExposure?: EnvironmentExposure;
 		loading?: boolean;
 		onretry?: () => void;
+		/** Opened from the capture YRS banner — hide the duplicate hero score. */
+		embedded?: boolean;
 	}
 
 	let {
@@ -54,13 +86,13 @@
 		leafFallPct = null,
 		environmentExposure = DEFAULT_ENVIRONMENT_EXPOSURE,
 		loading = false,
-		onretry
+		onretry,
+		embedded = false
 	}: Props = $props();
 
 	let yrsHelpOpen = $state(false);
-	let openLayer = $state<YrsLayerKey | 'total' | null>(null);
+	let openLayer = $state<YrsLayerKey | null>(null);
 	const yrsHelpId = 'yrs-score-help';
-	const yrsDetailsUnlocked = $derived(canViewYrsDetails());
 
 	const data = $derived(agriData.data);
 	const error = $derived(agriData.error);
@@ -163,6 +195,17 @@
 		} as const;
 	});
 
+	const yrsLayerHints = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return {
+			climate: m.yrs_layer_hint_climate(),
+			soil: m.yrs_layer_hint_soil(),
+			phenology: m.yrs_layer_hint_phenology(),
+			hydric: m.yrs_layer_hint_hydric(),
+			stressPenalty: m.yrs_layer_hint_penalties()
+		} as const;
+	});
+
 	const yrsViabilityHeading = $derived.by(() => {
 		void appearanceSettingsState.locale;
 		return m.yrs_chart_aria({ today: '', best: '' }).split('.')[0] ?? '';
@@ -219,26 +262,48 @@
 		yrsRisks ? worstAgriRisk(yrsRisks.frostPast, yrsRisks.frostForecast) : ('Excellent' as AgriRiskLevel)
 	);
 
+	const layerRisks = $derived.by(() => {
+		if (!yrsRisks) return null;
+		return {
+			climate: worstAgriRisk(yrsRisks.gddSeason, yrsRisks.air),
+			soil: worstAgriRisk(yrsRisks.soil, yrsRisks.soilNightDrop),
+			hydric: worstAgriRisk(
+				yrsRisks.et0Mean,
+				yrsRisks.et0Cumul,
+				yrsRisks.hydricBalance,
+				yrsRisks.wsi,
+				metricRisks?.rain ?? 'Excellent'
+			),
+			stressPenalty: worstAgriRisk(
+				yrsRisks.windStress,
+				yrsRisks.radiationStress,
+				yrsRisks.heatStress,
+				frostDetailRisk
+			)
+		};
+	});
+
 	function formatDayLabel(isoDate: string): string {
 		const [, month, day] = isoDate.split('-');
 		return `${day}/${month}`;
 	}
 
-	function toggleLayer(layer: YrsLayerKey | 'total'): void {
+	function scoreItems(
+		...items: Array<YrsScoreBreakdownItem | undefined>
+	): YrsScoreBreakdownItem[] {
+		return items.filter((item): item is YrsScoreBreakdownItem => item != null);
+	}
+
+	function toggleLayer(layer: YrsLayerKey): void {
 		openLayer = openLayer === layer ? null : layer;
 	}
 
-	$effect(() => {
-		if (!openLayer) return;
-
-		function onKeydown(event: KeyboardEvent): void {
-			if (event.key === 'Escape') openLayer = null;
-		}
-
-		document.addEventListener('keydown', onKeydown);
-		return () => document.removeEventListener('keydown', onKeydown);
-	});
+	function onWindowKeydown(event: KeyboardEvent): void {
+		if (event.key === 'Escape' && openLayer) openLayer = null;
+	}
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <div>
 	{#if approximate}
@@ -263,7 +328,7 @@
 				<button
 					type="button"
 					class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition active:scale-95 disabled:opacity-50 {cacheRetryButtonClass}"
-					aria-label={m.yrs_help_aria()}
+					aria-label={m.yrs_refresh_aria()}
 					title={m.yrs_refresh_aria()}
 					disabled={agriLoading}
 					onclick={onretry}
@@ -304,384 +369,357 @@
 			{/each}
 		</div>
 	{:else if error}
-		<p class="mt-3 text-sm text-red-700" role="alert">{error}</p>
-		{#if showRetry}
-			<button
-				type="button"
-				class="mt-3 rounded-lg bg-forest-800 px-4 py-2 text-sm text-white transition active:scale-[0.98]"
-				onclick={onretry}
-			>
-				{m.action_retry()}
-			</button>
-		{/if}
+		<ErrorBanner copy={agriErrorCopy()} onretry={onretry} />
 	{:else if data}
 		{#if yrs}
 			<section
 				class="mt-3 rounded-xl border border-forest-100 bg-forest-50/50 p-4"
 				aria-label={yrsScoreLabel}
 			>
-				<div class="flex items-start justify-between gap-2">
-					<h5 class="text-xs font-semibold uppercase tracking-wide text-muted">
-						{yrsScoreLabel}
-					</h5>
-					{#if yrsDetailsUnlocked}
-					<button
-						type="button"
-						class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-xs font-semibold text-forest-700 transition active:scale-95"
-						aria-expanded={yrsHelpOpen}
-						aria-controls={yrsHelpId}
-						aria-label={m.yrs_help_aria()}
-						onclick={() => (yrsHelpOpen = !yrsHelpOpen)}
-					>
-						?
-					</button>
-					{/if}
-				</div>
-				{#if yrsDetailsUnlocked && yrsHelpOpen}
-					<p id={yrsHelpId} class="mt-2 text-xs leading-relaxed text-muted" role="note">
-						<span class="font-medium text-forest-800">{m.yrs_recommendation()}</span>
-						{metricHelp.yrs.helpText}
-					</p>
-				{/if}
-				<div class="mt-3 flex flex-wrap items-center gap-3">
-					<div class="relative">
-						{#if yrsDetailsUnlocked}
+				{#if !embedded}
+					<div class="flex items-start justify-between gap-2">
+						<h5 class="text-xs font-semibold uppercase tracking-wide text-muted">
+							{yrsScoreLabel}
+						</h5>
 						<button
 							type="button"
-							class="rounded-lg px-1 py-0.5 text-left transition active:scale-[0.98] {openLayer ===
-							'total'
-								? 'ring-2 ring-forest-600/30'
-								: ''}"
-							aria-expanded={openLayer === 'total'}
-							aria-label={m.yrs_score_detail({ label: 'YRS' })}
-							onclick={(event) => {
-								event.stopPropagation();
-								toggleLayer('total');
-							}}
+							class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-xs font-semibold text-forest-700 transition active:scale-95"
+							aria-expanded={yrsHelpOpen}
+							aria-controls={yrsHelpId}
+							aria-label={m.yrs_help_aria()}
+							onclick={() => (yrsHelpOpen = !yrsHelpOpen)}
 						>
-							<p class="text-3xl font-semibold text-forest-900">
-								{yrs.score}<span class="text-lg text-muted">/100</span>
-							</p>
+							?
 						</button>
-						{:else}
-						<button
-							type="button"
-							class="rounded-lg px-1 py-0.5 text-left transition active:scale-[0.98]"
-							aria-label={m.pro_yrs_details_locked()}
-							onclick={(event) => {
-								event.stopPropagation();
-								openProPaywall('yrs_details');
-							}}
-						>
-							<p class="text-3xl font-semibold text-forest-900">
-								{yrs.score}<span class="text-lg text-muted">/100</span>
-							</p>
-						</button>
-						{/if}
-						{#if yrsDetailsUnlocked && openLayer === 'total' && yrsBreakdown}
-							<div
-								role="region"
-								aria-label={m.yrs_composition()}
-								class="absolute top-full left-0 z-20 mt-1 min-w-[16rem] rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg"
-							>
-								<p class="font-medium text-forest-900">{m.yrs_composition()}</p>
-								<ul class="mt-2 flex flex-col gap-1 text-forest-800">
-									<li>{yrsLayerLabels.climate} : +{yrs.layers.climate}</li>
-									<li>{yrsLayerLabels.soil} : +{yrs.layers.soil}</li>
-									<li>{yrsLayerLabels.phenology} : +{yrs.layers.phenology}</li>
-									<li>{yrsLayerLabels.hydric} : +{yrs.layers.hydric}</li>
-									<li>{yrsLayerLabels.stressPenalty} : −{yrs.layers.stressPenalty}</li>
-								</ul>
-								<p class="mt-2 border-t border-gray-100 pt-2 font-semibold text-forest-900">
-									{yrs.layers.climate} + {yrs.layers.soil} + {yrs.layers.phenology} +
-									{yrs.layers.hydric} − {yrs.layers.stressPenalty} = {yrs.score}
-								</p>
-							</div>
-						{/if}
 					</div>
-					<span
-						class="inline-flex rounded-full border px-3 py-1 text-xs font-semibold {yrsDecisionStyles[
-							yrs.decision
-						]}"
-						role="status"
-					>
-						{yrsDecisionLabels[yrs.decision]}
-					</span>
-				</div>
-				<p
-					class="mt-1.5 text-[11px] text-muted"
-					title={m.yrs_confidence_hint()}
-				>
+					{#if yrsHelpOpen}
+						<p id={yrsHelpId} class="mt-2 text-xs leading-relaxed text-muted" role="note">
+							<span class="font-medium text-forest-800">{m.yrs_recommendation()}</span>
+							{metricHelp.yrs.helpText}
+						</p>
+					{/if}
+					<div class="mt-3 flex flex-wrap items-center gap-3">
+						<p class="text-3xl font-semibold text-forest-900">
+							{yrs.score}<span class="text-lg text-muted">/100</span>
+						</p>
+						<span
+							class="inline-flex rounded-full border px-3 py-1 text-xs font-semibold {yrsDecisionStyles[
+								yrs.decision
+							]}"
+							role="status"
+						>
+							{yrsDecisionLabels[yrs.decision]}
+						</span>
+					</div>
+				{/if}
+				<p class="text-sm text-muted {embedded ? '' : 'mt-1.5'}" title={m.yrs_confidence_hint()}>
 					{m.yrs_confidence_label()} : {yrsConfidenceLabels[yrs.confidence]}
 					— {m.yrs_confidence_hint()}
 				</p>
+				<p class="mt-1.5 text-xs leading-relaxed text-muted">{m.yrs_timing_hint()}</p>
 				{#if yrs.localization === 'generic'}
-					<p class="mt-1 text-[11px] text-amber-800">{m.yrs_localization_generic_hint()}</p>
+					<p class="mt-1 text-sm text-amber-800">{m.yrs_localization_generic_hint()}</p>
 				{/if}
 				{#if yrs.confidence !== 'high' && data}
 					{@const gapCta = getYrsConfidenceGapCta(getPrimaryYrsConfidenceGap(data, plantInputs))}
 					{#if gapCta}
-						<p class="mt-1 text-[11px] text-forest-800">{gapCta}</p>
+						<p class="mt-1 text-sm text-forest-800">{gapCta}</p>
 					{/if}
 				{/if}
-				{#if yrsDetailsUnlocked && yrs.summary}
-					<p class="mt-2 text-xs text-muted" role="status">{yrs.summary}</p>
-				{/if}
 				{#if yrsBreakdown}
-					<div class="mt-4 grid grid-cols-2 gap-2 text-xs md:grid-cols-5">
+					<div class="mt-4 flex flex-col gap-2">
+						<h6 class="text-xs font-semibold uppercase tracking-wide text-muted">
+							{m.yrs_composition()}
+						</h6>
+						{#if yrs.summary}
+							<p class="text-sm font-medium text-forest-900" role="status">{yrs.summary}</p>
+						{/if}
 						<YrsLayerScoreCell
 							label={yrsLayerLabels.climate}
+							hint={yrsLayerHints.climate}
 							displayValue="{yrs.layers.climate}/30"
 							breakdown={yrsBreakdown.climate}
+							mappedItemIds={CLIMATE_MAPPED_IDS}
 							open={openLayer === 'climate'}
-							interactive={yrsDetailsUnlocked}
+							riskLevel={layerRisks?.climate}
 							ontoggle={() => toggleLayer('climate')}
-							onlockedclick={() => openProPaywall('yrs_details')}
-						/>
+						>
+							{#if yrsRisks}
+								<AgriMetricCard
+									title={metricHelp.gddSeason.title}
+									helpText={metricHelp.gddSeason.helpText}
+									riskLevel={yrsRisks.gddSeason}
+									scoreItems={scoreItems(findYrsBreakdownItem(yrsBreakdown.climate, 'gdd'))}
+								>
+									<p class="text-2xl font-semibold text-forest-800">
+										{data.gdd?.cumulativeSinceJan1 ?? '—'}<span class="text-base text-muted"> °c.j</span>
+									</p>
+									{#if gddSeasonZone}
+										<p class="mt-1 text-sm font-medium {gddSeasonZoneClass}" role="status">
+											{gddSeasonZone.label}
+										</p>
+									{:else}
+										<p class="mt-1 text-xs text-muted">{m.gdd_since_jan1()}</p>
+									{/if}
+								</AgriMetricCard>
+
+								<AgriMetricCard
+									title={metricHelp.air.title}
+									helpText={metricHelp.air.helpText}
+									riskLevel={yrsRisks.air}
+									scoreItems={scoreItems(findYrsBreakdownItem(yrsBreakdown.climate, 'air'))}
+								>
+									<p class="text-2xl font-semibold text-forest-800">{data.airTemperatureC}°C</p>
+									<p class="mt-1 text-xs text-muted">
+										{data.windSpeedKmh} km/h · {data.relativeHumidityPct}% {m.agri_field_humidity()}
+									</p>
+								</AgriMetricCard>
+							{/if}
+						</YrsLayerScoreCell>
 						<YrsLayerScoreCell
 							label={yrsLayerLabels.soil}
+							hint={yrsLayerHints.soil}
 							displayValue="{yrs.layers.soil}/25"
 							breakdown={yrsBreakdown.soil}
+							mappedItemIds={SOIL_MAPPED_IDS}
 							open={openLayer === 'soil'}
-							interactive={yrsDetailsUnlocked}
+							riskLevel={layerRisks?.soil}
 							ontoggle={() => toggleLayer('soil')}
-							onlockedclick={() => openProPaywall('yrs_details')}
-						/>
+						>
+							{#if yrsRisks}
+								<AgriMetricCard
+									title={metricHelp.soil.title}
+									helpText={metricHelp.soil.helpText}
+									riskLevel={yrsRisks.soil}
+									scoreItems={findYrsBreakdownItems(yrsBreakdown.soil, SOIL_MAPPED_IDS)}
+								>
+									<p class="text-base text-forest-800">
+										<span class="font-semibold">{data.soilTemperature6cmC}°C</span>
+										<span class="text-muted"> ({m.agri_field_soil_6()})</span>
+										<span class="text-muted"> / </span>
+										<span class="font-semibold">{data.soilTemperature18cmC}°C</span>
+										<span class="text-muted"> ({m.agri_field_soil_18()})</span>
+									</p>
+									<p class="mt-1 text-xs text-muted">
+										{soil18cmZoneLabel} · {m.agri_verdict_soil_warming({
+											days: String(data.soilConsecutiveStableDays)
+										})}
+									</p>
+									<p class="mt-3 text-sm font-medium text-forest-900">{m.yrs_history()}</p>
+									<SoilTempSparkline history={data.soilDailyHistory7d} />
+									<p class="mt-2 text-xs text-muted">
+										{effectiveSoilStabilityScore ?? data.soilStabilityScore}/100 · {data.soilHeatBufferC}°C
+										{#if !data.soilTrend7dRising}
+											· {m.agri_verdict_soil_stable()}
+										{/if}
+									</p>
+								</AgriMetricCard>
+
+								<AgriMetricCard
+									title={metricHelp.soilNightDrop.title}
+									helpText={metricHelp.soilNightDrop.helpText}
+									riskLevel={yrsRisks.soilNightDrop}
+									scoreKind="penalty"
+									scoreItems={scoreItems(
+										findYrsBreakdownItem(yrsBreakdown.stressPenalty, 'soilNightDrop')
+									)}
+								>
+									<p class="text-base font-semibold text-forest-800">
+										{#if data.soilBrutalNightDrop}
+											{m.agri_soil_night_drop_title()}
+											{#if soilNightDropAttenuation}
+												<span class="font-normal text-muted"> — {soilNightDropAttenuation}</span>
+											{/if}
+										{:else}
+											{m.yrs_no_penalty()}
+										{/if}
+									</p>
+									<p class="mt-1 text-xs text-muted">
+										{m.agri_soil_night_drop_help()}
+									</p>
+								</AgriMetricCard>
+							{/if}
+						</YrsLayerScoreCell>
 						<YrsLayerScoreCell
 							label={yrsLayerLabels.phenology}
+							hint={yrsLayerHints.phenology}
 							displayValue="{yrs.layers.phenology}/25"
 							breakdown={yrsBreakdown.phenology}
+							mappedItemIds={PHENOLOGY_MAPPED_IDS}
 							open={openLayer === 'phenology'}
-							interactive={yrsDetailsUnlocked}
 							ontoggle={() => toggleLayer('phenology')}
-							onlockedclick={() => openProPaywall('yrs_details')}
-						/>
+						>
+							<GddPanel
+								{species}
+								{offline}
+								loading={agriLoading}
+								scoreItem={findYrsBreakdownItem(yrsBreakdown.phenology, 'phenologyStage') ?? null}
+							/>
+						</YrsLayerScoreCell>
 						<YrsLayerScoreCell
 							label={yrsLayerLabels.hydric}
+							hint={yrsLayerHints.hydric}
 							displayValue="{yrs.layers.hydric}/20"
 							breakdown={yrsBreakdown.hydric}
+							mappedItemIds={HYDRIC_MAPPED_IDS}
 							open={openLayer === 'hydric'}
-							interactive={yrsDetailsUnlocked}
+							riskLevel={layerRisks?.hydric}
 							ontoggle={() => toggleLayer('hydric')}
-							onlockedclick={() => openProPaywall('yrs_details')}
-						/>
+						>
+							{#if yrsRisks}
+								<AgriMetricCard
+									title={metricHelp.et0.title}
+									helpText={metricHelp.et0.helpText}
+									riskLevel={yrsRisks.et0Mean}
+									scoreItems={scoreItems(findYrsBreakdownItem(yrsBreakdown.climate, 'et0Climate'))}
+								>
+									<p class="text-base font-semibold text-forest-800">
+										{m.yrs_et0_past_forecast({
+											past: String(data.et0Past7dMeanMm ?? '—'),
+											forecast: String(data.et0Trend7dMeanMm ?? '—')
+										})}
+									</p>
+									<p class="mt-1 text-xs text-muted">{m.yrs_et0_mean_7d()}</p>
+								</AgriMetricCard>
+
+								<AgriMetricCard
+									title={metricHelp.et0Cumul.title}
+									helpText={metricHelp.et0Cumul.helpText}
+									riskLevel={yrsRisks.et0Cumul}
+									scoreItems={scoreItems(
+										findYrsBreakdownItem(yrsBreakdown.hydric, 'et0ForecastStress')
+									)}
+								>
+									<p class="text-base font-semibold text-forest-800">
+										{m.yrs_et0_past_forecast({
+											past: `${data.et0Past7dSumMm ?? '—'} mm`,
+											forecast: `${data.et0Forecast7dSumMm ?? '—'} mm`
+										})}
+									</p>
+									<p class="mt-1 text-xs text-muted">{m.yrs_et0_cumul_7d()}</p>
+								</AgriMetricCard>
+
+								<AgriMetricCard
+									title={metricHelp.hydricBalance.title}
+									helpText={metricHelp.hydricBalance.helpText}
+									riskLevel={yrsRisks.hydricBalance}
+									scoreItems={scoreItems(findYrsBreakdownItem(yrsBreakdown.hydric, 'waterBalance'))}
+								>
+									<p class="text-2xl font-semibold text-forest-800">
+										{data.waterBalance7dMm ?? '—'} mm
+									</p>
+									<p class="mt-1 text-xs text-muted">
+										RR {data.rainPast7dMm} mm − ET₀ {data.et0Past7dSumMm ?? '—'} mm
+									</p>
+								</AgriMetricCard>
+
+								<AgriMetricCard
+									title={metricHelp.wsi.title}
+									helpText={metricHelp.wsi.helpText}
+									riskLevel={yrsRisks.wsi}
+									scoreItems={scoreItems(
+										findYrsBreakdownItem(yrsBreakdown.hydric, 'ks') ??
+											findYrsBreakdownItem(yrsBreakdown.hydric, 'wsi') ??
+											findYrsBreakdownItem(yrsBreakdown.hydric, 'hydricUnavailable')
+									)}
+								>
+									<p class="text-2xl font-semibold text-forest-800">{data.wsi ?? '—'} mm</p>
+									<p class="mt-1 text-xs text-muted">
+										{m.yrs_soil_buffer({ score: data.soilBufferScore })}
+									</p>
+								</AgriMetricCard>
+							{/if}
+
+							<AgriMetricCard
+								title={metricHelp.rain.title}
+								helpText={metricHelp.rain.helpText}
+								riskLevel={metricRisks?.rain}
+								scoreKind="context"
+							>
+								<p class="text-base font-semibold text-forest-800">
+									{data.rainPast3dMm} / {data.rainPast5dMm} / {data.rainPast7dMm} mm
+								</p>
+								<p class="mt-1 text-xs text-muted">{m.yrs_rain_cumul()}</p>
+							</AgriMetricCard>
+						</YrsLayerScoreCell>
 						<YrsLayerScoreCell
 							label={yrsLayerLabels.stressPenalty}
+							hint={yrsLayerHints.stressPenalty}
 							displayValue="−{yrs.layers.stressPenalty}"
 							breakdown={yrsBreakdown.stressPenalty}
+							mappedItemIds={PENALTY_MAPPED_IDS}
 							isPenalty
 							open={openLayer === 'stressPenalty'}
-							interactive={yrsDetailsUnlocked}
+							riskLevel={layerRisks?.stressPenalty}
 							ontoggle={() => toggleLayer('stressPenalty')}
-							onlockedclick={() => openProPaywall('yrs_details')}
-						/>
-					</div>
-				{/if}
-
-				{#if yrsDetailsUnlocked && yrsRisks}
-					<h6 class="mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
-						{m.yrs_detailed_indicators()}
-					</h6>
-					<div class="mt-3 flex flex-col gap-3 md:grid md:grid-cols-2 md:gap-3">
-						<AgriMetricCard
-							title={metricHelp.gddSeason.title}
-							helpText={metricHelp.gddSeason.helpText}
-							riskLevel={yrsRisks.gddSeason}
 						>
-							<p class="text-2xl font-semibold text-forest-800">
-								{data.gdd?.cumulativeSinceJan1 ?? '—'}<span class="text-base text-muted"> °c.j</span>
-							</p>
-							{#if gddSeasonZone}
-								<p class="mt-1 text-sm font-medium {gddSeasonZoneClass}" role="status">
-									{gddSeasonZone.label}
-								</p>
-							{:else}
-								<p class="mt-1 text-xs text-muted">{m.gdd_since_jan1()}</p>
+							{#if yrsRisks}
+								<AgriMetricCard
+									title={metricHelp.windStress.title}
+									helpText={metricHelp.windStress.helpText}
+									riskLevel={yrsRisks.windStress}
+									scoreKind="penalty"
+									scoreItems={scoreItems(findYrsBreakdownItem(yrsBreakdown.stressPenalty, 'windStress'))}
+								>
+									<p class="text-2xl font-semibold text-forest-800">
+										{Math.round(data.windStressIndex)}/100
+									</p>
+									<p class="mt-1 text-xs text-muted">{m.yrs_wind_stress_index()}</p>
+								</AgriMetricCard>
+
+								<AgriMetricCard
+									title={metricHelp.radiationStress.title}
+									helpText={metricHelp.radiationStress.helpText}
+									riskLevel={yrsRisks.radiationStress}
+									scoreKind="penalty"
+									scoreItems={scoreItems(
+										findYrsBreakdownItem(yrsBreakdown.stressPenalty, 'radiationStress')
+									)}
+								>
+									<p class="text-2xl font-semibold text-forest-800">
+										{Math.round(data.radiationStressIndex)}/100
+									</p>
+									<p class="mt-1 text-xs text-muted">
+										{Math.round(data.shortwaveRadiationMaxTodayWm2)} W/m²
+									</p>
+								</AgriMetricCard>
+
+								<AgriMetricCard
+									title={metricHelp.heatStress.title}
+									helpText={metricHelp.heatStress.helpText}
+									riskLevel={yrsRisks.heatStress}
+									scoreKind="penalty"
+									scoreItems={scoreItems(findYrsBreakdownItem(yrsBreakdown.stressPenalty, 'heat'))}
+								>
+									<p class="text-base font-semibold text-forest-800">
+										{data.heatStressDaysPast7d} / {data.heatStressDaysForecast7d}
+									</p>
+									<p class="mt-1 text-xs text-muted">{m.yrs_heat_days()}</p>
+								</AgriMetricCard>
+
+								<AgriMetricCard
+									title={metricHelp.frostCombined.title}
+									helpText={metricHelp.frostCombined.helpText}
+									riskLevel={frostDetailRisk}
+									scoreKind="penalty"
+									scoreItems={scoreItems(findYrsBreakdownItem(yrsBreakdown.stressPenalty, 'frost'))}
+								>
+									<p class="text-base font-semibold text-forest-800">
+										{data.frostEventsPast7d} &lt; 0 °C
+									</p>
+									<p class="mt-1 text-xs text-muted">
+										{m.agri_frost_past_help()}
+										{#if data.frostMinNext7dC !== null && data.frostMinNext7dC !== undefined}
+											· {m.agri_verdict_frost({ temp: String(data.frostMinNext7dC) })}
+										{/if}
+									</p>
+								</AgriMetricCard>
 							{/if}
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.et0.title}
-							helpText={metricHelp.et0.helpText}
-							riskLevel={yrsRisks.et0Mean}
-						>
-							<p class="text-base font-semibold text-forest-800">
-								{m.yrs_et0_past_forecast({
-									past: String(data.et0Past7dMeanMm ?? '—'),
-									forecast: String(data.et0Trend7dMeanMm ?? '—')
-								})}
-							</p>
-							<p class="mt-1 text-xs text-muted">{m.yrs_et0_mean_7d()}</p>
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.air.title}
-							helpText={metricHelp.air.helpText}
-							riskLevel={yrsRisks.air}
-						>
-							<p class="text-2xl font-semibold text-forest-800">{data.airTemperatureC}°C</p>
-							<p class="mt-1 text-xs text-muted">
-								{data.windSpeedKmh} km/h · {data.relativeHumidityPct}% {m.agri_field_humidity()}
-							</p>
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.soil.title}
-							helpText={metricHelp.soil.helpText}
-							riskLevel={yrsRisks.soil}
-						>
-							<p class="text-base text-forest-800">
-								<span class="font-semibold">{data.soilTemperature6cmC}°C</span>
-								<span class="text-muted"> ({m.agri_field_soil_6()})</span>
-								<span class="text-muted"> / </span>
-								<span class="font-semibold">{data.soilTemperature18cmC}°C</span>
-								<span class="text-muted"> ({m.agri_field_soil_18()})</span>
-							</p>
-							<p class="mt-1 text-xs text-muted">
-								{soil18cmZoneLabel} · {m.agri_verdict_soil_warming({
-									days: String(data.soilConsecutiveStableDays)
-								})}
-							</p>
-							<p class="mt-3 text-sm font-medium text-forest-900">{m.yrs_history()}</p>
-							<SoilTempSparkline history={data.soilDailyHistory7d} />
-							<p class="mt-2 text-xs text-muted">
-								{effectiveSoilStabilityScore ?? data.soilStabilityScore}/100 · {data.soilHeatBufferC}°C
-								{#if !data.soilTrend7dRising}
-									· {m.agri_verdict_soil_stable()}
-								{/if}
-							</p>
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.soilNightDrop.title}
-							helpText={metricHelp.soilNightDrop.helpText}
-							riskLevel={yrsRisks.soilNightDrop}
-						>
-							<p class="text-base font-semibold text-forest-800">
-								{#if data.soilBrutalNightDrop}
-									{m.agri_soil_night_drop_title()}
-									{#if soilNightDropAttenuation}
-										<span class="font-normal text-muted"> — {soilNightDropAttenuation}</span>
-									{/if}
-								{:else}
-									{m.yrs_no_penalty()}
-								{/if}
-							</p>
-							<p class="mt-1 text-xs text-muted">
-								{m.agri_soil_night_drop_help()}
-							</p>
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.hydricBalance.title}
-							helpText={metricHelp.hydricBalance.helpText}
-							riskLevel={yrsRisks.hydricBalance}
-						>
-							<p class="text-2xl font-semibold text-forest-800">
-								{data.waterBalance7dMm ?? '—'} mm
-							</p>
-							<p class="mt-1 text-xs text-muted">
-								RR {data.rainPast7dMm} mm − ET₀ {data.et0Past7dSumMm ?? '—'} mm
-							</p>
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.wsi.title}
-							helpText={metricHelp.wsi.helpText}
-							riskLevel={yrsRisks.wsi}
-						>
-							<p class="text-2xl font-semibold text-forest-800">{data.wsi ?? '—'} mm</p>
-							<p class="mt-1 text-xs text-muted">{m.yrs_soil_buffer({ score: data.soilBufferScore })}</p>
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.et0Cumul.title}
-							helpText={metricHelp.et0Cumul.helpText}
-							riskLevel={yrsRisks.et0Cumul}
-						>
-							<p class="text-base font-semibold text-forest-800">
-								{m.yrs_et0_past_forecast({
-									past: `${data.et0Past7dSumMm ?? '—'} mm`,
-									forecast: `${data.et0Forecast7dSumMm ?? '—'} mm`
-								})}
-							</p>
-							<p class="mt-1 text-xs text-muted">{m.yrs_et0_cumul_7d()}</p>
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.windStress.title}
-							helpText={metricHelp.windStress.helpText}
-							riskLevel={yrsRisks.windStress}
-						>
-							<p class="text-2xl font-semibold text-forest-800">
-								{Math.round(data.windStressIndex)}/100
-							</p>
-							<p class="mt-1 text-xs text-muted">{m.yrs_wind_stress_index()}</p>
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.radiationStress.title}
-							helpText={metricHelp.radiationStress.helpText}
-							riskLevel={yrsRisks.radiationStress}
-						>
-							<p class="text-2xl font-semibold text-forest-800">
-								{Math.round(data.radiationStressIndex)}/100
-							</p>
-							<p class="mt-1 text-xs text-muted">
-								{Math.round(data.shortwaveRadiationMaxTodayWm2)} W/m²
-							</p>
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.heatStress.title}
-							helpText={metricHelp.heatStress.helpText}
-							riskLevel={yrsRisks.heatStress}
-						>
-							<p class="text-base font-semibold text-forest-800">
-								{data.heatStressDaysPast7d} / {data.heatStressDaysForecast7d}
-							</p>
-							<p class="mt-1 text-xs text-muted">{m.yrs_heat_days()}</p>
-						</AgriMetricCard>
-
-						<AgriMetricCard
-							title={metricHelp.frostCombined.title}
-							helpText={metricHelp.frostCombined.helpText}
-							riskLevel={frostDetailRisk}
-						>
-							<p class="text-base font-semibold text-forest-800">
-								{data.frostEventsPast7d} &lt; 0 °C
-							</p>
-							<p class="mt-1 text-xs text-muted">
-								{m.agri_frost_past_help()}
-								{#if data.frostMinNext7dC !== null && data.frostMinNext7dC !== undefined}
-									· {m.agri_verdict_frost({ temp: String(data.frostMinNext7dC) })}
-								{/if}
-							</p>
-						</AgriMetricCard>
+						</YrsLayerScoreCell>
 					</div>
 				{/if}
 
-				{#if !yrsDetailsUnlocked}
-					<div class="mt-4">
-						<h6 class="text-xs font-semibold uppercase tracking-wide text-muted">
-							{m.yrs_detailed_indicators()}
-						</h6>
-						<button
-							type="button"
-							class="mt-2 inline-flex transition active:scale-[0.98]"
-							aria-label={m.pro_yrs_details_locked()}
-							onclick={() => openProPaywall('yrs_details')}
-						>
-							<span
-								class="rounded-full border border-forest-200 bg-forest-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-forest-800"
-							>
-								{m.pro_badge()}
-							</span>
-						</button>
-					</div>
-				{/if}
-
-				{#if yrsDetailsUnlocked && weeklyViability}
+				{#if weeklyViability}
 					<div class="mt-4 border-t border-forest-100 pt-4">
 						<h6 class="text-xs font-semibold uppercase tracking-wide text-muted">
 							{yrsViabilityHeading}
@@ -709,29 +747,31 @@
 			>
 				{m.yrs_field_reminder()}
 			</p>
-		{/if}
+		{:else}
+			<section class="mt-4">
+				<h5 class="text-xs font-semibold uppercase tracking-wide text-muted">
+					{m.yrs_conditions_terrain()}
+				</h5>
+				<div class="mt-3 flex flex-col gap-3">
+					<AgriMetricCard
+						title={metricHelp.rain.title}
+						helpText={metricHelp.rain.helpText}
+						riskLevel={metricRisks?.rain}
+					>
+						<p class="text-base font-semibold text-forest-800">
+							{data.rainPast3dMm} / {data.rainPast5dMm} / {data.rainPast7dMm} mm
+						</p>
+						<p class="mt-1 text-xs text-muted">{m.yrs_rain_cumul()}</p>
+					</AgriMetricCard>
+				</div>
+			</section>
 
-		<section class="mt-4">
-			<h5 class="text-xs font-semibold uppercase tracking-wide text-muted">{m.yrs_conditions_terrain()}</h5>
-			<div class="mt-3 flex flex-col gap-3 md:grid md:grid-cols-2 md:gap-3">
-				<AgriMetricCard
-					title={metricHelp.rain.title}
-					helpText={metricHelp.rain.helpText}
-					riskLevel={metricRisks?.rain}
-				>
-					<p class="text-base font-semibold text-forest-800">
-						{data.rainPast3dMm} / {data.rainPast5dMm} / {data.rainPast7dMm} mm
-					</p>
-					<p class="mt-1 text-xs text-muted">{m.yrs_rain_cumul()}</p>
-				</AgriMetricCard>
-			</div>
-		</section>
-
-		{#if yrsDetailsUnlocked}
-		<section class="mt-4 border-t border-gray-100 pt-4">
-			<h5 class="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">{m.yrs_phenology_section()}</h5>
-			<GddPanel {species} {offline} loading={agriLoading} />
-		</section>
+			<section class="mt-4 border-t border-gray-100 pt-4">
+				<h5 class="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
+					{m.yrs_phenology_section()}
+				</h5>
+				<GddPanel {species} {offline} loading={agriLoading} />
+			</section>
 		{/if}
 	{:else}
 		<p class="mt-3 text-sm text-muted">{m.yrs_no_agri_data()}</p>

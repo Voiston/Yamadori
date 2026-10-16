@@ -1,5 +1,6 @@
 import { Camera } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { requestFusedHeadingPermission } from '$lib/utils/headingProvider';
 import { isNativeApp } from '$lib/utils/platform';
 import { VoiceRecorder } from 'capacitor-voice-recorder';
@@ -49,4 +50,33 @@ export async function requestMicrophonePermission(): Promise<boolean> {
 
 export async function requestCompassPermission(): Promise<boolean> {
 	return requestFusedHeadingPermission();
+}
+
+/** Check only — never prompts. Web returns false so callers do not schedule. */
+export async function hasNotificationPermission(): Promise<boolean> {
+	if (!isNativeApp()) {
+		return false;
+	}
+
+	try {
+		const current = await LocalNotifications.checkPermissions();
+		return current.display === 'granted';
+	} catch {
+		return false;
+	}
+}
+
+export async function requestNotificationPermission(): Promise<boolean> {
+	if (!isNativeApp()) {
+		return true;
+	}
+
+	try {
+		const current = await LocalNotifications.checkPermissions();
+		if (current.display === 'granted') return true;
+		const next = await LocalNotifications.requestPermissions();
+		return next.display === 'granted';
+	} catch {
+		return false;
+	}
 }

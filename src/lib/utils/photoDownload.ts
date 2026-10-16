@@ -1,26 +1,30 @@
 import { YamadoriBackup } from '$lib/utils/archive/yamadoriBackupPlugin';
 import { isAndroidApp, isNativeApp } from '$lib/utils/platform';
+import {
+	bytesToDataUrl,
+	parseDataUrl,
+	resolveSafeDownloadImageMime,
+	type RasterImageMime
+} from '$lib/utils/archive/media';
 
 export type PhotoDownloadResult = 'downloaded' | 'saved' | 'failed';
 
-function dataUrlToBase64(dataUrl: string): string {
-	const commaIndex = dataUrl.indexOf(',');
-	return commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
-}
-
-function mimeTypeFromDataUrl(dataUrl: string): string {
-	const match = /^data:([^;,]+)/i.exec(dataUrl);
-	return match?.[1] ?? 'image/jpeg';
-}
-
-function extensionForMime(mimeType: string): string {
+function extensionForMime(mimeType: RasterImageMime): string {
 	if (mimeType === 'image/png') return 'png';
 	if (mimeType === 'image/webp') return 'webp';
 	return 'jpg';
 }
 
-function defaultFileName(mimeType: string): string {
+function defaultFileName(mimeType: RasterImageMime): string {
 	return `yamadori-photo-${Date.now()}.${extensionForMime(mimeType)}`;
+}
+
+function withSafeExtension(fileName: string, mimeType: RasterImageMime): string {
+	const ext = extensionForMime(mimeType);
+	const trimmed = fileName.trim();
+	if (!trimmed) return defaultFileName(mimeType);
+	const base = trimmed.replace(/\.[^.]+$/, '');
+	return `${base || trimmed}.${ext}`;
 }
 
 function downloadBlob(blob: Blob, filename: string): void {
@@ -32,17 +36,6 @@ function downloadBlob(blob: Blob, filename: string): void {
 	URL.revokeObjectURL(url);
 }
 
-function dataUrlToBlob(dataUrl: string): Blob {
-	const base64 = dataUrlToBase64(dataUrl);
-	const mimeType = mimeTypeFromDataUrl(dataUrl);
-	const binary = atob(base64);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) {
-		bytes[i] = binary.charCodeAt(i);
-	}
-	return new Blob([bytes], { type: mimeType });
-}
-
 export async function downloadPhoto(
 	dataUrl: string,
 	fileName?: string
@@ -51,20 +44,28 @@ export async function downloadPhoto(
 		return 'failed';
 	}
 
-	const mimeType = mimeTypeFromDataUrl(dataUrl);
-	const resolvedName = fileName?.trim() || defaultFileName(mimeType);
+	const mimeType = resolveSafeDownloadImageMime(dataUrl);
+	const parsed = parseDataUrl(dataUrl);
+	if (!mimeType || !parsed) {
+		return 'failed';
+	}
+
+	const safeDataUrl = bytesToDataUrl(parsed.bytes, mimeType);
+	const resolvedName = withSafeExtension(fileName?.trim() || defaultFileName(mimeType), mimeType);
+	const commaIndex = safeDataUrl.indexOf(',');
+	const base64 = commaIndex >= 0 ? safeDataUrl.slice(commaIndex + 1) : safeDataUrl;
 
 	try {
 		if (isNativeApp() && isAndroidApp()) {
 			await YamadoriBackup.saveToDownloads({
-				data: dataUrlToBase64(dataUrl),
+				data: base64,
 				fileName: resolvedName,
 				mimeType
 			});
 			return 'saved';
 		}
 
-		downloadBlob(dataUrlToBlob(dataUrl), resolvedName);
+		downloadBlob(new Blob([parsed.bytes as BlobPart], { type: mimeType }), resolvedName);
 		return 'downloaded';
 	} catch {
 		return 'failed';

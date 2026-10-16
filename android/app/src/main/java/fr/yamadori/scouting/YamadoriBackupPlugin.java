@@ -32,7 +32,6 @@ public class YamadoriBackupPlugin extends Plugin {
     private static final long MAX_FILE_BYTES = 500L * 1024L * 1024L;
     private static final Object PENDING_IMPORT_LOCK = new Object();
     private static JSObject pendingImport = null;
-    private static boolean pendingImportNotified = false;
 
     public static boolean hasPendingImport() {
         synchronized (PENDING_IMPORT_LOCK) {
@@ -52,7 +51,6 @@ public class YamadoriBackupPlugin extends Plugin {
             pendingImport.put("displayName", displayName);
             pendingImport.put("fileSizeBytes", fileSizeBytes);
             pendingImport.put("sha256Prefix", sha256Prefix);
-            pendingImportNotified = false;
         }
     }
 
@@ -60,7 +58,6 @@ public class YamadoriBackupPlugin extends Plugin {
         synchronized (PENDING_IMPORT_LOCK) {
             JSObject copy = pendingImport;
             pendingImport = null;
-            pendingImportNotified = false;
             return copy;
         }
     }
@@ -68,16 +65,14 @@ public class YamadoriBackupPlugin extends Plugin {
     public static void clearPendingImportState() {
         synchronized (PENDING_IMPORT_LOCK) {
             pendingImport = null;
-            pendingImportNotified = false;
         }
     }
 
     public void notifyPendingImport() {
         synchronized (PENDING_IMPORT_LOCK) {
-            if (pendingImport == null || pendingImportNotified) {
+            if (pendingImport == null) {
                 return;
             }
-            pendingImportNotified = true;
             notifyListeners("backupImportReady", pendingImport);
         }
     }
@@ -100,6 +95,12 @@ public class YamadoriBackupPlugin extends Plugin {
         } else {
             call.resolve(new JSObject());
         }
+    }
+
+    @PluginMethod
+    public void clearPendingImport(PluginCall call) {
+        clearPendingImportState();
+        call.resolve();
     }
 
     @PluginMethod

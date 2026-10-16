@@ -20,7 +20,7 @@ type StoredAppearanceSettings = {
 const DEFAULT_SETTINGS: StoredAppearanceSettings = {
 	outdoorMode: false,
 	darkMode: false,
-	simpleMode: false,
+	simpleMode: true,
 	locale: 'fr'
 };
 
@@ -28,7 +28,7 @@ export const appearanceSettingsState = $state({
 	loaded: false,
 	outdoorMode: false,
 	darkMode: false,
-	simpleMode: false,
+	simpleMode: true,
 	locale: 'fr' as AppLocale
 });
 
@@ -119,7 +119,14 @@ export async function initAppearanceSettings(): Promise<void> {
 			mirrorDarkToLocalStorage(appearanceSettingsState.darkMode);
 			mirrorSimpleToLocalStorage(appearanceSettingsState.simpleMode);
 		} else {
+			appearanceSettingsState.outdoorMode = DEFAULT_SETTINGS.outdoorMode;
+			appearanceSettingsState.darkMode = DEFAULT_SETTINGS.darkMode;
+			appearanceSettingsState.simpleMode = DEFAULT_SETTINGS.simpleMode;
 			appearanceSettingsState.locale = detectPreferredLocale();
+			mirrorOutdoorToLocalStorage(appearanceSettingsState.outdoorMode);
+			mirrorDarkToLocalStorage(appearanceSettingsState.darkMode);
+			mirrorSimpleToLocalStorage(appearanceSettingsState.simpleMode);
+			await persistAppearanceSettings();
 		}
 	} catch {
 		appearanceSettingsState.outdoorMode = DEFAULT_SETTINGS.outdoorMode;

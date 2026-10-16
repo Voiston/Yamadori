@@ -33,11 +33,17 @@ function validPayload(overrides: Record<string, unknown> = {}) {
 }
 
 describe('parseArchivePayload', () => {
-	it('accepts a well-formed payload', () => {
-		const data = parseArchivePayload(validPayload());
-		expect(data.version).toBe(2);
-		expect(data.trees).toHaveLength(1);
-		expect(data.trees[0]?.species).toBe('Acer');
+	it('accepts optional revisit reminder fields', () => {
+		const payload = validPayload();
+		(payload.trees as Array<Record<string, unknown>>)[0]!.nextRevisitAt = '2026-09-01';
+		(payload.trees as Array<Record<string, unknown>>)[0]!.notifyOnWindow = true;
+		(payload.trees as Array<Record<string, unknown>>)[0]!.windowNotifyArmed = false;
+		(payload.trees as Array<Record<string, unknown>>)[0]!.dateNotifySentFor = '2026-09-01';
+		const data = parseArchivePayload(payload);
+		expect(data.trees[0]?.nextRevisitAt).toBe('2026-09-01');
+		expect(data.trees[0]?.notifyOnWindow).toBe(true);
+		expect(data.trees[0]?.windowNotifyArmed).toBe(false);
+		expect(data.trees[0]?.dateNotifySentFor).toBe('2026-09-01');
 	});
 
 	it('rejects wrong version', () => {

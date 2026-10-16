@@ -6,14 +6,18 @@ const {
 	mockVoiceHas,
 	mockVoiceRequest,
 	mockFusedHeading,
-	mockIsNativeApp
+	mockIsNativeApp,
+	mockNotifCheck,
+	mockNotifRequest
 } = vi.hoisted(() => ({
 	mockGeolocationRequest: vi.fn(),
 	mockCameraRequest: vi.fn(),
 	mockVoiceHas: vi.fn(),
 	mockVoiceRequest: vi.fn(),
 	mockFusedHeading: vi.fn(),
-	mockIsNativeApp: vi.fn()
+	mockIsNativeApp: vi.fn(),
+	mockNotifCheck: vi.fn(),
+	mockNotifRequest: vi.fn()
 }));
 
 vi.mock('@capacitor/geolocation', () => ({
@@ -35,6 +39,13 @@ vi.mock('capacitor-voice-recorder', () => ({
 	}
 }));
 
+vi.mock('@capacitor/local-notifications', () => ({
+	LocalNotifications: {
+		checkPermissions: mockNotifCheck,
+		requestPermissions: mockNotifRequest
+	}
+}));
+
 vi.mock('$lib/utils/headingProvider', () => ({
 	requestFusedHeadingPermission: mockFusedHeading
 }));
@@ -47,7 +58,9 @@ import {
 	requestCameraPermission,
 	requestCompassPermission,
 	requestLocationPermission,
-	requestMicrophonePermission
+	hasNotificationPermission,
+	requestMicrophonePermission,
+	requestNotificationPermission
 } from './permissions';
 
 describe('requestLocationPermission', () => {
@@ -157,5 +170,75 @@ describe('requestCompassPermission', () => {
 
 		await expect(requestCompassPermission()).resolves.toBe(true);
 		expect(mockFusedHeading).toHaveBeenCalled();
+	});
+});
+
+describe('requestNotificationPermission', () => {
+	beforeEach(() => {
+		mockIsNativeApp.mockReturnValue(true);
+		mockNotifCheck.mockReset();
+		mockNotifRequest.mockReset();
+	});
+
+	it('returns true on web without calling the plugin', async () => {
+		mockIsNativeApp.mockReturnValue(false);
+
+		await expect(requestNotificationPermission()).resolves.toBe(true);
+		expect(mockNotifCheck).not.toHaveBeenCalled();
+		expect(mockNotifRequest).not.toHaveBeenCalled();
+	});
+
+	it('returns true when already granted', async () => {
+		mockNotifCheck.mockResolvedValue({ display: 'granted' });
+
+		await expect(requestNotificationPermission()).resolves.toBe(true);
+		expect(mockNotifRequest).not.toHaveBeenCalled();
+	});
+
+	it('returns true when the prompt is granted', async () => {
+		mockNotifCheck.mockResolvedValue({ display: 'prompt' });
+		mockNotifRequest.mockResolvedValue({ display: 'granted' });
+
+		await expect(requestNotificationPermission()).resolves.toBe(true);
+		expect(mockNotifRequest).toHaveBeenCalled();
+	});
+
+	it('returns false when denied or the request fails', async () => {
+		mockNotifCheck.mockResolvedValue({ display: 'prompt' });
+		mockNotifRequest.mockResolvedValue({ display: 'denied' });
+		await expect(requestNotificationPermission()).resolves.toBe(false);
+
+		mockNotifCheck.mockRejectedValue(new Error('plugin_error'));
+		await expect(requestNotificationPermission()).resolves.toBe(false);
+	});
+});
+
+describe('hasNotificationPermission', () => {
+	beforeEach(() => {
+		mockIsNativeApp.mockReturnValue(true);
+		mockNotifCheck.mockReset();
+		mockNotifRequest.mockReset();
+	});
+
+	it('returns false on web without calling the plugin', async () => {
+		mockIsNativeApp.mockReturnValue(false);
+
+		await expect(hasNotificationPermission()).resolves.toBe(false);
+		expect(mockNotifCheck).not.toHaveBeenCalled();
+		expect(mockNotifRequest).not.toHaveBeenCalled();
+	});
+
+	it('returns true when already granted without prompting', async () => {
+		mockNotifCheck.mockResolvedValue({ display: 'granted' });
+
+		await expect(hasNotificationPermission()).resolves.toBe(true);
+		expect(mockNotifRequest).not.toHaveBeenCalled();
+	});
+
+	it('returns false when not granted and does not prompt', async () => {
+		mockNotifCheck.mockResolvedValue({ display: 'prompt' });
+
+		await expect(hasNotificationPermission()).resolves.toBe(false);
+		expect(mockNotifRequest).not.toHaveBeenCalled();
 	});
 });

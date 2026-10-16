@@ -64,7 +64,7 @@ export async function fetchTreeEnrichment(
 								throw err;
 							}
 							return {
-								climateError: err instanceof Error ? err.message : 'climate_unavailable'
+								climateError: 'climate_unavailable'
 							};
 						})
 				: Promise.resolve({}),

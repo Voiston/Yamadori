@@ -47,8 +47,8 @@ describe('formatMigrationErrorMessage', () => {
 		expect(formatMigrationErrorMessage(new Error('local_encryption_native_only'))).toBe('Native only');
 	});
 
-	it('returns the raw message or generic failure', () => {
-		expect(formatMigrationErrorMessage(new Error('disk_full'))).toBe('disk_full');
+	it('returns the generic failure for unknown native errors', () => {
+		expect(formatMigrationErrorMessage(new Error('disk_full'))).toBe('Migration failed');
 		expect(formatMigrationErrorMessage('unexpected')).toBe('Migration failed');
 	});
 });

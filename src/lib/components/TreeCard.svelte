@@ -4,23 +4,20 @@
 	import { resolve } from '$app/paths';
 	import { formatDate } from '$lib/utils/date';
 	import { formatDistance } from '$lib/utils/haversine';
-	import { formatAltitudeLabel } from '$lib/utils/altitude';
 	import { hasApproximateGps } from '$lib/utils/gps';
 	import { speciesDisplayName } from '$lib/constants/species-i18n';
-	import { getAssessmentSummary } from '$lib/constants/assessment';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import { weekWindowState } from '$lib/stores/weekWindow.svelte';
 	import * as m from '$lib/paraglide/messages.js';
-	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
+	import { calendarDaysUntil, revisitDateStatus } from '$lib/utils/revisit';
 	import AppLogoImage from './AppLogoImage.svelte';
 
 	let {
 		tree,
-		distanceMeters = null,
-		locked = false
+		distanceMeters = null
 	}: {
 		tree: Tree;
 		distanceMeters?: number | null;
-		locked?: boolean;
 	} = $props();
 
 	let coverPhoto = $derived(getCoverPhotoThumb(tree));
@@ -36,11 +33,6 @@
 		return `${m.photo_label()} — ${displayLabel}`;
 	});
 
-	let assessmentSummary = $derived.by(() => {
-		void appearanceSettingsState.locale;
-		return tree.assessment ? getAssessmentSummary(tree.assessment) : '';
-	});
-
 	let showApproxBadge = $derived(
 		hasApproximateGps(tree.latitude, tree.longitude, tree.accuracyMeters)
 	);
@@ -50,42 +42,79 @@
 		if (distanceMeters === null) return '';
 		return formatDistance(distanceMeters);
 	});
+
+	let windowEntry = $derived(weekWindowState.byId[tree.id]);
+
+	let showYrsWindowBadge = $derived.by(() => {
+		void appearanceSettingsState.simpleMode;
+		if (!windowEntry || appearanceSettingsState.simpleMode) {
+			return false;
+		}
+		return windowEntry.rank === 'optimal' || windowEntry.rank === 'acceptable';
+	});
+
+	let yrsWindowLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (!showYrsWindowBadge || !windowEntry) return '';
+		return windowEntry.rank === 'optimal' ? m.week_window_optimal() : m.week_window_acceptable();
+	});
+
+	let revisitStatus = $derived(revisitDateStatus(tree.nextRevisitAt));
+
+	let revisitDueLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (revisitStatus === 'overdue') return m.revisit_overdue();
+		if (revisitStatus === 'today') return m.revisit_due_today();
+		if (revisitStatus === 'soon') {
+			const days = calendarDaysUntil(tree.nextRevisitAt);
+			if (days === 1) return m.revisit_in_one_day();
+			if (days !== null) return m.revisit_in_days({ count: String(days) });
+		}
+		return '';
+	});
+
+	let statusChip = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (revisitDueLabel) {
+			return {
+				text: revisitDueLabel,
+				className:
+					revisitStatus === 'overdue' ? 'bg-amber-100 text-amber-800' : 'bg-sky-50 text-sky-900'
+			};
+		}
+		if (yrsWindowLabel) {
+			return {
+				text: yrsWindowLabel,
+				className:
+					windowEntry?.rank === 'optimal'
+						? 'bg-emerald-50 text-emerald-800'
+						: 'bg-amber-50 text-amber-900'
+			};
+		}
+		if (showApproxBadge) {
+			return { text: m.tree_approx_badge(), className: 'bg-amber-100 text-amber-800' };
+		}
+		return null;
+	});
+
+	let metaLine = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		const parts = [formatDate(tree.capturedAt)];
+		if (distanceLabel) parts.push(distanceLabel);
+		if (tree.locationLabel) parts.push(tree.locationLabel);
+		return parts.join(' · ');
+	});
 </script>
 
-{#if locked}
-	<button
-		type="button"
-		class="relative block w-full text-left transition active:scale-[0.98]"
-		aria-label={m.pro_tree_locked()}
-		onclick={() => openProPaywall('tree_locked')}
-	>
-		<article
-			class="app-card pointer-events-none flex items-center gap-4 p-4 opacity-60 select-none narrow:gap-3 narrow:p-3"
-			aria-hidden="true"
-		>
-			{@render cardContent()}
-		</article>
-		<div
-			class="absolute inset-0 flex flex-col items-end justify-end gap-1 rounded-[var(--radius-card)] p-3"
-			aria-hidden="true"
-		>
-			<p class="max-w-[85%] rounded-lg bg-white/90 px-2 py-1 text-right text-[10px] font-medium leading-snug text-forest-800 shadow-sm">
-				{m.pro_tree_locked_access_hint()}
-			</p>
-			<span class="pro-badge pro-badge--on-light shadow-sm">{m.pro_upgrade_cta()}</span>
-		</div>
-	</button>
-{:else}
-	<a
-		href={resolve('/tree/[id]', { id: tree.id })}
-		class="block transition active:scale-[0.98]"
-		aria-label={m.tree_view_detail({ label: displayLabel })}
-	>
-		<article class="app-card flex items-center gap-4 p-4 narrow:gap-3 narrow:p-3">
-			{@render cardContent()}
-		</article>
-	</a>
-{/if}
+<a
+	href={resolve('/tree/[id]', { id: tree.id })}
+	class="block transition active:scale-[0.98]"
+	aria-label={m.tree_view_detail({ label: displayLabel })}
+>
+	<article class="app-card flex items-center gap-4 p-4 narrow:gap-3 narrow:p-3">
+		{@render cardContent()}
+	</article>
+</a>
 
 {#snippet cardContent()}
 	<div class="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100">
@@ -135,36 +164,13 @@
 			{/if}
 		</div>
 
-		<div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-			<p class="text-sm text-muted">{formatDate(tree.capturedAt)}</p>
-			{#if showApproxBadge}
-				<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
-					{m.tree_approx_badge()}
+		<div class="mt-0.5 flex min-w-0 items-center gap-2">
+			{#if statusChip}
+				<span class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium {statusChip.className}">
+					{statusChip.text}
 				</span>
 			{/if}
-			{#if assessmentSummary}
-				<span
-					class="rounded-full bg-forest-50 px-2 py-0.5 text-[10px] font-medium text-forest-800"
-				>
-					{assessmentSummary}
-				</span>
-			{/if}
+			<p class="min-w-0 truncate text-sm text-muted">{metaLine}</p>
 		</div>
-
-		{#if tree.latitude !== null && tree.longitude !== null}
-			<p class="mt-1 truncate text-xs text-muted">
-				{#if tree.locationLabel}
-					{tree.locationLabel}
-				{:else}
-					{tree.latitude.toFixed(5)}, {tree.longitude.toFixed(5)}
-				{/if}
-				{#if formatAltitudeLabel(tree.altitudeMeters)}
-					· {formatAltitudeLabel(tree.altitudeMeters)}
-				{/if}
-				{#if distanceLabel}
-					· {distanceLabel}
-				{/if}
-			</p>
-		{/if}
 	</div>
 {/snippet}

@@ -1,4 +1,15 @@
 import { hapticError, hapticSuccess, hapticWarning } from '$lib/utils/haptics';
+import { formatErrorToast, isErrorCopy, type ErrorCopy } from '$lib/utils/userFacingError';
+
+/**
+ * Feedback channels — pick exactly one per event:
+ * - Toast (this module): ephemeral confirmation of a **finished** action. The user has left
+ *   the control. Auto-dismiss. No decision. Not persistent status.
+ * - Modal (`ConfirmDialog`): required decision before continuing (destructive, password,
+ *   permission, legal, GPS save-anyway, paywall). Not success/failure of an action already done.
+ * - Inline (`ErrorBanner` or in-place copy): stays on the control while the problem or context
+ *   remains. Retry in place.
+ */
 
 export type AppToastType = 'ok' | 'error' | 'info';
 
@@ -39,20 +50,22 @@ export function showAppToast(
 		}
 	}
 
-	if (type === 'ok' || type === 'error') {
-		const durationMs = options.durationMs ?? (type === 'ok' ? 4000 : 6000);
-		toastTimeout = setTimeout(() => {
-			appToastState.current = null;
-			toastTimeout = undefined;
-		}, durationMs);
-	}
+	const durationMs =
+		options.durationMs ?? (type === 'ok' ? 4000 : type === 'error' ? 6000 : 5000);
+	toastTimeout = setTimeout(() => {
+		appToastState.current = null;
+		toastTimeout = undefined;
+	}, durationMs);
 }
 
 export function showOkToast(message: string, options: ToastOptions = {}): void {
 	showAppToast('ok', message, options);
 }
 
-export function showErrorToast(message: string, options: ToastOptions = {}): void {
+export function showErrorToast(messageOrCopy: string | ErrorCopy, options: ToastOptions = {}): void {
+	const message = isErrorCopy(messageOrCopy)
+		? formatErrorToast(messageOrCopy)
+		: messageOrCopy;
 	showAppToast('error', message, options);
 }
 
@@ -64,8 +77,8 @@ export function showSettingsToast(
 	showAppToast(type, message, { haptic: false, ...options });
 }
 
-export function showDetailFeedback(message: string): void {
-	showOkToast(message, { durationMs: 2000 });
+export function showDetailFeedback(message: string, type: AppToastType = 'ok'): void {
+	showAppToast(type, message, { durationMs: 2000 });
 }
 
 export function dismissAppToast(): void {

@@ -67,4 +67,37 @@ describe('species phenology midpoints', () => {
 			oakDeb
 		);
 	});
+
+	it('keeps resolved stage midpoints strictly ordered', () => {
+		const species = [
+			'Chêne pubescent',
+			'Chêne pédonculé',
+			'Chêne sessile',
+			'Hêtre commun',
+			'Érable sycomore',
+			'Japanese maple',
+			'Bouleau',
+			'Charme commun',
+			'Zelkova'
+		];
+
+		for (const name of species) {
+			const params = resolvePhenologyLogisticParams('foret', name);
+			expect(params.bourgeon_gonfle.midpoint).toBeLessThan(params.pointe_verte.midpoint);
+			expect(params.pointe_verte.midpoint).toBeLessThan(params.debourrement.midpoint);
+		}
+	});
+
+	it('keeps birch green tip inside the probability budget at budbreak', () => {
+		for (const species of ['Bouleau', 'Paper birch']) {
+			const estimate = estimatePhenology(110, 'foret', species);
+			const greenTip = estimate.stages.find((stage) => stage.id === 'pointe_verte');
+			const sum = estimate.stages.reduce((total, stage) => total + stage.probabilityPct, 0);
+			const dominant = [...estimate.stages].sort((a, b) => b.probabilityPct - a.probabilityPct)[0];
+
+			expect(greenTip?.probabilityPct).toBeGreaterThan(0);
+			expect(sum).toBeLessThanOrEqual(101);
+			expect(dominant?.id).toBe('debourrement');
+		}
+	});
 });

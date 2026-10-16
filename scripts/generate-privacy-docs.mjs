@@ -8,8 +8,44 @@ const docsDir = resolve(repoRoot, 'docs');
 
 const CONTACT_EMAIL = 'david.voisard2@gmail.com';
 const APP_ID = 'fr.yamadori.scouting';
+const PUBLISHER_NAME = 'David Voisard';
 
-const sections = [
+const localeMeta = {
+	fr: { lang: 'fr', label: 'Français', langSwitchLabel: 'Langue' },
+	en: { lang: 'en', label: 'English', langSwitchLabel: 'Language' },
+	de: { lang: 'de', label: 'Deutsch', langSwitchLabel: 'Sprache' },
+	es: { lang: 'es', label: 'Español', langSwitchLabel: 'Idioma' },
+	it: { lang: 'it', label: 'Italiano', langSwitchLabel: 'Lingua' },
+	nl: { lang: 'nl', label: 'Nederlands', langSwitchLabel: 'Taal' },
+	sv: { lang: 'sv', label: 'Svenska', langSwitchLabel: 'Språk' },
+	nb: { lang: 'nb', label: 'Norsk', langSwitchLabel: 'Språk' },
+	pt: { lang: 'pt', label: 'Português', langSwitchLabel: 'Idioma' },
+	da: { lang: 'da', label: 'Dansk', langSwitchLabel: 'Sprog' },
+	fi: { lang: 'fi', label: 'Suomi', langSwitchLabel: 'Kieli' }
+};
+
+const DATE_LOCALES = {
+	fr: 'fr-FR',
+	en: 'en-GB',
+	de: 'de-DE',
+	es: 'es-ES',
+	it: 'it-IT',
+	nl: 'nl-NL',
+	sv: 'sv-SE',
+	nb: 'nb-NO',
+	pt: 'pt-PT',
+	da: 'da-DK',
+	fi: 'fi-FI'
+};
+
+const DOC_STEMS = {
+	privacy: 'privacy',
+	legal: 'mentions-legales',
+	terms: 'cgu',
+	sale: 'cgv'
+};
+
+const privacySections = [
 	{
 		titleKey: 'privacy_section_device',
 		pillars: [
@@ -44,257 +80,122 @@ const inventoryRows = [
 	['privacy_data_voice_label', 'privacy_data_voice_body'],
 	['privacy_data_weather_label', 'privacy_data_weather_body'],
 	['privacy_data_map_label', 'privacy_data_map_body'],
-	['privacy_data_cadastre_label', 'privacy_data_cadastre_body']
+	['privacy_data_cadastre_label', 'privacy_data_cadastre_body'],
+	['privacy_data_purchase_label', 'privacy_data_purchase_body'],
+	['privacy_data_ip_label', 'privacy_data_ip_body']
 ];
 
-/** Locale metadata for static privacy HTML pages. */
-const locales = {
-	fr: {
-		lang: 'fr',
-		filename: 'privacy.html',
-		label: 'Français',
-		pageTitle: 'Politique de confidentialité — Yamadori Scouting',
-		policyTitle: 'Politique de confidentialité',
-		appLabel: 'Application',
-		publisherLabel: 'Éditeur / contact',
-		updatedLabel: 'Dernière mise à jour',
-		versionLabel: 'Version de l’application',
-		inAppTitle: 'Achats in-app',
-		inAppBody:
-			'Yamadori Pro est un achat unique géré par Google Play Billing. Les transactions sont traitées par Google ; Yamadori ne collecte ni ne stocke vos coordonnées bancaires. Seul un jeton d’achat est conservé localement sur l’appareil pour activer les fonctionnalités Pro.',
-		gdprTitle: 'Vos droits',
-		gdprBody:
-			'Yamadori ne crée pas de compte utilisateur et ne transmet pas vos repérages à un serveur éditeur. Vous pouvez consulter, modifier et supprimer vos données directement dans l’application (arbres, photos, notes vocales, caches). Pour toute question : contactez-nous à l’adresse ci-dessus.',
-		changesTitle: 'Modifications',
-		changesBody:
-			'Cette politique peut être mise à jour lors de nouvelles versions de l’application. La date de dernière mise à jour figure en tête de page.',
-		langSwitchLabel: 'Langue'
-	},
-	en: {
-		lang: 'en',
-		filename: 'privacy-en.html',
-		label: 'English',
-		pageTitle: 'Privacy Policy — Yamadori Scouting',
-		policyTitle: 'Privacy Policy',
-		appLabel: 'Application',
-		publisherLabel: 'Publisher / contact',
-		updatedLabel: 'Last updated',
-		versionLabel: 'App version',
-		inAppTitle: 'In-app purchases',
-		inAppBody:
-			'Yamadori Pro is a one-time purchase handled by Google Play Billing. Transactions are processed by Google; Yamadori does not collect or store your payment details. Only a purchase token is kept locally on the device to enable Pro features.',
-		gdprTitle: 'Your rights',
-		gdprBody:
-			'Yamadori does not create user accounts and does not send your scouting data to a publisher server. You can view, edit and delete your data directly in the app (trees, photos, voice notes, caches). For any question, contact us at the address above.',
-		changesTitle: 'Changes',
-		changesBody:
-			'This policy may be updated with new app releases. The last updated date is shown at the top of this page.',
-		langSwitchLabel: 'Language'
-	},
-	de: {
-		lang: 'de',
-		filename: 'privacy-de.html',
-		label: 'Deutsch',
-		pageTitle: 'Datenschutzerklärung — Yamadori Scouting',
-		policyTitle: 'Datenschutzerklärung',
-		appLabel: 'Anwendung',
-		publisherLabel: 'Herausgeber / Kontakt',
-		updatedLabel: 'Zuletzt aktualisiert',
-		versionLabel: 'App-Version',
-		inAppTitle: 'In-App-Käufe',
-		inAppBody:
-			'Yamadori Pro ist ein Einmalkauf über Google Play Billing. Transaktionen werden von Google verarbeitet; Yamadori speichert keine Zahlungsdaten. Nur ein Kauf-Token bleibt lokal auf dem Gerät, um Pro-Funktionen freizuschalten.',
-		gdprTitle: 'Ihre Rechte',
-		gdprBody:
-			'Yamadori erstellt kein Benutzerkonto und sendet Ihre Funddaten nicht an einen Herausgeber-Server. Sie können Ihre Daten direkt in der App einsehen, ändern und löschen (Bäume, Fotos, Sprachnotizen, Caches). Bei Fragen kontaktieren Sie uns unter der oben genannten Adresse.',
-		changesTitle: 'Änderungen',
-		changesBody:
-			'Diese Richtlinie kann bei neuen App-Versionen aktualisiert werden. Das Datum der letzten Aktualisierung steht oben auf dieser Seite.',
-		langSwitchLabel: 'Sprache'
-	},
-	es: {
-		lang: 'es',
-		filename: 'privacy-es.html',
-		label: 'Español',
-		pageTitle: 'Política de privacidad — Yamadori Scouting',
-		policyTitle: 'Política de privacidad',
-		appLabel: 'Aplicación',
-		publisherLabel: 'Editor / contacto',
-		updatedLabel: 'Última actualización',
-		versionLabel: 'Versión de la aplicación',
-		inAppTitle: 'Compras in-app',
-		inAppBody:
-			'Yamadori Pro es una compra única gestionada por Google Play Billing. Las transacciones las procesa Google; Yamadori no recoge ni almacena sus datos de pago. Solo se guarda localmente un token de compra para activar las funciones Pro.',
-		gdprTitle: 'Sus derechos',
-		gdprBody:
-			'Yamadori no crea cuentas de usuario ni envía sus datos de exploración a un servidor del editor. Puede consultar, modificar y eliminar sus datos directamente en la aplicación (árboles, fotos, notas de voz, cachés). Para cualquier pregunta, contacte con nosotros en la dirección anterior.',
-		changesTitle: 'Modificaciones',
-		changesBody:
-			'Esta política puede actualizarse con nuevas versiones de la aplicación. La fecha de la última actualización aparece al inicio de esta página.',
-		langSwitchLabel: 'Idioma'
-	},
-	it: {
-		lang: 'it',
-		filename: 'privacy-it.html',
-		label: 'Italiano',
-		pageTitle: 'Informativa sulla privacy — Yamadori Scouting',
-		policyTitle: 'Informativa sulla privacy',
-		appLabel: 'Applicazione',
-		publisherLabel: 'Editore / contatto',
-		updatedLabel: 'Ultimo aggiornamento',
-		versionLabel: 'Versione dell’app',
-		inAppTitle: 'Acquisti in-app',
-		inAppBody:
-			'Yamadori Pro è un acquisto una tantum gestito da Google Play Billing. Le transazioni sono elaborate da Google; Yamadori non raccoglie né conserva i dati di pagamento. Solo un token di acquisto resta sul dispositivo per attivare le funzioni Pro.',
-		gdprTitle: 'I tuoi diritti',
-		gdprBody:
-			'Yamadori non crea account utente e non invia i tuoi dati di scouting a un server dell’editore. Puoi consultare, modificare ed eliminare i dati direttamente nell’app (alberi, foto, note vocali, cache). Per domande, contattaci all’indirizzo sopra.',
-		changesTitle: 'Modifiche',
-		changesBody:
-			'Questa informativa può essere aggiornata con le nuove versioni dell’app. La data dell’ultimo aggiornamento è in cima a questa pagina.',
-		langSwitchLabel: 'Lingua'
-	},
-	nl: {
-		lang: 'nl',
-		filename: 'privacy-nl.html',
-		label: 'Nederlands',
-		pageTitle: 'Privacybeleid — Yamadori Scouting',
-		policyTitle: 'Privacybeleid',
-		appLabel: 'Applicatie',
-		publisherLabel: 'Uitgever / contact',
-		updatedLabel: 'Laatst bijgewerkt',
-		versionLabel: 'App-versie',
-		inAppTitle: 'In-app-aankopen',
-		inAppBody:
-			'Yamadori Pro is een eenmalige aankoop via Google Play Billing. Transacties worden door Google verwerkt; Yamadori verzamelt of bewaart geen betaalgegevens. Alleen een aankooptoken blijft lokaal op het apparaat om Pro-functies te activeren.',
-		gdprTitle: 'Uw rechten',
-		gdprBody:
-			'Yamadori maakt geen gebruikersaccounts en stuurt uw inventarisatiegegevens niet naar een server van de uitgever. U kunt uw gegevens rechtstreeks in de app bekijken, wijzigen en verwijderen (bomen, foto’s, spraaknotities, caches). Voor vragen: neem contact op via het adres hierboven.',
-		changesTitle: 'Wijzigingen',
-		changesBody:
-			'Dit beleid kan worden bijgewerkt bij nieuwe app-versies. De datum van de laatste update staat bovenaan deze pagina.',
-		langSwitchLabel: 'Taal'
-	},
-	sv: {
-		lang: 'sv',
-		filename: 'privacy-sv.html',
-		label: 'Svenska',
-		pageTitle: 'Integritetspolicy — Yamadori Scouting',
-		policyTitle: 'Integritetspolicy',
-		appLabel: 'Applikation',
-		publisherLabel: 'Utgivare / kontakt',
-		updatedLabel: 'Senast uppdaterad',
-		versionLabel: 'Appversion',
-		inAppTitle: 'Köp i appen',
-		inAppBody:
-			'Yamadori Pro är ett engångsköp via Google Play Billing. Transaktioner hanteras av Google; Yamadori samlar inte in eller lagrar dina betalningsuppgifter. Endast en köptoken sparas lokalt på enheten för att aktivera Pro-funktioner.',
-		gdprTitle: 'Dina rättigheter',
-		gdprBody:
-			'Yamadori skapar inga användarkonton och skickar inte dina inventeringsdata till en utgivarserver. Du kan visa, ändra och radera dina data direkt i appen (träd, foton, röstanteckningar, cache). Vid frågor: kontakta oss på adressen ovan.',
-		changesTitle: 'Ändringar',
-		changesBody:
-			'Denna policy kan uppdateras vid nya appversioner. Datum för senaste uppdatering står överst på sidan.',
-		langSwitchLabel: 'Språk'
-	},
-	nb: {
-		lang: 'nb',
-		filename: 'privacy-nb.html',
-		label: 'Norsk',
-		pageTitle: 'Personvernerklæring — Yamadori Scouting',
-		policyTitle: 'Personvernerklæring',
-		appLabel: 'Applikasjon',
-		publisherLabel: 'Utgiver / kontakt',
-		updatedLabel: 'Sist oppdatert',
-		versionLabel: 'App-versjon',
-		inAppTitle: 'Kjøp i appen',
-		inAppBody:
-			'Yamadori Pro er et engangskjøp via Google Play Billing. Transaksjoner behandles av Google; Yamadori samler ikke inn eller lagrer betalingsopplysninger. Kun et kjøpstoken lagres lokalt på enheten for å aktivere Pro-funksjoner.',
-		gdprTitle: 'Dine rettigheter',
-		gdprBody:
-			'Yamadori oppretter ikke brukerkontoer og sender ikke inventeringsdataene dine til en utgiverserver. Du kan se, endre og slette dataene dine direkte i appen (trær, bilder, taleopptak, hurtigbuffer). For spørsmål: kontakt oss på adressen ovenfor.',
-		changesTitle: 'Endringer',
-		changesBody:
-			'Denne erklæringen kan oppdateres ved nye appversjoner. Dato for siste oppdatering står øverst på siden.',
-		langSwitchLabel: 'Språk'
-	},
-	pt: {
-		lang: 'pt',
-		filename: 'privacy-pt.html',
-		label: 'Português',
-		pageTitle: 'Política de privacidade — Yamadori Scouting',
-		policyTitle: 'Política de privacidade',
-		appLabel: 'Aplicação',
-		publisherLabel: 'Editor / contacto',
-		updatedLabel: 'Última atualização',
-		versionLabel: 'Versão da aplicação',
-		inAppTitle: 'Compras in-app',
-		inAppBody:
-			'Yamadori Pro é uma compra única gerida pelo Google Play Billing. As transações são processadas pela Google; a Yamadori não recolhe nem armazena os seus dados de pagamento. Apenas um token de compra é guardado localmente no dispositivo para ativar as funcionalidades Pro.',
-		gdprTitle: 'Os seus direitos',
-		gdprBody:
-			'A Yamadori não cria contas de utilizador e não envia os seus dados de exploração para um servidor do editor. Pode consultar, modificar e eliminar os seus dados diretamente na aplicação (árvores, fotos, notas de voz, caches). Para qualquer questão, contacte-nos no endereço acima.',
-		changesTitle: 'Alterações',
-		changesBody:
-			'Esta política pode ser atualizada com novas versões da aplicação. A data da última atualização aparece no topo desta página.',
-		langSwitchLabel: 'Idioma'
-	},
-	da: {
-		lang: 'da',
-		filename: 'privacy-da.html',
-		label: 'Dansk',
-		pageTitle: 'Privatlivspolitik — Yamadori Scouting',
-		policyTitle: 'Privatlivspolitik',
-		appLabel: 'Applikation',
-		publisherLabel: 'Udgiver / kontakt',
-		updatedLabel: 'Sidst opdateret',
-		versionLabel: 'App-version',
-		inAppTitle: 'Køb i appen',
-		inAppBody:
-			'Yamadori Pro er et engangskøb via Google Play Billing. Transaktioner behandles af Google; Yamadori indsamler eller gemmer ikke dine betalingsoplysninger. Kun en købstoken gemmes lokalt på enheden for at aktivere Pro-funktioner.',
-		gdprTitle: 'Dine rettigheder',
-		gdprBody:
-			'Yamadori opretter ikke brugerkonti og sender ikke dine inventeringsdata til en udgiverserver. Du kan se, ændre og slette dine data direkte i appen (træer, fotos, stemmenoter, caches). Ved spørgsmål: kontakt os på adressen ovenfor.',
-		changesTitle: 'Ændringer',
-		changesBody:
-			'Denne politik kan opdateres ved nye appversioner. Datoen for seneste opdatering står øverst på siden.',
-		langSwitchLabel: 'Sprog'
-	},
-	fi: {
-		lang: 'fi',
-		filename: 'privacy-fi.html',
-		label: 'Suomi',
-		pageTitle: 'Tietosuojakäytäntö — Yamadori Scouting',
-		policyTitle: 'Tietosuojakäytäntö',
-		appLabel: 'Sovellus',
-		publisherLabel: 'Julkaisija / yhteystiedot',
-		updatedLabel: 'Viimeksi päivitetty',
-		versionLabel: 'Sovellusversio',
-		inAppTitle: 'Sovelluksen sisäiset ostot',
-		inAppBody:
-			'Yamadori Pro on kertaluonteinen ostos Google Play Billingin kautta. Tapahtumat käsittelee Google; Yamadori ei kerää eikä tallenna maksutietojasi. Vain ostotunnus säilytetään paikallisesti laitteella Pro-ominaisuuksien käyttöönottoa varten.',
-		gdprTitle: 'Oikeutesi',
-		gdprBody:
-			'Yamadori ei luo käyttäjätilejä eikä lähetä inventointitietojasi julkaisijan palvelimelle. Voit tarkastella, muokata ja poistaa tietojasi suoraan sovelluksessa (puut, valokuvat, äänimuistiinpanot, välimuistit). Kysymyksissä ota yhteyttä yllä olevaan osoitteeseen.',
-		changesTitle: 'Muutokset',
-		changesBody:
-			'Tätä käytäntöä voidaan päivittää uusien sovellusversioiden yhteydessä. Viimeisimmän päivityksen päivämäärä on sivun yläosassa.',
-		langSwitchLabel: 'Kieli'
-	}
-};
+const gdprCards = [
+	['privacy_controller_title', 'privacy_controller_body'],
+	['privacy_legal_basis_title', 'privacy_legal_basis_body'],
+	['privacy_retention_title', 'privacy_retention_body'],
+	['privacy_rights_title', 'privacy_rights_body'],
+	['privacy_minors_title', 'privacy_minors_body'],
+	['privacy_outside_eu_title', 'privacy_outside_eu_body'],
+	['privacy_california_title', 'privacy_california_body'],
+	['privacy_transfers_title', 'privacy_transfers_body'],
+	['privacy_iap_title', 'privacy_iap_body'],
+	['privacy_changes_title', 'privacy_changes_body']
+];
 
-const DATE_LOCALES = {
-	fr: 'fr-FR',
-	en: 'en-GB',
-	de: 'de-DE',
-	es: 'es-ES',
-	it: 'it-IT',
-	nl: 'nl-NL',
-	sv: 'sv-SE',
-	nb: 'nb-NO',
-	pt: 'pt-PT',
-	da: 'da-DK',
-	fi: 'fi-FI'
-};
+const legalCards = [
+	['legal_editor_title', 'legal_editor_body'],
+	['legal_address_title', 'legal_address_body'],
+	['legal_contact_title', 'legal_contact_body'],
+	['legal_host_title', 'legal_host_body'],
+	['legal_app_title', 'legal_app_body']
+];
+
+const termsCards = [
+	['terms_object_title', 'terms_object_body'],
+	['terms_access_title', 'terms_access_body'],
+	['terms_minors_title', 'terms_minors_body'],
+	['terms_field_title', 'terms_field_body'],
+	['terms_gps_title', 'terms_gps_body'],
+	['terms_ip_title', 'terms_ip_body'],
+	['terms_use_title', 'terms_use_body'],
+	['terms_liability_title', 'terms_liability_body'],
+	['terms_us_title', 'terms_us_body'],
+	['terms_changes_title', 'terms_changes_body']
+];
+
+const saleCards = [
+	['sale_seller_title', 'sale_seller_body'],
+	['sale_product_title', 'sale_product_body'],
+	['sale_price_title', 'sale_price_body'],
+	['sale_payment_title', 'sale_payment_body'],
+	['sale_withdrawal_title', 'sale_withdrawal_body'],
+	['sale_outside_eu_title', 'sale_outside_eu_body'],
+	['sale_refund_title', 'sale_refund_body'],
+	['sale_support_title', 'sale_support_body'],
+	['sale_law_title', 'sale_law_body']
+];
+
+const SHARED_CSS = `:root {
+			color-scheme: light;
+			--forest-900: #1a2e1a;
+			--forest-800: #2d4a2d;
+			--muted: #5c6b5c;
+			--bg: #f4f7f4;
+			--card: #ffffff;
+			--border: #d8e0d8;
+		}
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+			background: var(--bg);
+			color: var(--forest-900);
+			line-height: 1.55;
+		}
+		main { max-width: 42rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+		header { margin-bottom: 1.5rem; }
+		h1 { margin: 0 0 0.75rem; font-size: 1.5rem; line-height: 1.25; }
+		h2 { margin: 0 0 0.5rem; font-size: 1.125rem; }
+		h3 {
+			margin: 0 0 0.75rem;
+			font-size: 0.75rem;
+			font-weight: 600;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			color: var(--muted);
+		}
+		h4 { margin: 0; font-size: 0.95rem; }
+		p { margin: 0.5rem 0 0; }
+		.meta { font-size: 0.875rem; color: var(--muted); }
+		.meta p { margin: 0.25rem 0; }
+		.lang-switch, .doc-nav { margin-bottom: 1rem; font-size: 0.875rem; }
+		.lang-switch a, .doc-nav a {
+			color: var(--forest-800);
+			font-weight: 600;
+			text-decoration: none;
+		}
+		.lang-switch a:hover, .doc-nav a:hover { text-decoration: underline; }
+		.lang-switch [aria-current="page"], .doc-nav [aria-current="page"] {
+			font-weight: 700;
+			color: var(--forest-900);
+		}
+		.intro { font-size: 0.95rem; }
+		.section, .inventory, .legal {
+			display: flex;
+			flex-direction: column;
+			gap: 0.75rem;
+			margin-top: 1.5rem;
+		}
+		.card {
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 0.75rem;
+			padding: 0.875rem 1rem;
+		}
+		.card p { color: var(--muted); font-size: 0.9rem; }
+		footer { margin-top: 2rem; text-align: center; font-size: 0.75rem; color: var(--muted); }
+		a { color: var(--forest-800); }`;
+
+function docFilename(kind, localeKey) {
+	const stem = DOC_STEMS[kind];
+	return localeKey === 'fr' ? `${stem}.html` : `${stem}-${localeKey}.html`;
+}
 
 function escapeHtml(value) {
 	return value
@@ -324,24 +225,84 @@ function renderCard(title, body) {
 	return `<article class="card"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(body)}</p></article>`;
 }
 
-function renderLangSwitch(currentKey) {
-	const current = locales[currentKey];
-	const links = Object.entries(locales)
-		.map(([key, meta]) => {
+function renderLangSwitch(kind, currentKey) {
+	const current = localeMeta[currentKey];
+	const links = Object.keys(localeMeta)
+		.map((key) => {
+			const meta = localeMeta[key];
 			if (key === currentKey) {
 				return `<span aria-current="page">${escapeHtml(meta.label)}</span>`;
 			}
-			return `<a href="${meta.filename}">${escapeHtml(meta.label)}</a>`;
+			return `<a href="${docFilename(kind, key)}">${escapeHtml(meta.label)}</a>`;
 		})
 		.join(' · ');
 	return `<div class="lang-switch">${escapeHtml(current.langSwitchLabel)} : ${links}</div>`;
 }
 
-function renderPage(localeKey, messages, version) {
-	const locale = locales[localeKey];
-	const updated = formatDate(localeKey);
+function renderDocNav(kind, localeKey, messages) {
+	const items = [
+		['privacy', 'legal_nav_privacy'],
+		['legal', 'legal_nav_notice'],
+		['terms', 'legal_nav_terms'],
+		['sale', 'legal_nav_sale']
+	];
+	const links = items
+		.map(([docKind, key]) => {
+			const label = escapeHtml(msg(messages, key));
+			if (docKind === kind) {
+				return `<span aria-current="page">${label}</span>`;
+			}
+			return `<a href="${docFilename(docKind, localeKey)}">${label}</a>`;
+		})
+		.join(' · ');
+	return `<nav class="doc-nav">${links}</nav>`;
+}
 
-	const sectionHtml = sections
+function renderMeta(messages, version, localeKey) {
+	const updated = formatDate(localeKey);
+	return `<div class="meta">
+				<p><strong>${escapeHtml(msg(messages, 'privacy_docs_app_label'))} :</strong> Yamadori Scouting (${escapeHtml(APP_ID)})</p>
+				<p><strong>${escapeHtml(msg(messages, 'privacy_docs_publisher_label'))} :</strong> ${escapeHtml(PUBLISHER_NAME)} — <a href="mailto:${CONTACT_EMAIL}">${escapeHtml(CONTACT_EMAIL)}</a></p>
+				<p><strong>${escapeHtml(msg(messages, 'privacy_docs_updated_label'))} :</strong> ${escapeHtml(updated)}</p>
+				<p><strong>${escapeHtml(msg(messages, 'privacy_docs_version_label'))} :</strong> ${escapeHtml(version)}</p>
+			</div>`;
+}
+
+function wrapPage({ localeKey, kind, title, heading, intro, body, footer, messages, version }) {
+	const meta = localeMeta[localeKey];
+	return `<!doctype html>
+<html lang="${meta.lang}">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>${escapeHtml(title)}</title>
+	<style>
+		${SHARED_CSS}
+	</style>
+</head>
+<body>
+	<main>
+		${renderLangSwitch(kind, localeKey)}
+		${renderDocNav(kind, localeKey, messages)}
+		<header>
+			<h1>${escapeHtml(heading)}</h1>
+			${renderMeta(messages, version, localeKey)}
+		</header>
+		${intro ? `<p class="intro">${escapeHtml(intro)}</p>` : ''}
+		${kind === 'terms' || kind === 'sale' ? `<p class="intro">${escapeHtml(msg(messages, 'legal_aid_disclaimer'))}</p>` : ''}
+		${body}
+		<footer>${escapeHtml(footer)}</footer>
+	</main>
+</body>
+</html>
+`;
+}
+
+function renderPrivacy(localeKey, messages, version) {
+	const gdprHtml = gdprCards
+		.map(([titleKey, bodyKey]) => renderCard(msg(messages, titleKey), msg(messages, bodyKey)))
+		.join('\n');
+	const sectionHtml = privacySections
 		.map((section) => {
 			const pillars = section.pillars
 				.map(([titleKey, bodyKey]) =>
@@ -351,153 +312,57 @@ function renderPage(localeKey, messages, version) {
 			return `<section class="section"><h3>${escapeHtml(msg(messages, section.titleKey))}</h3>${pillars}</section>`;
 		})
 		.join('\n');
-
 	const inventoryHtml = inventoryRows
-		.map(([labelKey, bodyKey]) =>
-			renderCard(msg(messages, labelKey), msg(messages, bodyKey))
-		)
+		.map(([labelKey, bodyKey]) => renderCard(msg(messages, labelKey), msg(messages, bodyKey)))
 		.join('\n');
-
-	return `<!doctype html>
-<html lang="${locale.lang}">
-<head>
-	<meta charset="utf-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<title>${escapeHtml(locale.pageTitle)}</title>
-	<style>
-		:root {
-			color-scheme: light;
-			--forest-900: #1a2e1a;
-			--forest-800: #2d4a2d;
-			--muted: #5c6b5c;
-			--bg: #f4f7f4;
-			--card: #ffffff;
-			--border: #d8e0d8;
-		}
-		* { box-sizing: border-box; }
-		body {
-			margin: 0;
-			font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-			background: var(--bg);
-			color: var(--forest-900);
-			line-height: 1.55;
-		}
-		main {
-			max-width: 42rem;
-			margin: 0 auto;
-			padding: 1.5rem 1rem 3rem;
-		}
-		header {
-			margin-bottom: 1.5rem;
-		}
-		h1 {
-			margin: 0 0 0.75rem;
-			font-size: 1.5rem;
-			line-height: 1.25;
-		}
-		h2 {
-			margin: 0 0 0.5rem;
-			font-size: 1.125rem;
-		}
-		h3 {
-			margin: 0 0 0.75rem;
-			font-size: 0.75rem;
-			font-weight: 600;
-			letter-spacing: 0.06em;
-			text-transform: uppercase;
-			color: var(--muted);
-		}
-		h4 {
-			margin: 0;
-			font-size: 0.95rem;
-		}
-		p {
-			margin: 0.5rem 0 0;
-		}
-		.meta {
-			font-size: 0.875rem;
-			color: var(--muted);
-		}
-		.meta p { margin: 0.25rem 0; }
-		.lang-switch {
-			margin-bottom: 1rem;
-			font-size: 0.875rem;
-		}
-		.lang-switch a {
-			color: var(--forest-800);
-			font-weight: 600;
-			text-decoration: none;
-		}
-		.lang-switch a:hover { text-decoration: underline; }
-		.lang-switch [aria-current="page"] {
-			font-weight: 700;
-			color: var(--forest-900);
-		}
-		.intro { font-size: 0.95rem; }
-		.section, .inventory, .legal {
-			display: flex;
-			flex-direction: column;
-			gap: 0.75rem;
-			margin-top: 1.5rem;
-		}
-		.card {
-			background: var(--card);
-			border: 1px solid var(--border);
-			border-radius: 0.75rem;
-			padding: 0.875rem 1rem;
-		}
-		.card p {
-			color: var(--muted);
-			font-size: 0.9rem;
-		}
-		footer {
-			margin-top: 2rem;
-			text-align: center;
-			font-size: 0.75rem;
-			color: var(--muted);
-		}
-		a { color: var(--forest-800); }
-	</style>
-</head>
-<body>
-	<main>
-		${renderLangSwitch(localeKey)}
-		<header>
-			<h1>${escapeHtml(locale.policyTitle)}</h1>
-			<div class="meta">
-				<p><strong>${escapeHtml(locale.appLabel)} :</strong> Yamadori Scouting (${escapeHtml(APP_ID)})</p>
-				<p><strong>${escapeHtml(locale.publisherLabel)} :</strong> <a href="mailto:${CONTACT_EMAIL}">${escapeHtml(CONTACT_EMAIL)}</a></p>
-				<p><strong>${escapeHtml(locale.updatedLabel)} :</strong> ${escapeHtml(updated)}</p>
-				<p><strong>${escapeHtml(locale.versionLabel)} :</strong> ${escapeHtml(version)}</p>
-			</div>
-		</header>
-
-		<section class="legal">
-			${renderCard(locale.inAppTitle, locale.inAppBody)}
-			${renderCard(locale.gdprTitle, locale.gdprBody)}
-			${renderCard(locale.changesTitle, locale.changesBody)}
-		</section>
-
+	const body = `<section class="legal">${gdprHtml}</section>
 		<section>
 			<h2>${escapeHtml(msg(messages, 'privacy_heading'))}</h2>
 			<p class="intro">${escapeHtml(msg(messages, 'privacy_intro'))}</p>
+			<p class="intro">${escapeHtml(msg(messages, 'legal_aid_disclaimer'))}</p>
 		</section>
-
 		${sectionHtml}
-
 		<section class="inventory">
 			<div>
 				<h2>${escapeHtml(msg(messages, 'privacy_inventory_heading'))}</h2>
 				<p class="intro">${escapeHtml(msg(messages, 'privacy_inventory_intro'))}</p>
 			</div>
 			${inventoryHtml}
-		</section>
+		</section>`;
+	return wrapPage({
+		localeKey,
+		kind: 'privacy',
+		title: msg(messages, 'title_privacy'),
+		heading: msg(messages, 'title_privacy'),
+		intro: '',
+		body,
+		footer: msg(messages, 'privacy_outro', { version }),
+		messages,
+		version
+	});
+}
 
-		<footer>${escapeHtml(msg(messages, 'privacy_outro', { version }))}</footer>
-	</main>
-</body>
-</html>
-`;
+function renderCardDoc(kind, localeKey, messages, version, headingKey, introKey, cards, titleKey) {
+	const cardsHtml = cards
+		.map(([titleCard, bodyKey]) => {
+			let body = msg(messages, bodyKey);
+			if (kind === 'terms' && bodyKey === 'terms_object_body') {
+				body = `${msg(messages, 'legal_aid_disclaimer')} ${body}`;
+			}
+			return renderCard(msg(messages, titleCard), body);
+		})
+		.join('\n');
+	return wrapPage({
+		localeKey,
+		kind,
+		title: msg(messages, titleKey),
+		heading: msg(messages, headingKey),
+		intro: msg(messages, introKey),
+		body: `<section class="legal">${cardsHtml}</section>`,
+		footer: msg(messages, 'privacy_outro', { version }),
+		messages,
+		version
+	});
 }
 
 function renderIndex() {
@@ -506,49 +371,86 @@ function renderIndex() {
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<meta http-equiv="refresh" content="0; url=privacy.html" />
-	<title>Politique de confidentialité — Yamadori Scouting</title>
-	<link rel="canonical" href="privacy.html" />
+	<title>Yamadori Scouting — Informations légales</title>
+	<style>
+		${SHARED_CSS}
+	</style>
 </head>
 <body>
-	<p><a href="privacy.html">Politique de confidentialité — Yamadori Scouting</a></p>
+	<main>
+		<header>
+			<h1>Yamadori Scouting</h1>
+			<p class="intro">Informations légales — éditeur David Voisard.</p>
+		</header>
+		<nav class="doc-nav">
+			<a href="privacy.html">Politique de confidentialité</a> ·
+			<a href="mentions-legales.html">Mentions légales</a> ·
+			<a href="cgu.html">CGU</a> ·
+			<a href="cgv.html">CGV</a>
+		</nav>
+	</main>
 </body>
 </html>
 `;
 }
 
-const pkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
 function loadMessages(locale) {
 	return JSON.parse(
 		readFileSync(resolve(repoRoot, `messages/${locale}.json`), 'utf8').replace(/^\uFEFF/, '')
 	);
 }
-const messageBundles = {
-	fr: loadMessages('fr'),
-	en: loadMessages('en'),
-	de: loadMessages('de'),
-	es: loadMessages('es'),
-	it: loadMessages('it'),
-	nl: loadMessages('nl'),
-	sv: loadMessages('sv'),
-	nb: loadMessages('nb'),
-	pt: loadMessages('pt'),
-	da: loadMessages('da'),
-	fi: loadMessages('fi')
-};
 
+const pkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
 mkdirSync(docsDir, { recursive: true });
 
-const outputs = [
-	...Object.keys(locales).map((localeKey) => [
-		locales[localeKey].filename,
-		renderPage(localeKey, messageBundles[localeKey], pkg.version)
-	]),
-	['index.html', renderIndex()]
-];
+const outputs = [['index.html', renderIndex()]];
+
+for (const localeKey of Object.keys(localeMeta)) {
+	const messages = loadMessages(localeKey);
+	const version = pkg.version;
+	outputs.push([docFilename('privacy', localeKey), renderPrivacy(localeKey, messages, version)]);
+	outputs.push([
+		docFilename('legal', localeKey),
+		renderCardDoc(
+			'legal',
+			localeKey,
+			messages,
+			version,
+			'legal_heading',
+			'legal_intro',
+			legalCards,
+			'title_legal'
+		)
+	]);
+	outputs.push([
+		docFilename('terms', localeKey),
+		renderCardDoc(
+			'terms',
+			localeKey,
+			messages,
+			version,
+			'terms_heading',
+			'terms_intro',
+			termsCards,
+			'title_terms'
+		)
+	]);
+	outputs.push([
+		docFilename('sale', localeKey),
+		renderCardDoc(
+			'sale',
+			localeKey,
+			messages,
+			version,
+			'sale_heading',
+			'sale_intro',
+			saleCards,
+			'title_sale'
+		)
+	]);
+}
 
 for (const [name, html] of outputs) {
-	const path = resolve(docsDir, name);
-	writeFileSync(path, html, 'utf8');
+	writeFileSync(resolve(docsDir, name), html, 'utf8');
 	console.log(`generate-privacy-docs: ${name}`);
 }

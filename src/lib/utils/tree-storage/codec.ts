@@ -7,6 +7,7 @@ import {
 } from '$lib/types/tree';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
 import { normalizeDeadwood } from '$lib/constants/assessment';
+import { normalizeRevisitFields } from '$lib/utils/revisit';
 import { generateId } from '$lib/utils/id';
 import { parseDataUrl, bytesToDataUrl } from '$lib/utils/archive/media';
 import type {
@@ -155,6 +156,7 @@ export function treeToStoredRecord(
 		harvestEthicsConfirmation: tree.harvestEthicsConfirmation,
 		environmentExposure: tree.environmentExposure,
 		yrsAtCapture: tree.yrsAtCapture,
+		...normalizeRevisitFields(tree),
 		capturedAt: tree.capturedAt
 	};
 }
@@ -290,6 +292,7 @@ export function storedRecordToTree(
 		harvestEthicsConfirmation: stored.harvestEthicsConfirmation,
 		environmentExposure: stored.environmentExposure ?? DEFAULT_ENVIRONMENT_EXPOSURE,
 		yrsAtCapture: stored.yrsAtCapture,
+		...normalizeRevisitFields(stored),
 		capturedAt: stored.capturedAt,
 		mediaHydration: level
 	};

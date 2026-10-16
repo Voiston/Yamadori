@@ -243,7 +243,7 @@
 
 			recorderState = 'idle';
 
-			hint = err instanceof Error ? err.message : m.voice_stop_error();
+			hint = getVoiceRecordingErrorMessage(err) || m.voice_stop_error();
 
 			void hapticError();
 

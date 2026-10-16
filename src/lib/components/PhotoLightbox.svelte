@@ -4,6 +4,9 @@
 	import { hapticError, hapticSuccess } from '$lib/utils/haptics';
 	import { modalFocus } from '$lib/utils/modalFocus';
 	import { downloadPhoto } from '$lib/utils/photoDownload';
+	import { onDestroy } from 'svelte';
+
+	const SUCCESS_FEEDBACK_MS = 2000;
 
 	let {
 		open = $bindable(false),
@@ -17,6 +20,16 @@
 
 	let saving = $state(false);
 	let feedback = $state<{ type: 'ok' | 'error'; message: string } | null>(null);
+	let successTimeout: ReturnType<typeof setTimeout> | undefined;
+
+	function clearSuccessTimeout(): void {
+		if (successTimeout) {
+			clearTimeout(successTimeout);
+			successTimeout = undefined;
+		}
+	}
+
+	onDestroy(clearSuccessTimeout);
 
 	let dialogLabel = $derived.by(() => {
 		void appearanceSettingsState.locale;
@@ -29,6 +42,7 @@
 	});
 
 	function close() {
+		clearSuccessTimeout();
 		feedback = null;
 		open = false;
 	}
@@ -54,6 +68,7 @@
 		if (!src || saving) return;
 
 		saving = true;
+		clearSuccessTimeout();
 		feedback = null;
 		try {
 			const result = await downloadPhoto(src);
@@ -63,6 +78,10 @@
 			} else {
 				feedback = { type: 'ok', message: m.feedback_photo_downloaded() };
 				void hapticSuccess();
+				successTimeout = setTimeout(() => {
+					feedback = null;
+					successTimeout = undefined;
+				}, SUCCESS_FEEDBACK_MS);
 			}
 		} finally {
 			saving = false;

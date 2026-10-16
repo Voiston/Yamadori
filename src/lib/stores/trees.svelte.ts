@@ -3,6 +3,7 @@ import { resolveTreesLoadError, type StorageLoadErrorInfo } from '$lib/utils/sto
 import * as m from '$lib/paraglide/messages.js';
 import { App } from '@capacitor/app';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
+import { normalizeRevisitFields } from '$lib/utils/revisit';
 import {
 	DEFAULT_ASSESSMENT,
 	clampVisitPhotos,
@@ -19,7 +20,6 @@ import type { CadastreInfo } from '$lib/types/cadastre';
 import type { ClimateHistory } from '$lib/types/climate';
 import type { VoiceNote } from '$lib/types/tree';
 import type { YrsStoredSnapshot } from '$lib/types/yrs';
-import { canAddTree } from '$lib/utils/featurePolicy';
 import { hasCadastreProvider } from '$lib/geo/countries';
 import { resolveCountry } from '$lib/geo/resolveCountry';
 import { isPoorAccuracy } from '$lib/utils/gps';
@@ -46,6 +46,7 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let persistInFlight: Promise<void> | null = null;
 let persistFlushRegistered = false;
 let persistBatchDepth = 0;
+let persistEpoch = 0;
 const dirtyTreeIds = new Set<string>();
 const hydrationPromises = new Map<string, Promise<Tree | undefined>>();
 
@@ -142,6 +143,7 @@ function normalizeTree(raw: LegacyTree): Tree {
 		harvestEthicsConfirmation: raw.harvestEthicsConfirmation ?? null,
 		environmentExposure: raw.environmentExposure ?? DEFAULT_ENVIRONMENT_EXPOSURE,
 		yrsAtCapture: raw.yrsAtCapture ?? null,
+		...normalizeRevisitFields(raw),
 		capturedAt: raw.capturedAt,
 		mediaHydration: raw.mediaHydration
 	};
@@ -167,12 +169,58 @@ function normalizeImportedTree(raw: LegacyTree): Tree {
 	return normalizeTree({ ...raw, id: sanitizeTreeId(raw.id) });
 }
 
+export type DiskTreeMergeMode = 'hydration' | 'thumbs-boot';
+
+/**
+ * Overlay in-memory metadata onto a tree loaded from disk so boot/hydration
+ * snapshots cannot clobber edits (notifyOnWindow, nextRevisitAt, notes, …).
+ */
+export function mergeDiskTreeWithCurrent(
+	fromDisk: Tree,
+	current: Tree,
+	mode: DiskTreeMergeMode
+): Tree {
+	const keepCurrentMedia = mode === 'thumbs-boot' && current.mediaHydration === 'full';
+	return {
+		...fromDisk,
+		species: current.species,
+		notes: current.notes,
+		assessment: current.assessment,
+		isFavorite: current.isFavorite,
+		environmentExposure: current.environmentExposure,
+		harvestEthicsConfirmation: current.harvestEthicsConfirmation,
+		...normalizeRevisitFields(current),
+		locationLabel: current.locationLabel,
+		cadastreInfo: current.cadastreInfo,
+		climateHistory: current.climateHistory,
+		photos: keepCurrentMedia ? current.photos : fromDisk.photos,
+		photoThumbs: keepCurrentMedia ? current.photoThumbs : fromDisk.photoThumbs,
+		visits: keepCurrentMedia ? current.visits : fromDisk.visits,
+		voiceNote: keepCurrentMedia ? current.voiceNote : fromDisk.voiceNote,
+		mediaHydration: keepCurrentMedia ? 'full' : fromDisk.mediaHydration
+	};
+}
+
+/** Keep dirty / fully hydrated in-memory trees when Phase B reloads thumbs. */
+export function applyThumbsBootTrees(loaded: Tree[]): Tree[] {
+	const byId = new Map(treeStore.trees.map((tree) => [tree.id, tree]));
+	return loaded.map((disk) => {
+		const current = byId.get(disk.id);
+		if (!current) return disk;
+		if (current.mediaHydration === 'full' || dirtyTreeIds.has(disk.id)) {
+			return mergeDiskTreeWithCurrent(disk, current, 'thumbs-boot');
+		}
+		return disk;
+	});
+}
+
 function updateTreeById(treeId: string, updater: (tree: Tree) => Tree): void {
 	treeStore.trees = treeStore.trees.map((tree) => (tree.id === treeId ? updater(tree) : tree));
 }
 
 function markTreeDirty(treeId: string): void {
 	dirtyTreeIds.add(treeId);
+	persistEpoch += 1;
 }
 
 /** Omit redundant top-level photos when visit payloads already carry them. */
@@ -245,7 +293,9 @@ async function completeTreesBoot(): Promise<void> {
 		}
 
 		const stored = await loadTreesFromStorage('thumbs');
-		treeStore.trees = stored.map((tree) => normalizeTree(tree as LegacyTree));
+		treeStore.trees = applyThumbsBootTrees(
+			stored.map((tree) => normalizeTree(tree as LegacyTree))
+		);
 	} catch (error) {
 		console.error('completeTreesBoot failed:', error);
 		if (!treeStore.loadError) {
@@ -293,14 +343,20 @@ export async function initTrees(): Promise<void> {
 }
 
 async function writeTreesToStorage(): Promise<void> {
-	const snapshot = $state.snapshot(treeStore.trees);
 	await yieldForPersist();
 
 	try {
 		const version = await getTreeStorageVersion();
+		const snapshot = $state.snapshot(treeStore.trees);
+		const epoch = persistEpoch;
+
 		if (version === 0) {
 			await secureIdbSet(STORAGE_KEY_LEGACY, toStorable(buildTreesPersistPayload(snapshot)));
-			dirtyTreeIds.clear();
+			if (persistEpoch === epoch) {
+				dirtyTreeIds.clear();
+			} else {
+				schedulePersist();
+			}
 			return;
 		}
 
@@ -310,7 +366,14 @@ async function writeTreesToStorage(): Promise<void> {
 
 		const dirtySnapshot = new Set(dirtyTreeIds);
 		await persistDirtyTrees(snapshot, dirtySnapshot);
-		dirtyTreeIds.clear();
+		if (persistEpoch === epoch) {
+			for (const id of dirtySnapshot) {
+				dirtyTreeIds.delete(id);
+			}
+		}
+		if (dirtyTreeIds.size > 0) {
+			schedulePersist();
+		}
 	} catch (error) {
 		if (isMigrationBlockedError(error)) {
 			return;
@@ -319,7 +382,9 @@ async function writeTreesToStorage(): Promise<void> {
 	}
 }
 
-async function flushPersist(): Promise<void> {
+let persistFailureNotified = false;
+
+async function flushPersist(options?: { notifyOnFailure?: boolean }): Promise<void> {
 	if (persistTimer) {
 		clearTimeout(persistTimer);
 		persistTimer = null;
@@ -332,6 +397,23 @@ async function flushPersist(): Promise<void> {
 	persistInFlight = writeTreesToStorage();
 	try {
 		await persistInFlight;
+		persistFailureNotified = false;
+	} catch (error) {
+		persistInFlight = null;
+		if (isMigrationBlockedError(error)) {
+			return;
+		}
+		if (options?.notifyOnFailure && !persistFailureNotified) {
+			persistFailureNotified = true;
+			const { showErrorToast } = await import('$lib/stores/appToast.svelte');
+			const { persistFailedCopy } = await import('$lib/utils/errorCopy');
+			const { resolveErrorCopy } = await import('$lib/utils/userFacingError');
+			showErrorToast(resolveErrorCopy(error, persistFailedCopy()));
+		}
+		if (!options?.notifyOnFailure) {
+			throw error;
+		}
+		return;
 	} finally {
 		persistInFlight = null;
 	}
@@ -351,18 +433,18 @@ function registerPersistFlush(): void {
 
 	document.addEventListener('visibilitychange', () => {
 		if (document.visibilityState === 'hidden') {
-			void flushPersist();
+			void flushPersist({ notifyOnFailure: true });
 		}
 	});
 
 	window.addEventListener('pagehide', () => {
-		void flushPersist();
+		void flushPersist({ notifyOnFailure: true });
 	});
 
 	if (isNativeApp()) {
 		void App.addListener('appStateChange', ({ isActive }) => {
 			if (!isActive && !isCameraCaptureActive()) {
-				void flushPersist();
+				void flushPersist({ notifyOnFailure: true });
 			}
 		});
 	}
@@ -380,7 +462,7 @@ function schedulePersist(treeId?: string): void {
 	}
 	persistTimer = setTimeout(() => {
 		persistTimer = null;
-		void flushPersist();
+		void flushPersist({ notifyOnFailure: true });
 	}, PERSIST_DEBOUNCE_MS);
 }
 
@@ -412,9 +494,15 @@ export async function ensureTreeHydrated(treeId: string): Promise<Tree | undefin
 		// Avoid store writes when media is still empty — re-writing would re-trigger
 		// detail-page / PhotoGallery $effects and freeze the UI.
 		if (!hasFullPhoto) {
-			return existing;
+			return getTreeById(treeId) ?? existing;
 		}
-		updateTreeById(treeId, () => ({ ...normalized, mediaHydration: 'full' }));
+		updateTreeById(treeId, (current) =>
+			mergeDiskTreeWithCurrent(
+				{ ...normalized, mediaHydration: 'full' },
+				current,
+				'hydration'
+			)
+		);
 		return getTreeById(treeId) ?? { ...normalized, mediaHydration: 'full' };
 	})();
 
@@ -427,10 +515,6 @@ export async function ensureTreeHydrated(treeId: string): Promise<Tree | undefin
 }
 
 export async function addTree(tree: NewTree): Promise<Tree> {
-	if (!canAddTree(treeStore.trees.length)) {
-		throw new Error(m.pro_tree_limit_reached());
-	}
-
 	const capturedAt = new Date().toISOString();
 	const photos = clampVisitPhotos(tree.photos);
 	const photoThumbs = tree.photoThumbs ? clampVisitPhotos(tree.photoThumbs) : undefined;
@@ -492,7 +576,17 @@ export async function toggleFavorite(id: string): Promise<void> {
 export async function updateTree(
 	id: string,
 	data: Partial<
-		Pick<Tree, 'species' | 'notes' | 'environmentExposure' | 'harvestEthicsConfirmation'>
+		Pick<
+			Tree,
+			| 'species'
+			| 'notes'
+			| 'environmentExposure'
+			| 'harvestEthicsConfirmation'
+			| 'nextRevisitAt'
+			| 'notifyOnWindow'
+			| 'windowNotifyArmed'
+			| 'dateNotifySentFor'
+		>
 	>
 ): Promise<void> {
 	updateTreeById(id, (tree) => ({ ...tree, ...data }));
@@ -777,6 +871,9 @@ export async function deleteTree(id: string): Promise<void> {
 	treeStore.trees = treeStore.trees.filter((t) => t.id !== id);
 	markTreeDirty(id);
 	schedulePersist(id);
+	void import('$lib/utils/revisitNotifications').then((mod) =>
+		mod.cancelAllRevisitNotificationsForTree(id)
+	);
 }
 
 export function treesWithGps(): Tree[] {
@@ -791,6 +888,8 @@ export function __resetTreesStoreForTests(): void {
 	treeStore.storageMigrationPending = false;
 	treeStore.storageMigrationProgress = 0;
 	dirtyTreeIds.clear();
+	persistEpoch = 0;
+	persistInFlight = null;
 	hydrationPromises.clear();
 	persistBatchDepth = 0;
 	if (persistTimer) {

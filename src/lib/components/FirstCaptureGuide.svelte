@@ -15,7 +15,6 @@
 	export type CaptureTutorialTarget =
 		| 'photo'
 		| 'gps'
-		| 'yrs'
 		| 'species'
 		| 'voice'
 		| 'assessment'
@@ -25,7 +24,6 @@
 	const ALL_STEPS: CaptureTutorialTarget[] = [
 		'photo',
 		'gps',
-		'yrs',
 		'species',
 		'voice',
 		'assessment',
@@ -34,7 +32,6 @@
 	];
 
 	const TOP_PANEL_STEPS = new Set<CaptureTutorialTarget>([
-		'yrs',
 		'species',
 		'voice',
 		'assessment',
@@ -61,8 +58,6 @@
 				return m.tutorial_capture_step_photo();
 			case 'gps':
 				return m.tutorial_capture_step_gps();
-			case 'yrs':
-				return m.tutorial_capture_step_yrs();
 			case 'species':
 				return m.tutorial_capture_step_species();
 			case 'voice':

@@ -71,10 +71,19 @@ Le script [`scripts/build-i18n-messages.mjs`](scripts/build-i18n-messages.mjs) e
 
 ## Politique de confidentialité (Play Store)
 
-Page publique hébergée via GitHub Pages (dossier [`docs/`](docs/)) :
+Pages publiques hébergées via GitHub Pages (dossier [`docs/`](docs/)) :
 
-| Langue | URL |
-|--------|-----|
+| Document | URL |
+|----------|-----|
+| Politique de confidentialité (FR) | https://voiston.github.io/Yamadori/privacy.html |
+| Mentions légales (FR) | https://voiston.github.io/Yamadori/mentions-legales.html |
+| CGU (FR) | https://voiston.github.io/Yamadori/cgu.html |
+| CGV (FR) | https://voiston.github.io/Yamadori/cgv.html |
+
+Autres langues : suffixe `-{locale}` (ex. `privacy-en.html`, `cgu-de.html`).
+
+| Langue | Politique de confidentialité |
+|--------|------------------------------|
 | Français | https://voiston.github.io/Yamadori/privacy.html |
 | Anglais | https://voiston.github.io/Yamadori/privacy-en.html |
 | Deutsch | https://voiston.github.io/Yamadori/privacy-de.html |
@@ -87,7 +96,7 @@ Page publique hébergée via GitHub Pages (dossier [`docs/`](docs/)) :
 | Dansk | https://voiston.github.io/Yamadori/privacy-da.html |
 | Suomi | https://voiston.github.io/Yamadori/privacy-fi.html |
 
-Régénérer après modification des clés `privacy_*` dans `messages/fr.json` ou `messages/en.json` :
+Régénérer après modification des clés `privacy_*`, `legal_*`, `terms_*` ou `sale_*` dans `messages/` :
 
 ```sh
 npm run privacy:docs
@@ -96,3 +105,28 @@ npm run privacy:docs
 **Activation GitHub Pages** (une fois) : Settings → Pages → Deploy from branch → `main` → `/docs`.
 
 URL à renseigner dans la Play Console : `https://voiston.github.io/Yamadori/privacy.html`
+
+Les pages privacy et CGV incluent un volet **hors UE/EEE** (ICO, pas de vente de données, remboursements Google Play, droits impératifs locaux). Les CGU ont un volet **utilisateurs aux États-Unis** (licence, disclaimer terrain, pas d’arbitrage). La privacy a un bloc **résidents de Californie** (catégories, do-not-sell, droits in-app) **sans** attestation « business » CCPA. Ce n’est pas un corpus d’avocat. **Ne jamais** afficher un badge « compliant US » ni l’équivalent pour un autre pays.
+
+### Play Console — Data safety (US / mondial)
+
+Ce tableau recopie le questionnaire Play. Il ne constitue **pas** une déclaration de conformité au droit américain ni à celui d’un autre pays. Yamadori est une aide de terrain, pas un support juridique.
+
+À recopier dans Play Console → Règles du programme → Sécurité des données. Aligner sur la politique : **pas de pub, pas de vente, localisation facultative**.
+
+| Question Play | Réponse Yamadori |
+|---------------|------------------|
+| Collecte de données | Oui, **sur l’appareil** : localisation (si GPS / APIs), photos, audio (notes vocales), notes. Pas de compte éditeur. Pas de jeton d’achat conservé. |
+| Localisation | Approximate + precise : **collectée**, pas partagée à des fins pub, **pas vendue**, usage fonctionnel (carte, météo, cadastre, zones), **optionnelle** (permission Android). |
+| Photos / vidéo | Collectées (galerie / appareil), stockées localement, pas partagées pour la pub. |
+| Audio | Notes vocales locales, pas de reconnaissance cloud éditeur. |
+| Achats | Historique géré par **Google Play** (pourboires facultatifs). L’app ne conserve pas de jeton et ne débloque aucune fonction. |
+| Identifiants | Pas d’ID publicitaire. IP technique seulement si une API tierce est activée (carte, météo, cadastre, géocodage). |
+| Partage | Uniquement les prestataires d’API **que l’utilisateur active** (IGN, OSM, Open-Meteo, etc.), pour la fonction. Pas de partage publicitaire. |
+| Vente de données | **Non** (do not sell or share). |
+| Chiffrement en transit | Oui, HTTPS vers les APIs activées. |
+| Suppression | Carnet / caches dans Réglages ; désinstallation. Contact : `david.voisard2@gmail.com`. |
+| Publicité / tracking | **Non**. |
+| Public cible | Pas destinée aux enfants (COPPA 13 / RGPD 16). |
+
+Fiche store US : titre/description **EN** (`messages/en.json` + listing Play), prix **USD** géré par Play, URL privacy `https://voiston.github.io/Yamadori/privacy-en.html` (ou `privacy.html` si une seule URL). Age IARC via le questionnaire Play. Les taxes US sont celles de Google Play, pas un merchant US.

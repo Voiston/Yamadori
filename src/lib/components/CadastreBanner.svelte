@@ -1,7 +1,10 @@
 <script lang="ts">
 	import type { CadastreInfo } from '$lib/types/cadastre';
+	import Skeleton from '$lib/components/Skeleton.svelte';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
 	import { getCadastreAccentClasses, getCadastreSummary } from '$lib/utils/cadastre';
 	import { effectiveCollectStatus } from '$lib/utils/cadastreRefs';
+	import { cadastreEmptyCopy, cadastreErrorCopy } from '$lib/utils/errorCopy';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let {
@@ -12,8 +15,10 @@
 		minimal = false,
 		dismissible = false,
 		checklistOpen = false,
+		failed = false,
 		ondismiss,
-		onchecklisttoggle
+		onchecklisttoggle,
+		onretry
 	}: {
 		info?: CadastreInfo | null;
 		loading?: boolean;
@@ -22,13 +27,21 @@
 		minimal?: boolean;
 		dismissible?: boolean;
 		checklistOpen?: boolean;
+		failed?: boolean;
 		ondismiss?: () => void;
 		onchecklisttoggle?: () => void;
+		onretry?: () => void;
 	} = $props();
 
 	const accent = $derived(info ? getCadastreAccentClasses(info.zoneType) : null);
 	const summary = $derived(info ? getCadastreSummary(info) : '');
 	const collectStatus = $derived(info ? effectiveCollectStatus(info) : null);
+	const cardPadding = $derived(compact ? 'px-3 py-2' : 'px-3 py-2.5');
+	const cardChrome = $derived(
+		`app-card relative overflow-hidden bg-white/95 text-left backdrop-blur-md ${
+			floating ? 'ring-1 ring-black/5' : ''
+		} ${cardPadding}`
+	);
 
 	function collectStatusLabel(status: NonNullable<CadastreInfo['collectStatus']>): string {
 		switch (status) {
@@ -59,20 +72,28 @@
 {#if loading}
 	<div
 		data-capture-tutorial="cadastre"
-		class="app-card bg-white/95 px-3 py-2 text-xs text-muted backdrop-blur-md {floating
-			? 'ring-1 ring-black/5'
-			: ''}"
+		class="{cardChrome} border-gray-200"
 		role="status"
 		aria-live="polite"
+		aria-busy="true"
 	>
-		{m.cadastre_loading()}
+		<div class="absolute inset-y-0 left-0 w-1 bg-gray-200" aria-hidden="true"></div>
+
+		<div class="flex items-start gap-2 pl-2">
+			<div class="min-w-0 flex-1">
+				<p class="text-xs leading-snug text-forest-900">{m.cadastre_loading()}</p>
+				<Skeleton class="mt-1.5 h-2.5 w-[88%] rounded" decorative />
+				<Skeleton class="mt-1 h-2 w-[52%] rounded" decorative />
+				{#if !minimal}
+					<Skeleton class="mt-1 h-2 w-[40%] rounded" decorative />
+				{/if}
+			</div>
+		</div>
 	</div>
 {:else if info && accent}
 	<div
 		data-capture-tutorial="cadastre"
-		class="app-card relative overflow-hidden bg-white/95 text-left backdrop-blur-md {accent.border} {floating
-			? 'ring-1 ring-black/5'
-			: ''} {compact ? 'px-3 py-2' : 'px-3 py-2.5'}"
+		class="{cardChrome} {accent.border}"
 		role="status"
 		aria-live="polite"
 	>
@@ -121,4 +142,8 @@
 			{/if}
 		</div>
 	</div>
+{:else if failed}
+	<ErrorBanner copy={cadastreErrorCopy()} tone="warning" onretry={onretry} />
+{:else}
+	<ErrorBanner copy={cadastreEmptyCopy()} tone="warning" />
 {/if}
