@@ -566,7 +566,8 @@ describe('archive export/import', () => {
 
 		expect(text).not.toContain('manifest.json');
 		expect(text).not.toContain('45.123456');
-		expect(text).not.toContain('PK');
+		expect(isPasswordProtectedArchive(buffer)).toBe(true);
+		expect(Array.from(buffer.subarray(0, 4))).not.toEqual([0x50, 0x4b, 0x03, 0x04]);
 	});
 });
 
