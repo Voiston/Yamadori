@@ -142,6 +142,8 @@ const GENUS_DEFAULTS: Record<string, SpeciesGddProfile> = {
 		{
 			dormance: 15,
 			bourgeon_gonfle: 55,
+			// Editorial slot: same relative position as the forest catalog between swollen bud and budbreak.
+			pointe_verte: 84,
 			debourrement: 110,
 			feuillaison: 220,
 			croissance_active: 350

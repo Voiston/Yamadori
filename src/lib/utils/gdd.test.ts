@@ -4,9 +4,11 @@ import {
 	getGddSeasonZone,
 	getSpeciesGddCategory,
 	isEvergreenSpecies,
+	isPinusSpecies,
 	resolveGddBaseCategory,
 	resolveGddBaseTemp
 } from '$lib/constants/gdd-config';
+import { getPhenologyObservedOptions } from '$lib/constants/assessment';
 import {
 	buildGddDailySeries,
 	buildTransitionLabel,
@@ -66,6 +68,38 @@ describe('projectGddSnapshotForward', () => {
 		);
 		expect(projected.phenology).toBe(phenology);
 		expect(projected.cumulativeSinceJan1).toBe(115.5);
+	});
+
+	it('drops logistic phenology when the projected day is in late season', () => {
+		const base = {
+			baseTempC: 4.5,
+			baseCategory: 'foret' as const,
+			cumulativeSinceJan1: 600,
+			last7dSum: 10,
+			dailySeries: [],
+			phenology: estimatePhenology(600, 'foret'),
+			phenologyUnavailableReason: null,
+			speciesLabel: 'Hêtre commun'
+		};
+		const projected = projectGddSnapshotForward(
+			base,
+			[{ date: '2026-10-16', meanTempC: 14 }],
+			'2026-10-15',
+			'2026-10-16',
+			{ latitude: 47.5 }
+		);
+		expect(projected.phenology).toBeNull();
+		expect(projected.phenologyUnavailableCode).toBe('late_season');
+
+		const july = projectGddSnapshotForward(
+			base,
+			[{ date: '2026-07-16', meanTempC: 20 }],
+			'2026-07-15',
+			'2026-07-16',
+			{ latitude: 47.5 }
+		);
+		expect(july.phenology).not.toBeNull();
+		expect(july.phenologyUnavailableCode ?? null).toBeNull();
 	});
 });
 
@@ -200,6 +234,33 @@ describe('species and biotope mapping', () => {
 	it('detects evergreen species', () => {
 		expect(isEvergreenSpecies('Pin sylvestre')).toBe(true);
 		expect(isEvergreenSpecies('Hêtre commun')).toBe(false);
+		expect(isEvergreenSpecies('Chêne vert')).toBe(true);
+		expect(isEvergreenSpecies('Coast live oak')).toBe(true);
+		expect(isPinusSpecies('Pin sylvestre')).toBe(true);
+		expect(isPinusSpecies('Pinus sylvestris')).toBe(true);
+		expect(isPinusSpecies('Genévrier commun')).toBe(false);
+		expect(isPinusSpecies('Olivier')).toBe(false);
+	});
+
+	it('offers candle stages only to pines and hides leaf-out on evergreens', () => {
+		const pine = getPhenologyObservedOptions('Pin sylvestre').map((option) => option.value);
+		const juniper = getPhenologyObservedOptions('Genévrier commun').map((option) => option.value);
+		const beech = getPhenologyObservedOptions('Hêtre commun').map((option) => option.value);
+
+		expect(pine).toContain('chandelle');
+		expect(pine).toContain('pinceau');
+		expect(pine).not.toContain('feuillaison');
+		expect(pine).not.toContain('pointe_verte');
+		expect(juniper).not.toContain('chandelle');
+		expect(juniper).not.toContain('pinceau');
+		expect(juniper).not.toContain('feuillaison');
+		expect(juniper).toContain('dormance');
+		expect(juniper).toContain('bourgeon_gonfle');
+		expect(juniper).toContain('debourrement');
+		expect(juniper).toContain('croissance_active');
+		expect(beech).toContain('feuillaison');
+		expect(beech).toContain('pointe_verte');
+		expect(beech).not.toContain('chandelle');
 	});
 });
 

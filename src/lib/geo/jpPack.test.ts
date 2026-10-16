@@ -6,7 +6,7 @@ import { findJpHarvestWindows, resolveJpHarvestZone } from '$lib/geo/jpHarvestCa
 import { resolveHarvestCalendarPrior } from '$lib/geo/harvestWindowPrior';
 import { resolveCountry } from '$lib/geo/resolveCountry';
 import { getGeoCapabilities } from '$lib/geo/capabilities';
-import { getLegalContentPack } from '$lib/geo/legal';
+import { getLegalContentPack, isLegalPackReadyForUi } from '$lib/geo/legal';
 import { JP_LEGAL_HUMAN_REVIEW, JP_LEGAL_SOURCES } from '$lib/geo/legal/jpSources';
 import { getJpPermitLinks, resolveJpPrefecture } from '$lib/geo/legal/jpPermitLinks';
 import { getSpeciesProtectionPack } from '$lib/geo/providers/species-protection/packs';
@@ -52,7 +52,14 @@ describe('JP legal / permits / species / viewer', () => {
 
 	it('keeps human review gate pending', () => {
 		expect(JP_LEGAL_HUMAN_REVIEW.status).toBe('pending_human_review');
+		expect(JP_LEGAL_HUMAN_REVIEW.reviewedAt).toBeNull();
 		expect(JP_LEGAL_SOURCES.every((row) => row.url && !row.url.includes('japaneseese'))).toBe(true);
+	});
+
+	it('hides the JP pack from UI until reviewedAt is set', () => {
+		expect(isLegalPackReadyForUi('JP')).toBe(false);
+		expect(isLegalPackReadyForUi('FR')).toBe(true);
+		expect(getLegalContentPack('JP').articles.length).toBeGreaterThanOrEqual(6);
 	});
 
 	it('resolves prefectures to MOE regional hubs without Google', () => {

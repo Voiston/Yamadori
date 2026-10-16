@@ -63,8 +63,7 @@ export async function resolveAgriData(
 				cachedAt: null,
 				cacheDistanceM: null,
 				cacheStale: false,
-				error:
-					error instanceof Error ? error.message : m.agri_error_fetch()
+				error: m.agri_error_fetch()
 			};
 		}
 	}

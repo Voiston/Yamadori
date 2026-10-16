@@ -37,6 +37,7 @@
 		longitude?: number | null;
 		onretry?: () => void;
 		open?: boolean;
+		embedded?: boolean;
 	}
 
 	let {
@@ -54,7 +55,8 @@
 		latitude = null,
 		longitude = null,
 		onretry,
-		open = $bindable(false)
+		open = $bindable(false),
+		embedded = false
 	}: Props = $props();
 
 	let climateFetchRequested = $state(false);
@@ -110,20 +112,8 @@
 	});
 </script>
 
-<details class="app-card" bind:open>
-	<summary class="cursor-pointer px-4 py-3 font-medium text-forest-900 select-none">
-		{m.climate_section_title()}
-		{#if yrs}
-			<span class="ml-2 text-sm font-normal text-muted">
-				YRS <strong class={yrsDecisionClass(yrs.decision)}>{yrs.score}</strong>
-				<span class={yrsDecisionClass(yrs.decision)}>({yrsDecisionLabels[yrs.decision]})</span>
-			</span>
-		{:else if agriData.loading}
-			<span class="ml-2 text-sm font-normal text-muted">{m.climate_loading()}</span>
-		{/if}
-	</summary>
-
-	<div class="border-t border-gray-100 px-4 py-3">
+{#snippet sectionBody()}
+	<div class={embedded ? 'px-4 py-3' : 'border-t border-gray-100 px-4 py-3'}>
 		{#if showFranceCalibrationDisclaimer}
 			<p class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950" role="status">
 				{m.gdd_france_calibration_disclaimer()}
@@ -140,6 +130,7 @@
 			{environmentExposure}
 			{loading}
 			{onretry}
+			{embedded}
 		/>
 
 		{#if climate || loading || error}
@@ -148,4 +139,27 @@
 			</div>
 		{/if}
 	</div>
-</details>
+{/snippet}
+
+{#if embedded}
+	{#if open}
+		<div class="app-card overflow-hidden">
+			{@render sectionBody()}
+		</div>
+	{/if}
+{:else}
+	<details class="app-card" bind:open>
+		<summary class="cursor-pointer px-4 py-3 font-medium text-forest-900 select-none">
+			{m.climate_section_title()}
+			{#if yrs}
+				<span class="ml-2 text-sm font-normal text-muted">
+					YRS <strong class={yrsDecisionClass(yrs.decision)}>{yrs.score}</strong>
+					<span class={yrsDecisionClass(yrs.decision)}>({yrsDecisionLabels[yrs.decision]})</span>
+				</span>
+			{:else if agriData.loading}
+				<span class="ml-2 text-sm font-normal text-muted">{m.climate_loading()}</span>
+			{/if}
+		</summary>
+		{@render sectionBody()}
+	</details>
+{/if}

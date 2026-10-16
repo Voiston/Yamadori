@@ -2,7 +2,7 @@ import * as m from '$lib/paraglide/messages.js';
 import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate';
 import { sha256Hex } from './checksums';
 import { base64ToBytes, decryptEnvelope, decryptPayload, isPasswordProtectedArchive } from './crypto';
-import { bytesToDataUrl, mimeTypeForExtension } from './media';
+import { mimeTypeForExtension, sanitizeAudioBytes, sanitizeImageBytes } from './media';
 import {
 	ARCHIVE_DONNEES_ENC_PATH,
 	ARCHIVE_DONNEES_JSON_PATH,
@@ -11,6 +11,7 @@ import {
 	ArchiveError,
 	MAX_ARCHIVE_BYTES,
 	MAX_DECOMPRESSED_BYTES,
+	type ArchiveKind,
 	type ArchiveParseOptions,
 	type ArchiveImportPreview,
 	type ArchiveManifest,
@@ -20,11 +21,13 @@ import {
 	type TreeVisitArchive,
 	type VoiceNoteArchive,
 	type YamadoriArchiveData,
-	type ZipEntryMap
+	type ZipEntryMap,
+	resolveArchiveKind
 } from './types';
 import type { Tree, TreeVisit, VoiceNote } from '$lib/types/tree';
 import { DEFAULT_ASSESSMENT, clampVisitPhotos } from '$lib/types/tree';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
+import { normalizeRevisitFields } from '$lib/utils/revisit';
 import { normalizeDeadwood } from '$lib/constants/assessment';
 import { sanitizeTreeId } from '$lib/utils/id';
 import { parseArchivePayload } from './payloadSchema';
@@ -214,7 +217,12 @@ async function verifyChecksums(manifest: ArchiveManifest, entries: ZipEntryMap):
 	}
 }
 
-function loadMediaAsDataUrl(entries: ZipEntryMap, path: string, mimeOverride?: string): string {
+function loadMediaAsDataUrl(
+	entries: ZipEntryMap,
+	path: string,
+	mimeOverride?: string,
+	kind: 'image' | 'audio' = 'image'
+): string {
 	if (!path) return '';
 	const data = getZipEntry(entries, path);
 	if (!data) {
@@ -222,12 +230,12 @@ function loadMediaAsDataUrl(entries: ZipEntryMap, path: string, mimeOverride?: s
 	}
 
 	const normalizedMime = mimeOverride?.split(';')[0]?.trim().toLowerCase();
-	const mimeType =
-		normalizedMime ||
-		mimeTypeForExtension(normalizeZipPath(path)) ||
-		'application/octet-stream';
+	const mimeType = normalizedMime || mimeTypeForExtension(normalizeZipPath(path));
 
-	return bytesToDataUrl(data, mimeType);
+	if (kind === 'audio') {
+		return sanitizeAudioBytes(data, mimeType);
+	}
+	return sanitizeImageBytes(data, mimeType);
 }
 
 function voiceNoteFromArchive(
@@ -236,7 +244,7 @@ function voiceNoteFromArchive(
 ): VoiceNote | null {
 	if (!note?.mediaPath) return null;
 
-	const audioBase64 = loadMediaAsDataUrl(entries, note.mediaPath, note.mimeType);
+	const audioBase64 = loadMediaAsDataUrl(entries, note.mediaPath, note.mimeType, 'audio');
 	if (!audioBase64) return null;
 
 	return {
@@ -279,12 +287,12 @@ function resolvePayloadKeyMaterial(manifest: ArchiveManifest): Uint8Array | unde
 	return undefined;
 }
 
-function treeFromArchive(entries: ZipEntryMap, archive: TreeArchive): Tree {
-	return {
+function treeFromArchive(entries: ZipEntryMap, archive: TreeArchive, kind: ArchiveKind): Tree {
+	const tree: Tree = {
 		id: sanitizeTreeId(archive.id),
 		species: archive.species,
 		notes: archive.notes,
-		photos: archive.photos.map((path) => loadMediaAsDataUrl(entries, path)),
+		photos: archive.photos.map((path) => loadMediaAsDataUrl(entries, path)).filter(Boolean),
 		visits: archive.visits.map((visit) => visitFromArchive(entries, visit)),
 		assessment: {
 			...DEFAULT_ASSESSMENT,
@@ -304,7 +312,19 @@ function treeFromArchive(entries: ZipEntryMap, archive: TreeArchive): Tree {
 		harvestEthicsConfirmation: archive.harvestEthicsConfirmation ?? null,
 		environmentExposure: archive.environmentExposure ?? DEFAULT_ENVIRONMENT_EXPOSURE,
 		yrsAtCapture: archive.yrsAtCapture ?? null,
+		...normalizeRevisitFields(archive),
 		capturedAt: archive.capturedAt
+	};
+
+	if (kind !== 'tree-share') {
+		return tree;
+	}
+
+	return {
+		...tree,
+		notifyOnWindow: false,
+		windowNotifyArmed: false,
+		dateNotifySentFor: null
 	};
 }
 
@@ -448,12 +468,14 @@ async function parseArchiveZip(
 	validatePayload(data, entries);
 	onProgress?.('decrypt', 90);
 
-	const trees = data.trees.map((tree) => treeFromArchive(entries, tree));
+	const kind = resolveArchiveKind(manifest.kind);
+	const trees = data.trees.map((tree) => treeFromArchive(entries, tree, kind));
 	const preview: ArchiveImportPreview = {
 		treeCount: data.trees.length,
 		mediaFileCount: manifest.stats.mediaFileCount,
 		exportedAt: manifest.exportedAt,
-		appVersion: manifest.appVersion
+		appVersion: manifest.appVersion,
+		kind
 	};
 
 	onProgress?.('decrypt', 100);
@@ -461,9 +483,10 @@ async function parseArchiveZip(
 	return {
 		trees,
 		parking: data.parking,
-		appearanceSettings: data.appearanceSettings ?? { outdoorMode: false, darkMode: false, simpleMode: false },
+		appearanceSettings: data.appearanceSettings ?? { outdoorMode: false, darkMode: false, simpleMode: true },
 		apiSettings: data.apiSettings,
-		preview
+		preview,
+		kind
 	};
 }
 
@@ -520,4 +543,61 @@ export async function readArchiveManifestKeyScope(
 		return 'plaintext';
 	}
 	return manifest.encryption.keyScope === 'archive' ? 'archive' : 'app';
+}
+
+export type IncomingArchiveInspection = {
+	kind: ArchiveKind;
+	archive: RebuiltArchive | null;
+};
+
+/**
+ * Unzip once: tree-share archives are fully rebuilt; backups only expose `kind`
+ * so the UI can route without decoding media.
+ */
+export async function inspectIncomingArchive(
+	blob: Blob,
+	options?: ArchiveParseOptions
+): Promise<IncomingArchiveInspection> {
+	if (blob.size > MAX_ARCHIVE_BYTES) {
+		throw new ArchiveError('ARCHIVE_TOO_LARGE', m.archive_too_large());
+	}
+
+	const buffer = await readBlobBytes(blob);
+	let zipBuffer = buffer;
+
+	if (isPasswordProtectedArchive(buffer)) {
+		if (!options?.password) {
+			throw new ArchiveError('ARCHIVE_PASSWORD_REQUIRED', m.archive_password_required());
+		}
+		try {
+			zipBuffer = await decryptEnvelope(buffer, options.password);
+		} catch (error) {
+			if (error instanceof ArchiveError && error.code === 'ARCHIVE_WRONG_PASSWORD') {
+				throw new ArchiveError('ARCHIVE_WRONG_PASSWORD', m.archive_wrong_password());
+			}
+			throw error;
+		}
+	}
+
+	let entries: ZipEntryMap;
+	try {
+		entries = await unzipToMap(zipBuffer);
+	} catch (error) {
+		if (error instanceof ArchiveError) throw error;
+		throw new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_invalid_zip());
+	}
+
+	const manifestBytes = getZipEntry(entries, ARCHIVE_MANIFEST_PATH);
+	if (!manifestBytes) {
+		throw new ArchiveError('ARCHIVE_MANIFEST_MISSING', m.archive_manifest_missing());
+	}
+
+	const manifest = parseManifest(manifestBytes);
+	const kind = resolveArchiveKind(manifest.kind);
+	if (kind !== 'tree-share') {
+		return { kind, archive: null };
+	}
+
+	const archive = await parseArchiveZip(zipBuffer, options?.onProgress);
+	return { kind, archive };
 }

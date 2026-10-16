@@ -69,14 +69,19 @@ async function writeArchiveToCache(blob: Blob, filename: string): Promise<string
 	return uri;
 }
 
-async function shareArchive(blob: Blob, filename: string): Promise<'shared'> {
+async function shareArchive(
+	blob: Blob,
+	filename: string,
+	shareTitle?: string
+): Promise<'shared'> {
 	const uri = await writeArchiveToCache(blob, filename);
+	const title = shareTitle ?? m.backup_export_dialog_title();
 
 	try {
 		await Share.share({
-			title: m.backup_export_dialog_title(),
+			title,
 			files: [uri],
-			dialogTitle: m.backup_export_dialog_title()
+			dialogTitle: title
 		});
 	} catch (error) {
 		if (isShareCanceled(error)) {
@@ -108,10 +113,15 @@ async function saveArchiveToDownloadsLegacy(blob: Blob, filename: string): Promi
 	return 'saved';
 }
 
+export type ArchiveDeliveryOptions = {
+	shareTitle?: string;
+};
+
 export async function deliverArchive(
 	blob: Blob,
 	filename: string,
-	mode: ArchiveDeliveryMode = 'share'
+	mode: ArchiveDeliveryMode = 'share',
+	options?: ArchiveDeliveryOptions
 ): Promise<ArchiveDeliveryResult> {
 	if (!isNativeApp()) {
 		downloadBlob(blob, filename);
@@ -133,5 +143,5 @@ export async function deliverArchive(
 		return 'downloaded';
 	}
 
-	return shareArchive(blob, filename);
+	return shareArchive(blob, filename, options?.shareTitle);
 }

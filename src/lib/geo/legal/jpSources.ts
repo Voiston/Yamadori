@@ -28,8 +28,10 @@ export type JpLegalSourceRow = {
  * Flip to `{ status: 'reviewed', reviewedAt: ISO, reviewer: '…' }` only after human sign-off.
  * Automated tests assert that pending packs expose this flag.
  */
+export type LegalHumanReviewStatus = 'pending_human_review' | 'reviewed';
+
 export const JP_LEGAL_HUMAN_REVIEW = {
-	status: 'pending_human_review' as const,
+	status: 'pending_human_review' as LegalHumanReviewStatus,
 	reviewedAt: null as string | null,
 	reviewer: null as string | null,
 	notes:

@@ -32,7 +32,8 @@ export function enrichAgriData(
 				enriched.longitude,
 				new Date(enriched.fetchedAt),
 				plantInputs,
-				gdd
+				// Unscaled snapshot: weekly viability applies exposure itself.
+				data.gdd
 			)
 		};
 	} else if (exposure !== DEFAULT_ENVIRONMENT_EXPOSURE) {

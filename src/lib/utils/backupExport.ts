@@ -13,7 +13,8 @@ import {
 	buildArchive,
 	deliverArchive,
 	type ArchiveDeliveryMode,
-	type ArchiveDeliveryResult
+	type ArchiveDeliveryResult,
+	type ArchiveProgressCallback
 } from '$lib/utils/archive';
 import { countTreesWithMissingPhotos } from '$lib/utils/archive/missingPhotos';
 import { markBackupExported } from '$lib/utils/backupReminder.svelte';
@@ -25,6 +26,7 @@ import pkg from '../../../package.json';
 export type ExportAppBackupOptions = {
 	password?: string;
 	appVersion?: string;
+	onProgress?: ArchiveProgressCallback;
 };
 
 export type ExportAppBackupOutcome = {
@@ -95,7 +97,7 @@ export async function exportAppBackup(
 			apiSettings: getApiSettingsSnapshot(),
 			appVersion
 		},
-		{ password: options?.password }
+		{ password: options?.password, onProgress: options?.onProgress }
 	);
 	const delivery = await deliverArchive(blob, filename, mode);
 	await markBackupExported(treeStore.trees, parkingStore.position);

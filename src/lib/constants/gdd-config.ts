@@ -36,6 +36,7 @@ export const EVERGREEN_SPECIES = new Set([
 	'Buis',
 	'If',
 	'Tamaris',
+	'Chêne vert',
 	// US / CA
 	'Utah juniper',
 	'Ponderosa pine',
@@ -49,6 +50,7 @@ export const EVERGREEN_SPECIES = new Set([
 	'Eastern white cedar',
 	'White spruce',
 	'Jack pine',
+	'Coast live oak',
 	// NZ / AU
 	'Pohutukawa',
 	'Mānuka',
@@ -333,6 +335,38 @@ export function isEvergreenSpecies(species: string): boolean {
 	if (EVERGREEN_SPECIES.has(trimmed)) return true;
 	const resolved = resolveSpeciesCanonicalName(trimmed, EVERGREEN_SPECIES);
 	return resolved !== null && EVERGREEN_SPECIES.has(resolved);
+}
+
+/** Pins : seuls persistants pour lesquels chandelle et pinceau sont des stades terrain. */
+export const PINUS_SPECIES = new Set([
+	'Pin sylvestre',
+	'Pin noir',
+	'Pin maritime',
+	"Pin d'Alep",
+	'Pin à crochets',
+	'Pin cembro',
+	'Ponderosa pine',
+	'Lodgepole pine',
+	'Bristlecone pine',
+	'Jack pine',
+	'Japanese black pine',
+	'Pinus thunbergii',
+	'Pin noir du Japon',
+	'Japanese red pine',
+	'Pinus densiflora',
+	'Pin rouge du Japon',
+	'Japanese white pine',
+	'Pinus parviflora',
+	'Pin blanc du Japon',
+	'Pinheiro-bravo'
+]);
+
+export function isPinusSpecies(species: string): boolean {
+	const trimmed = species.trim();
+	if (!trimmed) return false;
+	if (PINUS_SPECIES.has(trimmed)) return true;
+	const resolved = resolveSpeciesCanonicalName(trimmed, PINUS_SPECIES);
+	return resolved !== null && PINUS_SPECIES.has(resolved);
 }
 
 /** True when the species is in the YRS GDD catalog (foret, montagnarde, or evergreen). */

@@ -16,6 +16,7 @@ import type {
 	GddStageProbability
 } from '$lib/types/gdd';
 import { dailyMeanForDate } from '$lib/utils/agri';
+import { isLateSeasonPhenologyContext } from '$lib/utils/yrs';
 import {
 	fetchGddArchiveDailyMeans,
 	getArchiveEndDate,
@@ -130,6 +131,43 @@ export function estimatePhenology(
 	};
 }
 
+function isEvergreenPhenologyLocked(gdd: GddSnapshot): boolean {
+	if (gdd.phenologyUnavailableCode === 'evergreen') return true;
+	if (gdd.phenologyUnavailableCode === 'late_season') return false;
+	return Boolean(gdd.phenologyUnavailableReason);
+}
+
+/** Recompute phenology after a GDD change, and drop the logistic model in late season. */
+export function refreshSnapshotPhenology(
+	gdd: GddSnapshot,
+	cumulativeSinceJan1: number,
+	options: { refresh?: boolean; latitude?: number; referenceDate?: Date } = {}
+): Pick<GddSnapshot, 'phenology' | 'phenologyUnavailableReason' | 'phenologyUnavailableCode'> {
+	const refresh = options.refresh ?? true;
+	const lateSeason =
+		options.latitude !== undefined &&
+		options.referenceDate !== undefined &&
+		isLateSeasonPhenologyContext(options.latitude, options.referenceDate);
+	const evergreenLocked = isEvergreenPhenologyLocked(gdd);
+	let phenology = gdd.phenology;
+	let phenologyUnavailableReason = gdd.phenologyUnavailableReason;
+	let phenologyUnavailableCode = gdd.phenologyUnavailableCode ?? null;
+
+	if (!evergreenLocked && lateSeason) {
+		phenology = null;
+		phenologyUnavailableReason = m.gdd_late_season_reason();
+		phenologyUnavailableCode = 'late_season';
+	} else if (refresh && !evergreenLocked && !lateSeason) {
+		phenology = estimatePhenology(cumulativeSinceJan1, gdd.baseCategory, gdd.speciesLabel);
+		if (phenologyUnavailableCode === 'late_season') {
+			phenologyUnavailableReason = null;
+			phenologyUnavailableCode = null;
+		}
+	}
+
+	return { phenology, phenologyUnavailableReason, phenologyUnavailableCode };
+}
+
 /**
  * Advance a GDD snapshot by summing daily GDD for forecast days after `fromDate` through `throughDate`.
  * Used by weekly viability so phenology/climate layers progress across the chart.
@@ -139,7 +177,7 @@ export function projectGddSnapshotForward(
 	dailyMeanTemps: readonly { date: string; meanTempC: number | null }[],
 	fromDate: string,
 	throughDate: string,
-	options: { refreshPhenology?: boolean } = {}
+	options: { refreshPhenology?: boolean; latitude?: number } = {}
 ): GddSnapshot {
 	const { refreshPhenology = true } = options;
 	if (throughDate <= fromDate) {
@@ -156,16 +194,16 @@ export function projectGddSnapshotForward(
 	}
 
 	const cumulativeSinceJan1 = round1(gdd.cumulativeSinceJan1 + added);
-	const evergreen = Boolean(gdd.phenologyUnavailableReason);
-	const phenology =
-		refreshPhenology && !evergreen
-			? estimatePhenology(cumulativeSinceJan1, gdd.baseCategory, gdd.speciesLabel)
-			: gdd.phenology;
+	const phenologyFields = refreshSnapshotPhenology(gdd, cumulativeSinceJan1, {
+		refresh: refreshPhenology,
+		latitude: options.latitude,
+		referenceDate: new Date(`${throughDate}T12:00:00`)
+	});
 
 	return {
 		...gdd,
 		cumulativeSinceJan1,
-		phenology
+		...phenologyFields
 	};
 }
 
@@ -302,10 +340,17 @@ export async function computeGddSnapshot(
 	const last7dSum = computeGddLast7dSum(dailySeries, referenceDate);
 
 	const evergreen = trimmedSpecies ? isEvergreenSpecies(trimmedSpecies) : false;
-	const phenology = evergreen
-		? null
-		: estimatePhenology(cumulativeSinceJan1, category, trimmedSpecies || null);
-	const phenologyUnavailableReason = evergreen ? m.gdd_evergreen_reason() : null;
+	const lateSeason = isLateSeasonPhenologyContext(latitude, referenceDate);
+	const phenology =
+		evergreen || lateSeason
+			? null
+			: estimatePhenology(cumulativeSinceJan1, category, trimmedSpecies || null);
+	const phenologyUnavailableCode = evergreen ? 'evergreen' : lateSeason ? 'late_season' : null;
+	const phenologyUnavailableReason = evergreen
+		? m.gdd_evergreen_reason()
+		: lateSeason
+			? m.gdd_late_season_reason()
+			: null;
 
 	return {
 		baseTempC,
@@ -315,6 +360,7 @@ export async function computeGddSnapshot(
 		dailySeries,
 		phenology,
 		phenologyUnavailableReason,
+		phenologyUnavailableCode,
 		speciesLabel: trimmedSpecies || null
 	};
 }

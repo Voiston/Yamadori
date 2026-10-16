@@ -2,11 +2,8 @@ import * as m from '$lib/paraglide/messages.js';
 
 const INTERNAL_ERROR_CODES = new Set([
 	'missing_purchase_token',
-	'acknowledge_failed',
+	'consume_failed',
 	'purchase_failed',
-	'restore_failed',
-	'promo_purchase_failed',
-	'promo_purchase_blocked',
 	'purchase_timeout'
 ]);
 
@@ -54,21 +51,17 @@ export function formatBillingError(code: string | null): string | null {
 
 	switch (code) {
 		case 'missing_purchase_token':
-			return m.pro_error_missing_token();
-		case 'restore_failed':
-			return m.pro_error_restore_failed();
-		case 'promo_purchase_failed':
-			return m.pro_promo_purchase_failed();
-		case 'promo_purchase_blocked':
-			return m.pro_promo_purchase_blocked();
+			return m.support_error_missing_token();
+		case 'consume_failed':
+			return m.support_error_consume_failed();
 		case 'purchase_timeout':
-			return m.pro_purchase_timeout();
+			return m.support_purchase_timeout();
 		case 'purchase_failed':
-			return m.pro_purchase_error();
+			return m.support_purchase_error();
 		default:
 			if (INTERNAL_ERROR_CODES.has(code)) {
-				return m.pro_purchase_error();
+				return m.support_purchase_error();
 			}
-			return m.pro_purchase_error();
+			return m.support_purchase_error();
 	}
 }

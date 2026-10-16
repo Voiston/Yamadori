@@ -1,24 +1,17 @@
 import { NativePurchases, PURCHASE_TYPE } from '@capgo/native-purchases';
 import {
-	isProProductId,
-	PRO_PRODUCT_ID,
-	PRO_PROMO_PRODUCT_ID,
-	PRO_PRODUCT_IDS
-} from '$lib/constants/pro';
-import { proPromoState } from '$lib/stores/proPromo.svelte';
+	isLegacyProProductId,
+	isSupportProductId,
+	SUPPORT_PRODUCT_IDS,
+	type SupportProductId
+} from '$lib/constants/support';
 import {
-	applyEntitlementFromPurchase,
-	applyOfflineEntitlementFromSecureStorage,
-	clearEntitlement,
-	proEntitlementState,
-	setProLastError,
-	setProPurchasePending
-} from '$lib/stores/proEntitlement.svelte';
-import {
-	getProPromoState,
-	resolveProProductId,
-	type ProOfferPhase
-} from '$lib/utils/proOffer';
+	setLegacySupporter,
+	setSupportLastError,
+	setSupportPurchasePending,
+	supportBillingState,
+	clearLegacyProStorage
+} from '$lib/stores/supportBilling.svelte';
 import {
 	isBillingAlreadyOwnedError,
 	isBillingCancellationError,
@@ -40,12 +33,42 @@ const BILLING_RETRY_COOLDOWN_MS = 300;
 const PURCHASE_RECONCILE_DEBOUNCE_MS = 400;
 const PURCHASE_GRACE_PERIOD_MS = 800;
 
+const consumedTokens = new Set<string>();
+
 let inflightPurchaseResolve: ((transaction: BillingTransaction) => void) | null = null;
 let inflightPurchaseReject: ((error: Error) => void) | null = null;
 let inflightPurchaseTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let reconcileTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let activePurchaseGeneration = 0;
 let purchaseLaunchedAt = 0;
+
+export type BillingTransaction = {
+	productIdentifier?: string;
+	transactionId?: string;
+	purchaseToken?: string;
+	purchaseState?: string | number;
+	isAcknowledged?: boolean;
+};
+
+type PlayCatalogProduct = {
+	identifier?: string;
+	productIdentifier?: string;
+	priceString?: string;
+	title?: string;
+};
+
+export interface SupportProductInfo {
+	priceString: string;
+	title: string;
+	productId: SupportProductId;
+}
+
+export type PurchaseReconcileResult = 'completed' | 'cancelled' | 'still_pending';
+
+export type SupportStoreSync = {
+	consumed: number;
+	legacySupporter: boolean;
+};
 
 function clearInflightPurchaseHandlers(): void {
 	inflightPurchaseResolve = null;
@@ -78,13 +101,160 @@ function abortInflightPurchasePromise(reason: string): void {
 
 export function abortInflightPurchase(reason = 'purchase_aborted'): void {
 	abortInflightPurchasePromise(reason);
-	setProPurchasePending(false);
+	setSupportPurchasePending(false);
 }
 
-export type PurchaseReconcileResult = 'completed' | 'cancelled' | 'still_pending';
+export function isBillingSupported(): boolean {
+	return isAndroidApp();
+}
+
+export function isBillingAvailable(): boolean {
+	return isBillingSupported();
+}
+
+export function getPurchaseToken(transaction: BillingTransaction): string | null {
+	return transaction.purchaseToken ?? transaction.transactionId ?? null;
+}
+
+function isPurchasedState(state: string | number | undefined): boolean {
+	if (state === undefined) {
+		return false;
+	}
+	return state === 1 || state === '1' || state === 'PURCHASED';
+}
+
+export function isValidSupportPurchase(transaction: BillingTransaction): boolean {
+	if (!transaction.productIdentifier || !isSupportProductId(transaction.productIdentifier)) {
+		return false;
+	}
+	if (!isPurchasedState(transaction.purchaseState)) {
+		return false;
+	}
+	return Boolean(getPurchaseToken(transaction));
+}
+
+function isAlreadyConsumedError(error: unknown): boolean {
+	const code = normalizeBillingErrorCode(error);
+	return /already consumed|item not owned|not owned/i.test(code);
+}
+
+async function consumeSupportPurchase(token: string): Promise<void> {
+	await runBillingTask(async () => {
+		if (consumedTokens.has(token)) {
+			return;
+		}
+		try {
+			await NativePurchases.consumePurchase({ purchaseToken: token });
+		} catch (error) {
+			if (!isAlreadyConsumedError(error)) {
+				throw error;
+			}
+		}
+		consumedTokens.add(token);
+	});
+}
+
+async function finalizeSupportPurchase(transaction: BillingTransaction): Promise<boolean> {
+	if (!isValidSupportPurchase(transaction)) {
+		setSupportLastError('purchase_failed');
+		return false;
+	}
+
+	const token = getPurchaseToken(transaction);
+	if (!token) {
+		setSupportLastError('missing_purchase_token');
+		return false;
+	}
+
+	try {
+		await consumeSupportPurchase(token);
+		setSupportLastError(null);
+		return true;
+	} catch {
+		setSupportLastError('consume_failed');
+		return false;
+	}
+}
+
+async function listInAppPurchases(): Promise<BillingTransaction[]> {
+	const { purchases } = await runBillingTask(() =>
+		NativePurchases.getPurchases({
+			productType: PURCHASE_TYPE.INAPP
+		})
+	);
+	return purchases ?? [];
+}
+
+/** Consume unconsumed tips and note a legacy Pro purchase. Does not unlock anything. */
+export async function syncSupportPurchasesFromStore(): Promise<SupportStoreSync> {
+	if (!isBillingSupported()) {
+		return { consumed: 0, legacySupporter: false };
+	}
+
+	const purchases = await listInAppPurchases();
+	let legacySupporter = false;
+	let consumed = 0;
+
+	for (const purchase of purchases) {
+		const productId = purchase.productIdentifier;
+		if (productId && isLegacyProProductId(productId)) {
+			legacySupporter = true;
+		}
+		if (!isValidSupportPurchase(purchase)) {
+			continue;
+		}
+		const token = getPurchaseToken(purchase);
+		if (!token || consumedTokens.has(token)) {
+			continue;
+		}
+		await consumeSupportPurchase(token);
+		consumed += 1;
+	}
+
+	setLegacySupporter(legacySupporter);
+	return { consumed, legacySupporter };
+}
+
+export async function refreshLegacySupporter(): Promise<boolean> {
+	const sync = await syncSupportPurchasesFromStore();
+	return sync.legacySupporter;
+}
+
+export async function reconcilePendingPurchase(): Promise<PurchaseReconcileResult> {
+	if (!supportBillingState.purchasePending) {
+		return 'still_pending';
+	}
+	if (Date.now() - purchaseLaunchedAt < PURCHASE_GRACE_PERIOD_MS) {
+		return 'still_pending';
+	}
+	if (!isBillingSupported()) {
+		return 'still_pending';
+	}
+
+	try {
+		const purchases = await listInAppPurchases();
+		const pendingTip = purchases.find(isValidSupportPurchase) ?? null;
+		if (pendingTip) {
+			const granted = await finalizeSupportPurchase(pendingTip);
+			if (granted) {
+				resolveInflightPurchase(pendingTip);
+				setSupportPurchasePending(false);
+				return 'completed';
+			}
+			if (supportBillingState.lastError === 'consume_failed') {
+				return 'still_pending';
+			}
+		}
+	} catch {
+		// Fall through to cancellation.
+	}
+
+	abortInflightPurchase('purchase_aborted_on_resume');
+	return 'cancelled';
+}
 
 export function scheduleBillingReconcile(): void {
-	if (!proEntitlementState.purchasePending) {
+	if (!supportBillingState.purchasePending) {
 		return;
 	}
 	if (reconcileTimeoutId !== null) {
@@ -101,210 +271,7 @@ export function handleBillingAppResume(): void {
 	scheduleBillingReconcile();
 }
 
-export async function reconcilePendingPurchase(): Promise<PurchaseReconcileResult> {
-	if (!proEntitlementState.purchasePending) {
-		return 'still_pending';
-	}
-	if (Date.now() - purchaseLaunchedAt < PURCHASE_GRACE_PERIOD_MS) {
-		return 'still_pending';
-	}
-
-	if (!isBillingSupported()) {
-		return 'still_pending';
-	}
-
-	try {
-		const { purchases } = await NativePurchases.getPurchases({
-			productType: PURCHASE_TYPE.INAPP
-		});
-		const validPurchase = findValidProPurchase(purchases ?? []);
-		if (validPurchase) {
-			const granted = await grantProFromPurchase(validPurchase);
-			if (granted) {
-				resolveInflightPurchase(validPurchase);
-				setProPurchasePending(false);
-				return 'completed';
-			}
-			if (proEntitlementState.lastError === 'acknowledge_failed') {
-				return 'still_pending';
-			}
-		}
-	} catch {
-		// Fall through to cancellation.
-	}
-
-	abortInflightPurchase('purchase_aborted_on_resume');
-	return 'cancelled';
-}
-
-export interface PurchasableProductResolution {
-	productId: string;
-	promoWindowActive: boolean;
-}
-
-export type BillingTransaction = {
-	productIdentifier?: string;
-	transactionId?: string;
-	purchaseToken?: string;
-	purchaseState?: string | number;
-	isAcknowledged?: boolean;
-};
-
-type PlayCatalogProduct = {
-	identifier?: string;
-	productIdentifier?: string;
-	priceString?: string;
-	title?: string;
-};
-
-export interface ProProductInfo {
-	priceString: string;
-	title: string;
-	productId: string;
-}
-
-export interface ProActiveOffer {
-	phase: ProOfferPhase;
-	productId: string;
-	priceString: string | null;
-	fullPriceString: string | null;
-	promoEndsAt: string | null;
-	remainingMs: number;
-}
-
-export function isBillingAvailable(): boolean {
-	return isBillingSupported();
-}
-
-export function isValidProPurchase(transaction: BillingTransaction): boolean {
-	if (!transaction.productIdentifier || !isProProductId(transaction.productIdentifier)) {
-		return false;
-	}
-	if (!isPurchasedState(transaction.purchaseState)) {
-		return false;
-	}
-	return Boolean(transaction.purchaseToken || transaction.transactionId);
-}
-
-export function getPurchaseToken(transaction: BillingTransaction): string | null {
-	return transaction.purchaseToken ?? transaction.transactionId ?? null;
-}
-
-export function findValidProPurchase(
-	transactions: BillingTransaction[]
-): BillingTransaction | null {
-	return transactions.find(isValidProPurchase) ?? null;
-}
-
-export function isBillingSupported(): boolean {
-	return isAndroidApp();
-}
-
-function isPurchasedState(state: string | number | undefined): boolean {
-	if (state === undefined) {
-		return false;
-	}
-	return state === 1 || state === '1' || state === 'PURCHASED';
-}
-
-async function ensurePurchaseAcknowledged(transaction: BillingTransaction): Promise<void> {
-	const token = getPurchaseToken(transaction);
-	if (!token || transaction.isAcknowledged === true) {
-		return;
-	}
-
-	await runBillingTask(() =>
-		NativePurchases.acknowledgePurchase({ purchaseToken: token })
-	);
-}
-
-async function grantProFromPurchase(transaction: BillingTransaction): Promise<boolean> {
-	const token = getPurchaseToken(transaction);
-	if (!token) {
-		return false;
-	}
-
-	try {
-		await ensurePurchaseAcknowledged(transaction);
-	} catch {
-		setProLastError('acknowledge_failed');
-		return false;
-	}
-
-	await applyEntitlementFromPurchase(
-		token,
-		transaction.productIdentifier ?? PRO_PRODUCT_ID
-	);
-	return true;
-}
-
-function getPlayProductId(product: PlayCatalogProduct): string | null {
-	return product.productIdentifier ?? product.identifier ?? null;
-}
-
-function parseProProductInfo(
-	product: PlayCatalogProduct,
-	expectedId: string
-): ProProductInfo | null {
-	const rawPrice = product.priceString?.trim() ?? '';
-	const priceString = rawPrice ? normalizePlayPriceString(rawPrice) : '';
-	if (!isValidPlayPriceString(priceString)) {
-		return null;
-	}
-
-	return {
-		productId: getPlayProductId(product) ?? expectedId,
-		priceString,
-		title: product.title ?? expectedId
-	};
-}
-
-export async function syncProEntitlementFromStore(): Promise<void> {
-	if (!isBillingSupported()) {
-		await applyOfflineEntitlementFromSecureStorage();
-		return;
-	}
-
-	try {
-		const { purchases } = await runBillingTask(() =>
-			NativePurchases.getPurchases({
-				productType: PURCHASE_TYPE.INAPP
-			})
-		);
-		const validPurchase = findValidProPurchase(purchases ?? []);
-
-		if (validPurchase) {
-			const granted = await grantProFromPurchase(validPurchase);
-			if (granted) {
-				return;
-			}
-			if (proEntitlementState.lastError === 'acknowledge_failed') {
-				await applyOfflineEntitlementFromSecureStorage();
-				setProLastError('acknowledge_failed');
-				return;
-			}
-		}
-
-		await clearEntitlement();
-	} catch {
-		await applyOfflineEntitlementFromSecureStorage();
-		if (!proEntitlementState.isPro) {
-			setProLastError('restore_failed');
-		}
-	}
-}
-
-export function resolvePurchasableProductId(
-	nowMs: number = Date.now()
-): PurchasableProductResolution {
-	const productId = resolveProProductId(proPromoState.promoEndsAt, nowMs);
-	return {
-		productId,
-		promoWindowActive: productId === PRO_PROMO_PRODUCT_ID
-	};
-}
-
-async function purchaseProductWithTimeout(productId: string): Promise<BillingTransaction> {
+async function purchaseProductWithTimeout(productId: SupportProductId): Promise<BillingTransaction> {
 	abortInflightPurchasePromise('purchase_superseded');
 	purchaseLaunchedAt = Date.now();
 
@@ -322,7 +289,9 @@ async function purchaseProductWithTimeout(productId: string): Promise<BillingTra
 		void NativePurchases.purchaseProduct({
 			productIdentifier: productId,
 			productType: PURCHASE_TYPE.INAPP,
-			quantity: 1
+			quantity: 1,
+			isConsumable: false,
+			autoAcknowledgePurchases: false
 		})
 			.then((transaction) => {
 				if (inflightPurchaseResolve === resolve) {
@@ -339,104 +308,79 @@ async function purchaseProductWithTimeout(productId: string): Promise<BillingTra
 	});
 }
 
-async function handleAlreadyOwnedPurchase(productId: string): Promise<boolean> {
-	await syncProEntitlementFromStore();
-	if (proEntitlementState.isPro) {
-		return true;
-	}
-	if (productId === PRO_PROMO_PRODUCT_ID) {
-		setProLastError('promo_purchase_blocked');
+async function consumeOwnedSupportProduct(productId: SupportProductId): Promise<boolean> {
+	const purchases = await listInAppPurchases();
+	const owned = purchases.find(
+		(purchase) => purchase.productIdentifier === productId && isValidSupportPurchase(purchase)
+	);
+	if (!owned) {
 		return false;
 	}
-	return restoreProPurchase();
+	return finalizeSupportPurchase(owned);
 }
 
-function mapPromoPurchaseError(code: string, promoWindowActive: boolean): string {
-	if (!promoWindowActive) {
-		return code;
-	}
-	if (code === 'purchase_failed') {
-		return 'promo_purchase_failed';
-	}
-	return code;
-}
-
-export async function purchasePro(nowMs: number = Date.now()): Promise<boolean> {
-	if (!isBillingSupported()) {
+export async function purchaseSupport(productId: SupportProductId): Promise<boolean> {
+	if (!isBillingSupported() || !isSupportProductId(productId)) {
 		return false;
 	}
 
-	if (proEntitlementState.purchasePending) {
+	if (supportBillingState.purchasePending) {
 		abortInflightPurchase('purchase_superseded');
 		await waitForBillingIdle();
 		await delay(BILLING_RETRY_COOLDOWN_MS);
 	}
 
 	const generation = ++activePurchaseGeneration;
-	const { productId, promoWindowActive } = resolvePurchasableProductId(nowMs);
-
-	setProPurchasePending(true);
-	setProLastError(null);
+	setSupportPurchasePending(true);
+	setSupportLastError(null);
 
 	try {
 		const transaction = await purchaseProductWithTimeout(productId);
-
-		if (!getPurchaseToken(transaction)) {
-			setProLastError('missing_purchase_token');
-			return false;
-		}
-
-		const granted = await grantProFromPurchase({
+		const normalized: BillingTransaction = {
 			...transaction,
 			productIdentifier: transaction.productIdentifier ?? productId
-		});
-		return granted;
+		};
+		return finalizeSupportPurchase(normalized);
 	} catch (error) {
 		const code = normalizeBillingErrorCode(error);
 		if (isBillingCancellationError(code)) {
-			setProLastError(null);
+			setSupportLastError(null);
+			return false;
+		}
+		if (code === 'purchase_timeout') {
+			setSupportLastError('purchase_timeout');
 			return false;
 		}
 		if (isBillingAlreadyOwnedError(code)) {
-			return handleAlreadyOwnedPurchase(productId);
+			try {
+				const consumed = await consumeOwnedSupportProduct(productId);
+				if (!consumed) {
+					setSupportLastError('consume_failed');
+				}
+				return consumed;
+			} catch {
+				setSupportLastError('consume_failed');
+				return false;
+			}
 		}
-		setProLastError(mapPromoPurchaseError(code, promoWindowActive));
+		setSupportLastError('purchase_failed');
 		return false;
 	} finally {
 		if (generation === activePurchaseGeneration) {
-			setProPurchasePending(false);
+			setSupportPurchasePending(false);
 		}
 	}
 }
 
-export async function restoreProPurchase(): Promise<boolean> {
-	if (!isBillingSupported()) {
-		return false;
-	}
-
-	setProPurchasePending(true);
-	setProLastError(null);
-
-	try {
-		await syncProEntitlementFromStore();
-		return proEntitlementState.isPro;
-	} catch (error) {
-		setProLastError(
-			normalizeBillingErrorCode(error) === 'purchase_failed'
-				? 'restore_failed'
-				: normalizeBillingErrorCode(error)
-		);
-		return false;
-	} finally {
-		setProPurchasePending(false);
-	}
+function getPlayProductId(product: PlayCatalogProduct): string | null {
+	return product.productIdentifier ?? product.identifier ?? null;
 }
 
-async function getProductsBatchWithTimeout(productIds: string[]) {
+async function getProductsBatchWithTimeout(productIds: readonly string[]) {
 	return runBillingTask(() =>
 		Promise.race([
 			NativePurchases.getProducts({
-				productIdentifiers: productIds,
+				productIdentifiers: [...productIds],
 				productType: PURCHASE_TYPE.INAPP
 			}),
 			new Promise<never>((_, reject) => {
@@ -446,90 +390,60 @@ async function getProductsBatchWithTimeout(productIds: string[]) {
 	);
 }
 
-async function fetchProProductsMap(
-	productIds: string[]
-): Promise<Map<string, ProProductInfo>> {
-	const uniqueIds = [...new Set(productIds.filter((id) => (PRO_PRODUCT_IDS as readonly string[]).includes(id)))];
-	if (!isBillingSupported() || uniqueIds.length === 0 || proEntitlementState.purchasePending) {
-		return new Map();
+export async function loadSupportPrices(): Promise<SupportProductInfo[]> {
+	if (!isBillingSupported() || supportBillingState.purchasePending) {
+		return [];
 	}
-
-	let lastMap = new Map<string, ProProductInfo>();
 
 	for (let attempt = 0; attempt < PRODUCT_FETCH_ATTEMPTS; attempt += 1) {
 		try {
-			const { products } = await getProductsBatchWithTimeout(uniqueIds);
-			const map = new Map<string, ProProductInfo>();
-
+			const { products } = await getProductsBatchWithTimeout(SUPPORT_PRODUCT_IDS);
+			const parsed: SupportProductInfo[] = [];
 			for (const product of products ?? []) {
 				const productId = getPlayProductId(product);
-				if (!productId || !uniqueIds.includes(productId)) {
+				if (!productId || !isSupportProductId(productId)) {
 					continue;
 				}
-				const parsed = parseProProductInfo(product, productId);
-				if (parsed) {
-					map.set(productId, parsed);
+				const rawPrice = product.priceString?.trim() ?? '';
+				const priceString = rawPrice ? normalizePlayPriceString(rawPrice) : '';
+				if (!isValidPlayPriceString(priceString)) {
+					continue;
 				}
+				parsed.push({
+					productId,
+					priceString,
+					title: product.title ?? productId
+				});
 			}
-
-			lastMap = map;
-			const catalogComplete = uniqueIds.every((id) => map.has(id));
-			if (catalogComplete || attempt === PRODUCT_FETCH_ATTEMPTS - 1) {
-				return map;
+			if (parsed.length > 0 || attempt === PRODUCT_FETCH_ATTEMPTS - 1) {
+				return parsed;
 			}
 		} catch {
 			if (attempt === PRODUCT_FETCH_ATTEMPTS - 1) {
-				return lastMap;
+				return [];
 			}
 		}
-
-		if (attempt < PRODUCT_FETCH_ATTEMPTS - 1) {
-			await delay(PRODUCT_FETCH_RETRY_MS * (attempt + 1));
-		}
+		await delay(PRODUCT_FETCH_RETRY_MS);
 	}
 
-	return lastMap;
+	return [];
 }
 
-export async function getProProduct(productId: string = PRO_PRODUCT_ID): Promise<ProProductInfo | null> {
-	const map = await fetchProProductsMap([productId]);
-	return map.get(productId) ?? null;
-}
-
-function resolveActiveOfferState(nowMs: number = Date.now()) {
-	const promoState = getProPromoState(proPromoState.promoEndsAt, nowMs);
-	const productId = resolveProProductId(proPromoState.promoEndsAt, nowMs);
-	return { ...promoState, productId };
-}
-
-export async function getActiveProOffer(nowMs: number = Date.now()): Promise<ProActiveOffer> {
-	const { phase, promoEndsAt, remainingMs, productId } = resolveActiveOfferState(nowMs);
-
-	if (!isBillingSupported()) {
-		return {
-			phase,
-			productId,
-			priceString: null,
-			fullPriceString: null,
-			promoEndsAt,
-			remainingMs
-		};
+export async function initSupportBilling(): Promise<SupportStoreSync> {
+	await clearLegacyProStorage();
+	try {
+		return await syncSupportPurchasesFromStore();
+	} catch {
+		return { consumed: 0, legacySupporter: supportBillingState.legacySupporter };
 	}
+}
 
-	const productIds =
-		productId === PRO_PRODUCT_ID ? [PRO_PRODUCT_ID] : [productId, PRO_PRODUCT_ID];
-	const products = await fetchProProductsMap(productIds);
-	const activeProduct = products.get(productId) ?? null;
-	const fullProduct = products.get(PRO_PRODUCT_ID) ?? null;
-
-	return {
-		phase,
-		productId,
-		priceString: activeProduct?.priceString ?? null,
-		fullPriceString:
-			fullProduct?.priceString ??
-			(productId === PRO_PRODUCT_ID ? activeProduct?.priceString ?? null : null),
-		promoEndsAt,
-		remainingMs
-	};
+/** @internal Reset module session state between tests. */
+export function resetSupportPurchaseSessionForTests(): void {
+	consumedTokens.clear();
+	activePurchaseGeneration = 0;
+	purchaseLaunchedAt = 0;
+	abortInflightPurchase('purchase_aborted');
+	setSupportLastError(null);
+	setLegacySupporter(false);
 }

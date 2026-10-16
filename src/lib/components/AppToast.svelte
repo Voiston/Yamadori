@@ -10,17 +10,20 @@
 		if (toast.type === 'info') return 'bg-[var(--color-warning)] text-white';
 		return 'bg-[var(--color-danger)] text-white';
 	});
+
+	const live = $derived(
+		toast?.type === 'error'
+			? { role: 'alert' as const, live: 'assertive' as const }
+			: { role: 'status' as const, live: 'polite' as const }
+	);
 </script>
 
 {#if toast}
-	<div
-		class="bottom-safe-toast pointer-events-none fixed inset-x-0 z-50 flex justify-center px-4"
-		aria-hidden="true"
-	>
+	<div class="bottom-safe-toast pointer-events-none fixed inset-x-0 z-50 flex justify-center px-4">
 		<p
 			class="pointer-events-auto w-max max-w-[calc(100vw-2rem)] rounded-2xl px-5 py-2.5 text-center text-sm font-medium shadow-lg {toastClass}"
-			role="status"
-			aria-live="polite"
+			role={live.role}
+			aria-live={live.live}
 			in:toastIn
 			out:toastOut
 		>

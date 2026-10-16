@@ -76,7 +76,10 @@ describe('NO map / legal / species / permits', () => {
 		expect(links.find((l) => l.id === 'no_naturmangfold')?.url).toContain('2009-06-19-100');
 
 		expect(resolveNoStatsforvalter({ commune: 'Oslo' })).toBe('OV');
-		expect(getEuPermitLinks('NO', 'private', { commune: 'Oslo' })[0]?.id).toBe('no_sf_ov');
+		expect(resolveNoStatsforvalter({ commune: 'Østfold' })).toBe('OV');
+		const oslo = getEuPermitLinks('NO', 'private', { commune: 'Oslo' })[0];
+		expect(oslo?.id).toBe('no_sf_ov');
+		expect(oslo?.url).toContain('ostfold-buskerud-oslo-og-akershus');
 		expect(
 			getEuPermitLinks('NO', 'private', { latitude: 59.9139, longitude: 10.7522 })[0]?.id
 		).toBe('no_sf_ov');
@@ -86,6 +89,9 @@ describe('NO map / legal / species / permits', () => {
 		expect(getEuPermitLinks('NO', 'private')[0]?.id).toBe('no_kommune');
 		expect(resolveNoStatsforvalter({ commune: 'Bergen' })).toBe('VL');
 		expect(resolveNoStatsforvalter({ commune: 'Tromsø' })).toBe('TF');
+		expect(getEuPermitLinks('NO', 'private', { commune: 'Tromsø' })[0]?.url).toContain(
+			'troms-og-finnmark'
+		);
 	});
 
 	it('exposes a Kartverket Seeiendom viewer deep link', () => {

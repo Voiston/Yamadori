@@ -61,7 +61,22 @@
 		{ label: () => m.privacy_data_voice_label(), body: () => m.privacy_data_voice_body() },
 		{ label: () => m.privacy_data_weather_label(), body: () => m.privacy_data_weather_body() },
 		{ label: () => m.privacy_data_map_label(), body: () => m.privacy_data_map_body() },
-		{ label: () => m.privacy_data_cadastre_label(), body: () => m.privacy_data_cadastre_body() }
+		{ label: () => m.privacy_data_cadastre_label(), body: () => m.privacy_data_cadastre_body() },
+		{ label: () => m.privacy_data_purchase_label(), body: () => m.privacy_data_purchase_body() },
+		{ label: () => m.privacy_data_ip_label(), body: () => m.privacy_data_ip_body() }
+	];
+
+	const gdprCards: readonly Pillar[] = [
+		{ title: () => m.privacy_controller_title(), body: () => m.privacy_controller_body() },
+		{ title: () => m.privacy_legal_basis_title(), body: () => m.privacy_legal_basis_body() },
+		{ title: () => m.privacy_retention_title(), body: () => m.privacy_retention_body() },
+		{ title: () => m.privacy_rights_title(), body: () => m.privacy_rights_body() },
+		{ title: () => m.privacy_minors_title(), body: () => m.privacy_minors_body() },
+		{ title: () => m.privacy_outside_eu_title(), body: () => m.privacy_outside_eu_body() },
+		{ title: () => m.privacy_california_title(), body: () => m.privacy_california_body() },
+		{ title: () => m.privacy_transfers_title(), body: () => m.privacy_transfers_body() },
+		{ title: () => m.privacy_iap_title(), body: () => m.privacy_iap_body() },
+		{ title: () => m.privacy_changes_title(), body: () => m.privacy_changes_body() }
 	];
 
 	let pageTitle = $derived.by(() => {
@@ -77,6 +92,11 @@
 	let intro = $derived.by(() => {
 		void appearanceSettingsState.locale;
 		return m.privacy_intro();
+	});
+
+	let aidDisclaimer = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return m.legal_aid_disclaimer();
 	});
 
 	let inventoryHeading = $derived.by(() => {
@@ -108,7 +128,19 @@
 	<div>
 		<h2 class="text-lg font-semibold text-forest-900">{heading}</h2>
 		<p class="mt-2 text-sm leading-relaxed text-forest-900">{intro}</p>
+		<p class="mt-2 text-sm leading-relaxed text-muted">{aidDisclaimer}</p>
 	</div>
+
+	<section class="flex flex-col gap-3">
+		<div class="app-section-list">
+			{#each gdprCards as card, index (`gdpr-${index}`)}
+				<div class="px-4 py-3">
+					<h4 class="text-sm font-semibold text-forest-900">{card.title()}</h4>
+					<p class="mt-1.5 text-sm leading-relaxed text-muted">{card.body()}</p>
+				</div>
+			{/each}
+		</div>
+	</section>
 
 	{#each sections as section, sectionIndex (sectionIndex)}
 		<section class="flex flex-col gap-3">

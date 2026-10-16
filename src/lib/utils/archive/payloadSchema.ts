@@ -57,6 +57,10 @@ const treeArchiveSchema = v.object({
 		v.picklist(['OPEN', 'EDGE', 'FOREST_DENSE'] as const)
 	),
 	yrsAtCapture: v.optional(v.nullable(v.unknown())),
+	nextRevisitAt: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(MAX_SHORT)))),
+	notifyOnWindow: v.optional(v.boolean()),
+	windowNotifyArmed: v.optional(v.boolean()),
+	dateNotifySentFor: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(MAX_SHORT)))),
 	capturedAt: v.pipe(v.string(), v.maxLength(MAX_SHORT))
 });
 

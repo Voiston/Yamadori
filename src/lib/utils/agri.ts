@@ -28,6 +28,7 @@ import { parseOpenMeteoErrorResponse } from '$lib/utils/climate';
 import { computeGddSnapshot, projectGddSnapshotForward } from '$lib/utils/gdd';
 import { regionalApiCoordinates } from '$lib/utils/geo';
 import {
+	availableWaterPctFromSoilMoisture,
 	computeFutureStressRisk,
 	computeHydricFromAgriInputs,
 	computeRadiationStressIndex,
@@ -45,6 +46,8 @@ const FORECAST_API_URL = 'https://api.open-meteo.com/v1/forecast';
 const FETCH_TIMEOUT_MS = 15_000;
 const PAST_DAYS = 7;
 const FORECAST_DAYS = 7;
+/** Jours demandés à Open-Meteo pour qu'un jour J+6 ait encore une fenêtre de FORECAST_DAYS. */
+const API_FORECAST_DAYS = 14;
 const SOIL_MEAN_DAYS = 5;
 const VIABILITY_GO_MIN_SCORE = 65;
 const VIABILITY_PRUDENT_MAX_SCORE = 79;
@@ -196,23 +199,22 @@ export function dailyMaxForDate(
 	return Math.round(Math.max(...dayValues));
 }
 
-/** Compte la plus longue série de jours consécutifs dans la plage de température cible. */
+/** Compte les jours stables consécutifs en partant du jour le plus récent. */
 export function countConsecutiveSoilStableDays(
 	dailyMeans: (number | null)[],
 	minTemp: number = YAMADORI_RISK_THRESHOLDS.soilStableTempC.min,
 	maxTemp: number = YAMADORI_RISK_THRESHOLDS.soilStableTempC.max
 ): number {
-	let maxRun = 0;
-	let currentRun = 0;
-	for (const mean of dailyMeans) {
+	let streak = 0;
+	for (let i = dailyMeans.length - 1; i >= 0; i--) {
+		const mean = dailyMeans[i];
 		if (mean !== null && mean >= minTemp && mean <= maxTemp) {
-			currentRun += 1;
-			maxRun = Math.max(maxRun, currentRun);
+			streak += 1;
 		} else {
-			currentRun = 0;
+			break;
 		}
 	}
-	return maxRun;
+	return streak;
 }
 
 /** Détecte une chute nocturne brutale ou une chute jour-à-jour importante. */
@@ -432,7 +434,9 @@ export function parseAgriForecastResponse(
 		soilMoisture7cm.length > 0
 			? (() => {
 					const value = soilMoisture7cm[currentIndex];
-					return value !== null && value !== undefined ? Math.round(value) : null;
+					return value !== null && value !== undefined
+						? availableWaterPctFromSoilMoisture(value)
+						: null;
 				})()
 			: null;
 
@@ -730,7 +734,8 @@ export function worstAgriRisk(...risks: AgriRiskLevel[]): AgriRiskLevel {
 function primaryRiskReason(
 	data: AgriData,
 	risks: Record<string, MetricRisk>,
-	inputs: YrsPlantInputs = {}
+	inputs: YrsPlantInputs = {},
+	thresholds: YamadoriRiskThresholds = YAMADORI_RISK_THRESHOLDS
 ): string | null {
 	if (risks.frost === 'Dangereux') {
 		return m.agri_verdict_frost({ temp: String(data.frostMinNext7dC) });
@@ -745,7 +750,7 @@ function primaryRiskReason(
 		return m.agri_verdict_waterlogged({ rain: String(data.rainPast3dMm) });
 	}
 	if (risks.soil === 'Dangereux') {
-		if (data.soilTemperature18cmC < YAMADORI_RISK_THRESHOLDS.soil18cmTempC.excellentMin) {
+		if (data.soilTemperature18cmC < thresholds.soil18cmTempC.excellentMin) {
 			return m.agri_verdict_soil_cold({ temp: String(data.soilTemperature18cmC) });
 		}
 		return m.agri_verdict_soil_warming({ days: String(data.soilConsecutiveStableDays) });
@@ -766,12 +771,12 @@ function primaryRiskReason(
 		return m.agri_verdict_rain_limits({ rain: String(data.rainPast3dMm) });
 	}
 	if (risks.soil === 'Passable') {
-		if (data.soilTemperature18cmC >= YAMADORI_RISK_THRESHOLDS.soil18cmTempC.stressMin) {
+		if (data.soilTemperature18cmC >= thresholds.soil18cmTempC.stressMin) {
 			return m.agri_verdict_soil_high({ temp: String(data.soilTemperature18cmC) });
 		}
 		if (
-			data.soilTemperature18cmC > YAMADORI_RISK_THRESHOLDS.soil18cmTempC.excellentMax &&
-			data.soilTemperature18cmC < YAMADORI_RISK_THRESHOLDS.soil18cmTempC.stressMin
+			data.soilTemperature18cmC > thresholds.soil18cmTempC.excellentMax &&
+			data.soilTemperature18cmC < thresholds.soil18cmTempC.stressMin
 		) {
 			return m.agri_verdict_soil_high_exploitable({ temp: String(data.soilTemperature18cmC) });
 		}
@@ -923,12 +928,13 @@ export function assessYrsDetailRisks(
 	data: AgriData,
 	inputs: YrsPlantInputs = {}
 ): YrsDetailMetricRisks {
+	const thresholds = resolveYamadoriRiskThresholds(data.latitude, data.longitude);
 	const gddCategory = resolveYrsGddCategory(inputs.species, data.gdd?.baseCategory);
 	return {
 		gddSeason: assessGddSeasonRisk(data.gdd?.cumulativeSinceJan1 ?? null, gddCategory),
-		et0Mean: assessEt0Risk(data, resolveYamadoriRiskThresholds(data.latitude, data.longitude)),
-		air: assessAirTempRisk(data.airTemperatureC),
-		soil: assessSoilRisk(data, inputs),
+		et0Mean: assessEt0Risk(data, thresholds),
+		air: assessAirTempRisk(data.airTemperatureC, thresholds),
+		soil: assessSoilRisk(data, inputs, thresholds),
 		hydricBalance: assessHydricBalanceRisk(data.waterBalance7dMm),
 		wsi: assessWsiRisk(data.wsi),
 		et0Cumul: assessEt0CumulRisk(data.et0Forecast7dSumMm),
@@ -950,14 +956,15 @@ export function assessYamadoriRiskDetails(
 	data: AgriData,
 	inputs: YrsPlantInputs = {}
 ): YamadoriRiskAssessment {
+	const thresholds = resolveYamadoriRiskThresholds(data.latitude, data.longitude);
 	const metrics = assessYamadoriMetricRisks(data, inputs);
-	const et0Past = assessEt0TrendRisk(data.et0Past7dMeanMm);
-	const et0Forecast = assessEt0TrendRisk(data.et0Trend7dMeanMm);
+	const et0Past = assessEt0TrendRisk(data.et0Past7dMeanMm, thresholds);
+	const et0Forecast = assessEt0TrendRisk(data.et0Trend7dMeanMm, thresholds);
 	const risks = {
 		wind: metrics.wind,
 		air: metrics.air,
-		rain3d: assessRainPast3dRisk(data.rainPast3dMm),
-		rain5d: assessRainPast5dRisk(data.rainPast5dMm),
+		rain3d: assessRainPast3dRisk(data.rainPast3dMm, thresholds),
+		rain5d: assessRainPast5dRisk(data.rainPast5dMm, thresholds),
 		soil: metrics.soil,
 		frost: metrics.frost,
 		et0Past,
@@ -979,7 +986,7 @@ export function assessYamadoriRiskDetails(
 
 	return {
 		level,
-		reason: level === 'Excellent' ? null : primaryRiskReason(data, risks, inputs)
+		reason: level === 'Excellent' ? null : primaryRiskReason(data, risks, inputs, thresholds)
 	};
 }
 
@@ -1237,12 +1244,13 @@ export function computeWeeklyViability(
 				: offset === 0
 					? gdd
 					: projectGddSnapshotForward(gdd, forecastDailyMeans, todayDate, dayDate, {
-							refreshPhenology
+							refreshPhenology,
+							latitude
 						});
 
 		const parsedDay: AgriData = {
 			...parseAgriForecastResponse(body, latitude, longitude, simDate, {
-				stressHorizonDate: referenceDate
+				stressHorizonDate: simDate
 			}),
 			weeklyViability: null,
 			gdd: dayGdd,
@@ -1309,7 +1317,7 @@ export async function fetchAgriDataBase(
 			'temperature_2m,relative_humidity_2m,wind_speed_10m,soil_temperature_6cm,soil_temperature_18cm,soil_moisture_0_to_7cm,et0_fao_evapotranspiration,shortwave_radiation',
 		daily: 'precipitation_sum,temperature_2m_min,temperature_2m_max,et0_fao_evapotranspiration',
 		past_days: String(PAST_DAYS),
-		forecast_days: String(FORECAST_DAYS),
+		forecast_days: String(API_FORECAST_DAYS),
 		timezone: 'auto'
 	});
 

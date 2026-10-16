@@ -19,7 +19,7 @@
 
 	let description = $derived.by(() => {
 		void appearanceSettingsState.locale;
-		return m.onboarding_legal_desc();
+		return `${m.onboarding_legal_desc()} ${m.legal_aid_disclaimer()}`;
 	});
 
 	let acceptLabel = $derived.by(() => {

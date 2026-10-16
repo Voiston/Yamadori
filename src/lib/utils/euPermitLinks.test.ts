@@ -342,7 +342,10 @@ describe('getEuPermitLinks', () => {
 
 	it('injects NO Statsforvalter portal for Oslo', () => {
 		expect(resolveNoStatsforvalter({ commune: 'Oslo' })).toBe('OV');
-		expect(getEuPermitLinks('NO', 'private', { commune: 'Oslo' })[0]?.id).toBe('no_sf_ov');
+		expect(resolveNoStatsforvalter({ commune: 'Østfold' })).toBe('OV');
+		const oslo = getEuPermitLinks('NO', 'private', { commune: 'Oslo' })[0];
+		expect(oslo?.id).toBe('no_sf_ov');
+		expect(oslo?.url).toContain('ostfold-buskerud-oslo-og-akershus');
 	});
 
 	it('returns deep Naturstyrelsen / artsfredning hubs for Denmark', () => {

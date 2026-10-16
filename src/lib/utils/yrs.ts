@@ -45,6 +45,20 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+/** Phenology points when an evergreen has no observed stage and no GDD estimate. */
+const EVERGREEN_PHENOLOGY_NEUTRAL_POINTS = 12;
+
+/**
+ * Evergreen phenology is intentionally disabled.
+ * A late-season reason must not be treated as that evergreen gap when no species is set.
+ */
+function isEvergreenPhenologyDisabled(data: AgriData, inputs: YrsPlantInputs): boolean {
+	if (inputs.species?.trim()) return isEvergreenSpecies(inputs.species);
+	if (data.gdd?.phenologyUnavailableCode === 'late_season') return false;
+	if (data.gdd?.phenologyUnavailableCode === 'evergreen') return true;
+	return Boolean(data.gdd?.phenologyUnavailableReason);
+}
+
 function thresholdsFor(data: AgriData): YamadoriRiskThresholds {
 	return resolveYamadoriRiskThresholds(data.latitude, data.longitude);
 }
@@ -66,9 +80,72 @@ export function frostStressPenaltyPoints(data: AgriData): number {
 	return Math.min(25, 5 + 5 * data.frostEventsPast7d + severity);
 }
 
+export type YrsBreakdownItemId =
+	| 'gdd'
+	| 'et0Climate'
+	| 'air'
+	| 'soil18'
+	| 'soil6'
+	| 'soilStableDays'
+	| 'soilNightDrop'
+	| 'phenologyStage'
+	| 'cernage'
+	| 'aoutement'
+	| 'leafFall'
+	| 'harvestCalendar'
+	| 'ks'
+	| 'wsi'
+	| 'waterBalance'
+	| 'hydricUnavailable'
+	| 'et0ForecastStress'
+	| 'frost'
+	| 'heat'
+	| 'windStress'
+	| 'radiationStress';
+
+export type YrsMetricScoreKind = 'points' | 'penalty' | 'context';
+
 export interface YrsScoreBreakdownItem {
+	id: YrsBreakdownItemId;
 	label: string;
 	points: number;
+}
+
+export function findYrsBreakdownItem(
+	breakdown: YrsLayerBreakdown,
+	id: YrsBreakdownItemId
+): YrsScoreBreakdownItem | undefined {
+	return breakdown.items.find((item) => item.id === id);
+}
+
+export function findYrsBreakdownItems(
+	breakdown: YrsLayerBreakdown,
+	ids: readonly YrsBreakdownItemId[]
+): YrsScoreBreakdownItem[] {
+	const wanted = new Set(ids);
+	return breakdown.items.filter((item) => wanted.has(item.id));
+}
+
+export function excludeYrsBreakdownItems(
+	breakdown: YrsLayerBreakdown,
+	ids: readonly YrsBreakdownItemId[]
+): YrsScoreBreakdownItem[] {
+	const skip = new Set(ids);
+	return breakdown.items.filter((item) => !skip.has(item.id));
+}
+
+export function formatYrsPoints(points: number, kind: YrsMetricScoreKind = 'points'): string {
+	if (kind === 'context') return '';
+	if (kind === 'penalty') return `−${Math.abs(points)}`;
+	if (points > 0) return `+${points}`;
+	if (points < 0) return `−${Math.abs(points)}`;
+	return '0';
+}
+
+export function getYrsPointsClass(points: number, kind: YrsMetricScoreKind = 'points'): string {
+	if (kind === 'penalty' || points < 0) return 'text-red-700';
+	if (points > 0) return 'text-emerald-800';
+	return 'text-muted';
 }
 
 export interface YrsLayerBreakdown {
@@ -158,22 +235,26 @@ function resolveCategory(data: AgriData, inputs: YrsPlantInputs): GddBaseCategor
 function getGddClimatePoints(
 	gdd: number | null,
 	category: GddBaseCategory,
-	species?: string
+	species: string | undefined,
+	lateSeason: boolean
 ): YrsScoreBreakdownItem {
 	const window = resolveYrsGddWindowForSpecies(species, category);
 	if (gdd !== null) {
 		if (gdd >= window.optimalMin && gdd <= window.optimalMax) {
-			return { label: m.yrs_gdd_favorable({ gdd: String(gdd) }), points: 15 };
+			return { id: 'gdd', label: m.yrs_gdd_favorable({ gdd: String(gdd) }), points: 15 };
 		}
 		if (gdd >= window.earlyMin && gdd < window.optimalMin) {
-			return { label: m.yrs_gdd_early({ gdd: String(gdd) }), points: 8 };
+			return { id: 'gdd', label: m.yrs_gdd_early({ gdd: String(gdd) }), points: 8 };
 		}
 		if (gdd > window.optimalMax && gdd <= window.lateMax) {
-			return { label: m.yrs_gdd_late({ gdd: String(gdd) }), points: 8 };
+			return { id: 'gdd', label: m.yrs_gdd_late({ gdd: String(gdd) }), points: 8 };
 		}
-		return { label: m.yrs_gdd_outside({ gdd: String(gdd) }), points: 3 };
+		if (lateSeason) {
+			return { id: 'gdd', label: m.yrs_gdd_back_season({ gdd: String(gdd) }), points: 8 };
+		}
+		return { id: 'gdd', label: m.yrs_gdd_outside({ gdd: String(gdd) }), points: 3 };
 	}
-	return { label: m.yrs_gdd_unavailable(), points: 2 };
+	return { id: 'gdd', label: m.yrs_gdd_unavailable(), points: 2 };
 }
 
 function getEt0ClimatePoints(
@@ -187,6 +268,7 @@ function getEt0ClimatePoints(
 	const { excellentMax } = thresholds.et0Trend7dMeanMm;
 	if (et0Past <= excellentMax && et0Forecast <= excellentMax) {
 		return {
+			id: 'et0Climate',
 			label: m.yrs_breakdown_et0_stable({
 				past: String(et0Past),
 				forecast: String(et0Forecast)
@@ -194,8 +276,9 @@ function getEt0ClimatePoints(
 			points: 5
 		};
 	}
-	if (et0Past <= excellentMax * 2 || et0Forecast <= excellentMax * 2) {
+	if (et0Past <= excellentMax * 2 && et0Forecast <= excellentMax * 2) {
 		return {
+			id: 'et0Climate',
 			label: m.yrs_breakdown_et0_moderate({
 				past: String(et0Past),
 				forecast: String(et0Forecast)
@@ -204,6 +287,7 @@ function getEt0ClimatePoints(
 		};
 	}
 	return {
+		id: 'et0Climate',
 		label: m.yrs_breakdown_et0_high({
 			past: String(et0Past),
 			forecast: String(et0Forecast)
@@ -223,6 +307,7 @@ function getAirClimatePoints(
 		data.windSpeedKmh < thresholds.windSpeedKmh.passableMin
 	) {
 		return {
+			id: 'air',
 			label: m.yrs_breakdown_air_mild({
 				temp: String(data.airTemperatureC),
 				wind: String(data.windSpeedKmh)
@@ -236,6 +321,7 @@ function getAirClimatePoints(
 		data.windSpeedKmh < thresholds.windSpeedKmh.dangerousMin
 	) {
 		return {
+			id: 'air',
 			label: m.yrs_breakdown_air_acceptable({
 				temp: String(data.airTemperatureC),
 				wind: String(data.windSpeedKmh)
@@ -244,6 +330,7 @@ function getAirClimatePoints(
 		};
 	}
 	return {
+		id: 'air',
 		label: m.yrs_breakdown_air_unfavorable({
 			temp: String(data.airTemperatureC),
 			wind: String(data.windSpeedKmh)
@@ -258,8 +345,14 @@ export function getClimateScoreBreakdown(
 ): YrsLayerBreakdown {
 	const category = resolveCategory(data, inputs);
 	const thresholds = thresholdsFor(data);
+	const referenceDate = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
 	const items = [
-		getGddClimatePoints(data.gdd?.cumulativeSinceJan1 ?? null, category, inputs.species),
+		getGddClimatePoints(
+			data.gdd?.cumulativeSinceJan1 ?? null,
+			category,
+			inputs.species,
+			isLateSeasonPhenologyContext(data.latitude, referenceDate)
+		),
 		getAirClimatePoints(data, thresholds)
 	];
 	const et0Item = getEt0ClimatePoints(data, thresholds);
@@ -281,34 +374,41 @@ export function computeClimateScore(data: AgriData, inputs: YrsPlantInputs = {})
 /** SoilScore (0–25) : zone 18 cm, activité 6 cm, stabilité. */
 export function getSoilScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 	const thresholds = thresholdsFor(data);
-	const { excellentMin, excellentMax } = thresholds.soil18cmTempC;
-	const temp = String(data.soilTemperature18cmC);
-	let soil18Points = 6;
+	const { excellentMin, excellentMax, passableMax, stressMin } = thresholds.soil18cmTempC;
+	const soil18C = data.soilMean18cm7dC ?? data.soilTemperature18cmC;
+	const soil6C = data.soilMean6cm7dC ?? data.soilTemperature6cmC;
+	const temp = String(soil18C);
+	let soil18Points = 3;
 	let soil18Label = m.yrs_breakdown_soil18_high({ temp });
 
-	if (data.soilTemperature18cmC >= excellentMin && data.soilTemperature18cmC <= excellentMax) {
+	if (soil18C >= excellentMin && soil18C <= excellentMax) {
 		soil18Points = 15;
 		soil18Label = m.yrs_breakdown_soil18_perfect({ temp });
-	} else if (data.soilTemperature18cmC >= excellentMin - 2) {
+	} else if (soil18C >= excellentMin - 2 && soil18C < excellentMin) {
 		soil18Points = 8;
 		soil18Label = m.yrs_breakdown_soil18_low_limit({ temp });
-	} else if (data.soilTemperature18cmC < excellentMin) {
+	} else if (soil18C < excellentMin) {
 		soil18Points = 2;
 		soil18Label = m.yrs_breakdown_soil18_too_cold({ temp });
+	} else if (soil18C <= passableMax) {
+		soil18Points = 10;
+	} else if (soil18C < stressMin) {
+		soil18Points = 6;
 	}
 
-	const soil6Active =
-		data.soilTemperature6cmC >= thresholds.soilStableTempC.min &&
-		data.soilTemperature6cmC <= thresholds.soilStableTempC.max;
-	const soil6Temp = String(data.soilTemperature6cmC);
+	const { min: soil6Min, max: soil6Max } = thresholds.soilStableTempC;
+	const soil6Active = soil6C >= soil6Min && soil6C <= soil6Max;
+	const soil6Shoulder = !soil6Active && soil6C > soil6Max && soil6C <= soil6Max + 3;
+	const soil6Temp = String(soil6C);
 
 	const items: YrsScoreBreakdownItem[] = [
-		{ label: soil18Label, points: soil18Points },
+		{ id: 'soil18', label: soil18Label, points: soil18Points },
 		{
+			id: 'soil6',
 			label: soil6Active
 				? m.yrs_breakdown_soil6_active({ temp: soil6Temp })
 				: m.yrs_breakdown_soil6_inactive({ temp: soil6Temp }),
-			points: soil6Active ? 5 : 0
+			points: soil6Active ? 5 : soil6Shoulder ? 3 : 0
 		}
 	];
 
@@ -318,16 +418,19 @@ export function getSoilScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 
 	if (data.soilConsecutiveStableDays >= thresholds.soilStableDays.excellentMin) {
 		items.push({
+			id: 'soilStableDays',
 			label: stableDaysLabel,
 			points: 5
 		});
 	} else if (data.soilConsecutiveStableDays >= thresholds.soilStableDays.passableMin) {
 		items.push({
+			id: 'soilStableDays',
 			label: stableDaysLabel,
 			points: 3
 		});
 	} else {
 		items.push({
+			id: 'soilStableDays',
 			label: stableDaysLabel,
 			points: 0
 		});
@@ -394,19 +497,28 @@ export function getPhenologyScoreBreakdown(
 	const category = resolveCategory(data, inputs);
 	const stage = resolveDominantPhenologyStage(data, inputs);
 	const items: YrsScoreBreakdownItem[] = [];
-	const evergreen =
-		(inputs.species ? isEvergreenSpecies(inputs.species) : false) ||
-		Boolean(data.gdd?.phenologyUnavailableReason);
+	const evergreen = isEvergreenPhenologyDisabled(data, inputs);
+	const referenceDate = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
+	const lateSeason = isLateSeasonPhenologyContext(data.latitude, referenceDate);
+	const ignoreEstimatedFlush =
+		lateSeason &&
+		!inputs.observedPhenologyStage &&
+		(stage === 'croissance_active' || stage === 'feuillaison');
+	const scoredStage = ignoreEstimatedFlush ? null : stage;
 
-	if (
-		(data.gdd === null && !inputs.observedPhenologyStage) ||
-		(evergreen && !inputs.observedPhenologyStage && !stage)
-	) {
-		items.push({ label: m.yrs_phenology_unavailable(), points: 4 });
-	} else {
-		const stagePoints = phenologyStagePoints(stage, category);
-		const stageLabel = phenologyStageLabel(stage);
+	if (data.gdd === null && !inputs.observedPhenologyStage) {
+		items.push({ id: 'phenologyStage', label: m.yrs_phenology_unavailable(), points: 4 });
+	} else if (evergreen && !inputs.observedPhenologyStage && !stage) {
 		items.push({
+			id: 'phenologyStage',
+			label: m.yrs_phenology_unavailable(),
+			points: EVERGREEN_PHENOLOGY_NEUTRAL_POINTS
+		});
+	} else {
+		const stagePoints = phenologyStagePoints(scoredStage, category);
+		const stageLabel = phenologyStageLabel(scoredStage);
+		items.push({
+			id: 'phenologyStage',
 			label: inputs.observedPhenologyStage
 				? m.yrs_breakdown_stage_observed({ stage: stageLabel })
 				: m.yrs_breakdown_stage_estimated({ stage: stageLabel }),
@@ -417,16 +529,17 @@ export function getPhenologyScoreBreakdown(
 	const cernagePoints = cernageAdjustment(inputs.cernageStatus);
 	if (cernagePoints !== 0) {
 		items.push({
+			id: 'cernage',
 			label: m.yrs_breakdown_cernage({ status: cernageLabel(inputs.cernageStatus) }),
 			points: cernagePoints
 		});
 	}
 
-	const referenceDate = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
-	if (isLateSeasonPhenologyContext(data.latitude, referenceDate)) {
+	if (lateSeason) {
 		const aoutementPoints = aoutementAdjustment(inputs.aoutementStatus);
 		if (aoutementPoints !== 0) {
 			items.push({
+				id: 'aoutement',
 				label: m.yrs_breakdown_aoutement({ status: aoutementLabel(inputs.aoutementStatus) }),
 				points: aoutementPoints
 			});
@@ -434,6 +547,7 @@ export function getPhenologyScoreBreakdown(
 		const leafFallPoints = leafFallAdjustment(inputs.leafFallPct);
 		if (leafFallPoints !== 0) {
 			items.push({
+				id: 'leafFall',
 				label: m.yrs_breakdown_leaf_fall({ pct: leafFallLabel(inputs.leafFallPct) }),
 				points: leafFallPoints
 			});
@@ -451,6 +565,7 @@ export function getPhenologyScoreBreakdown(
 		: 0;
 	if (harvestPenalty !== 0) {
 		items.push({
+			id: 'harvestCalendar',
 			label: m.yrs_breakdown_harvest_calendar_outside(),
 			points: harvestPenalty
 		});
@@ -476,35 +591,39 @@ export function getHydricScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 	if (ks !== null) {
 		const ksLabel = String(ks);
 		if (ks >= 0.8) {
-			items.push({ label: m.yrs_breakdown_ks_excellent({ ks: ksLabel }), points: 20 });
+			items.push({ id: 'ks', label: m.yrs_breakdown_ks_excellent({ ks: ksLabel }), points: 20 });
 		} else if (ks >= 0.6) {
-			items.push({ label: m.yrs_breakdown_ks_good({ ks: ksLabel }), points: 14 });
+			items.push({ id: 'ks', label: m.yrs_breakdown_ks_good({ ks: ksLabel }), points: 14 });
 		} else if (ks >= 0.4) {
-			items.push({ label: m.yrs_breakdown_ks_moderate({ ks: ksLabel }), points: 8 });
+			items.push({ id: 'ks', label: m.yrs_breakdown_ks_moderate({ ks: ksLabel }), points: 8 });
 		} else if (ks >= 0.2) {
-			items.push({ label: m.yrs_breakdown_ks_low({ ks: ksLabel }), points: 4 });
+			items.push({ id: 'ks', label: m.yrs_breakdown_ks_low({ ks: ksLabel }), points: 4 });
 		} else {
-			items.push({ label: m.yrs_breakdown_ks_critical({ ks: ksLabel }), points: 2 });
+			items.push({ id: 'ks', label: m.yrs_breakdown_ks_critical({ ks: ksLabel }), points: 2 });
 		}
 	} else if (data.wsi !== null) {
 		// Legacy cache without Ks
 		if (data.wsi > 5) {
 			items.push({
+				id: 'wsi',
 				label: m.yrs_breakdown_wsi_excellent({ wsi: String(data.wsi) }),
 				points: 20
 			});
 		} else if (data.wsi >= -2) {
 			items.push({
+				id: 'wsi',
 				label: m.yrs_breakdown_wsi_acceptable({ wsi: String(data.wsi) }),
 				points: 10
 			});
 		} else if (data.wsi >= -8) {
 			items.push({
+				id: 'wsi',
 				label: m.yrs_breakdown_wsi_moderate_stress({ wsi: String(data.wsi) }),
 				points: 5
 			});
 		} else {
 			items.push({
+				id: 'wsi',
 				label: m.yrs_breakdown_wsi_strong_stress({ wsi: String(data.wsi) }),
 				points: 2
 			});
@@ -512,6 +631,7 @@ export function getHydricScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 	} else if (data.waterBalance7dMm !== null) {
 		if (data.waterBalance7dMm > 5) {
 			items.push({
+				id: 'waterBalance',
 				label: m.yrs_breakdown_water_balance_favorable({
 					balance: String(data.waterBalance7dMm)
 				}),
@@ -519,6 +639,7 @@ export function getHydricScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 			});
 		} else if (data.waterBalance7dMm >= -5) {
 			items.push({
+				id: 'waterBalance',
 				label: m.yrs_breakdown_water_balance_neutral({
 					balance: String(data.waterBalance7dMm)
 				}),
@@ -526,6 +647,7 @@ export function getHydricScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 			});
 		} else {
 			items.push({
+				id: 'waterBalance',
 				label: m.yrs_breakdown_water_balance_deficit({
 					balance: String(data.waterBalance7dMm)
 				}),
@@ -533,7 +655,7 @@ export function getHydricScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 			});
 		}
 	} else {
-		items.push({ label: m.yrs_hydric_unavailable(), points: 3 });
+		items.push({ id: 'hydricUnavailable', label: m.yrs_hydric_unavailable(), points: 3 });
 	}
 
 	const thresholds = thresholdsFor(data);
@@ -546,6 +668,7 @@ export function getHydricScoreBreakdown(data: AgriData): YrsLayerBreakdown {
 	}
 	if (futureMalus > 0) {
 		items.push({
+			id: 'et0ForecastStress',
 			label: m.yrs_breakdown_et0_forecast_stress({
 				mm: String(data.futureStressRiskMm)
 			}),
@@ -583,6 +706,7 @@ export function getStressPenaltyBreakdown(
 			parts.push(m.yrs_breakdown_frost_forecast());
 		}
 		items.push({
+			id: 'frost',
 			label: m.yrs_breakdown_frost_label({ detail: parts.join(', ') }),
 			points: frostStressPenaltyPoints(data)
 		});
@@ -591,11 +715,13 @@ export function getStressPenaltyBreakdown(
 	const heatDays = data.heatStressDaysPast7d + data.heatStressDaysForecast7d;
 	if (heatDays >= 3) {
 		items.push({
+			id: 'heat',
 			label: m.yrs_breakdown_heat({ days: String(heatDays) }),
 			points: 10
 		});
 	} else if (heatDays >= 1) {
 		items.push({
+			id: 'heat',
 			label: m.yrs_breakdown_heat({ days: String(heatDays) }),
 			points: 5
 		});
@@ -603,6 +729,7 @@ export function getStressPenaltyBreakdown(
 
 	if (data.windStressIndex >= 70) {
 		items.push({
+			id: 'windStress',
 			label: m.yrs_breakdown_wind_stress({
 				index: String(Math.round(data.windStressIndex))
 			}),
@@ -610,6 +737,7 @@ export function getStressPenaltyBreakdown(
 		});
 	} else if (data.windStressIndex >= 50) {
 		items.push({
+			id: 'windStress',
 			label: m.yrs_breakdown_wind_stress({
 				index: String(Math.round(data.windStressIndex))
 			}),
@@ -619,6 +747,7 @@ export function getStressPenaltyBreakdown(
 
 	if (data.radiationStressIndex >= 75) {
 		items.push({
+			id: 'radiationStress',
 			label: m.yrs_breakdown_radiation_stress({
 				index: String(Math.round(data.radiationStressIndex))
 			}),
@@ -634,7 +763,7 @@ export function getStressPenaltyBreakdown(
 			const label = attenuation
 				? `${m.yrs_soil_night_drop()} — ${attenuation}`
 				: m.yrs_soil_night_drop();
-			items.push({ label, points });
+			items.push({ id: 'soilNightDrop', label, points });
 		}
 	}
 
@@ -675,9 +804,11 @@ export function getYrsConfidenceGaps(
 	) {
 		gaps.push('wsi');
 	}
-	if (!inputs.observedPhenologyStage) gaps.push('observedPhenology');
-	const species = inputs.species?.trim() ?? '';
-	if (!species || !isSpeciesInYrsCatalog(species)) {
+	const speciesForGap = inputs.species?.trim() ?? '';
+	if (!inputs.observedPhenologyStage && !(speciesForGap && isEvergreenSpecies(speciesForGap))) {
+		gaps.push('observedPhenology');
+	}
+	if (!speciesForGap || !isSpeciesInYrsCatalog(speciesForGap)) {
 		gaps.push('speciesMapped');
 	}
 	return gaps;
@@ -786,13 +917,6 @@ function buildYrsSummary(
 	confidence: YrsConfidence = 'medium'
 ): string {
 	const label = getYrsDecisionLabels()[decision];
-	const layerRatios: [string, number][] = [
-		[m.yrs_layer_climate(), layers.climate / 30],
-		[m.yrs_layer_soil(), layers.soil / 25],
-		[m.yrs_layer_phenology(), layers.phenology / 25],
-		[m.yrs_layer_hydric(), layers.hydric / 20]
-	];
-	const weakest = layerRatios.sort((a, b) => a[1] - b[1])[0];
 
 	if (confidence === 'low') {
 		return m.yrs_climate_summary_low_confidence({ label });
@@ -831,10 +955,24 @@ function buildYrsSummary(
 		return m.yrs_climate_summary_hydric({ label, wsi: String(data.wsi) });
 	}
 
-	return m.yrs_climate_summary_limiting({
-		label,
-		factor: weakest?.[0] ?? m.yrs_score_label()
-	});
+	const compared = [
+		{ factor: m.yrs_layer_climate(), ratio: layers.climate / 30, deficit: 30 - layers.climate },
+		{ factor: m.yrs_layer_soil(), ratio: layers.soil / 25, deficit: 25 - layers.soil },
+		{
+			factor: m.yrs_layer_phenology(),
+			ratio: layers.phenology / 25,
+			deficit: 25 - layers.phenology
+		},
+		{ factor: m.yrs_layer_hydric(), ratio: layers.hydric / 20, deficit: 20 - layers.hydric }
+	];
+	const weakest = [...compared].sort((a, b) => a.ratio - b.ratio)[0];
+	const maxDeficit = Math.max(...compared.map((layer) => layer.deficit));
+	const factor =
+		layers.stressPenalty > maxDeficit
+			? m.yrs_layer_penalties()
+			: (weakest?.factor ?? m.yrs_score_label());
+
+	return m.yrs_climate_summary_limiting({ label, factor });
 }
 
 export function computeYrsLayers(data: AgriData, inputs: YrsPlantInputs = {}): YrsLayerScores {

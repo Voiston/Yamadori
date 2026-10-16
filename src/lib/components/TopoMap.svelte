@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Tree } from '$lib/types/tree';
-	import { base, resolve } from '$app/paths';
+	import { base } from '$app/paths';
 	import { POOR_ACCURACY_THRESHOLD_M } from '$lib/utils/geo';
 	import { formatAccuracy } from '$lib/utils/gps';
 	import { buildTreePopupHtml } from '$lib/utils/map/treePopupHtml';
@@ -10,17 +10,35 @@
 		createSightLine,
 		emptyFeatureCollection
 	} from '$lib/utils/map/geojson';
-	import { getIgnLayerConfig } from '$lib/utils/map/ign';
 	import {
-		boundsFromMapCenter,
-		buildIgnWmtsUrl,
-		countTilesForBounds,
+		createIncludeTileForPolygon,
+		polygonBounds,
+		type LngLat
+	} from '$lib/utils/map/downloadRegion';
+	import {
 		expandTileUrlTemplate,
-		getDownloadZoomLevels,
 		getTileCacheStats,
 		prefetchTilesForBounds
 	} from '$lib/utils/map/tileCache';
-	import type { IgnLayerId } from '$lib/utils/map/ign';
+	import {
+		EMPTY_OFFLINE_PACK_ESTIMATE,
+		layersForSelection,
+		resolveOfflinePack,
+		type OfflinePackEstimate,
+		type OfflinePackLayerKind,
+		type OfflinePackSelection
+	} from '$lib/utils/map/offlinePack';
+	import { forecastPointsForRing, polygonCentroid } from '$lib/utils/offlineForecastGrid';
+	import {
+		OFFLINE_PARCEL_LIMIT,
+		prefetchOfflineParcels
+	} from '$lib/utils/offlineParcels';
+	import {
+		OFFLINE_PROTECTED_LIMIT,
+		prefetchOfflineProtectedAreas
+	} from '$lib/utils/offlineProtectedAreas';
+	import { fetchAgriDataBase } from '$lib/utils/agri';
+	import { saveCachedForecast } from '$lib/utils/weatherCache';
 	import {
 		createMapStyle,
 		setBasemapVisibility,
@@ -31,9 +49,7 @@
 	import { resolveCountry } from '$lib/geo/resolveCountry';
 	import { applyCountryBasemap } from '$lib/geo/providers/map/applyCountryBasemap';
 	import { getMapProvider } from '$lib/geo/providers/map/registry';
-	import type { MapLayerConfig } from '$lib/geo/providers/map/types';
 	import { getTreeById, treeStore, treesWithGps } from '$lib/stores/trees.svelte';
-	import { getAccessibleTrees } from '$lib/utils/featurePolicy';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import { parkingStore } from '$lib/stores/parking.svelte';
 	import { normalizeHeading360 } from '$lib/utils/haversine';
@@ -47,20 +63,24 @@
 		updateUserHeadingMarker
 	} from '$lib/utils/map/userMarker';
 	import {
+		cadastrePinClass,
 		focusCenterMarkerCss,
 		parkingMarkerCss,
 		treeMarkerCss
 	} from '$lib/utils/map/mapMarkerStyles';
 	import ParkingPanel from '$lib/components/ParkingPanel.svelte';
 	import MapDownloadOverlay from '$lib/components/MapDownloadOverlay.svelte';
+	import OfflinePackSheet from '$lib/components/OfflinePackSheet.svelte';
 	import MapOnboardingSheet from '$lib/components/MapOnboardingSheet.svelte';
 	import MapControlsMenu from '$lib/components/MapControlsMenu.svelte';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
 	import CadastreBanner from '$lib/components/CadastreBanner.svelte';
 	import VetoLegalChecklist from '$lib/components/VetoLegalChecklist.svelte';
 	import { cadastreLookup, resolveCadastre, resetCadastreLookup } from '$lib/stores/cadastreLookup.svelte';
 	import { cadastreCacheKey } from '$lib/utils/cadastre';
+	import { cadastreScanHapticKind } from '$lib/utils/cadastreScanFeedback';
 	import type { CadastreInfo } from '$lib/types/cadastre';
-	import { canUseApi, getApiDisabledError } from '$lib/utils/apiPolicy';
+	import { canUseApi, getApiDisabledError, isApiEnabled } from '$lib/utils/apiPolicy';
 	import { onlineState } from '$lib/utils/online.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import {
@@ -70,21 +90,26 @@
 		type UserPosition
 	} from '$lib/utils/userPosition.svelte';
 	import { resolveMapTabGpsProfileFromProximity, resolveMapParkingProximity } from '$lib/utils/mapTabGpsProfile';
-	import { hapticSuccess } from '$lib/utils/haptics';
+	import { showAppToast, showErrorToast, showOkToast } from '$lib/stores/appToast.svelte';
+	import {
+		mapDownloadFailedCopy,
+		mapRecenterGpsCopy,
+		mapTilesCadastreErrorCopy,
+		mapTilesErrorCopy,
+		mapTilesProtectedErrorCopy
+	} from '$lib/utils/errorCopy';
+	import { resolveErrorCopy, type ErrorCopy } from '$lib/utils/userFacingError';
+	import { hapticLight, hapticSelection, hapticSuccess, hapticWarning } from '$lib/utils/haptics';
 	import { nativeTap } from '$lib/utils/native-touch';
 	import { MOTION_MS, prefersReducedMotion } from '$lib/utils/motion';
-	import {
-		buildMapOnboardingSteps,
-		resolveMapOnboardingLayersVariant,
-		type MapOnboardingLayersVariant,
-		type MapOnboardingStepId
-	} from '$lib/utils/mapOnboarding';
-	import { getGeoCapabilities } from '$lib/geo/capabilities';
-	import { getMapOnboardingSources } from '$lib/geo/mapOnboardingSources';
-	import maplibregl from 'maplibre-gl';
+	import { MAP_ONBOARDING_STEPS } from '$lib/utils/mapOnboarding';
+	import * as maplibregl from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
+	import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 	import { onMount } from 'svelte';
-	import type { GeoJSONSource, Map as MaplibreMap, Marker, Popup } from 'maplibre-gl';
+	import type { GeoJSONSource, Map as MaplibreMap, Marker, Popup, RasterTileSource } from 'maplibre-gl';
+
+	maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 	type ViewMode = 'topdown' | 'oblique';
 
@@ -123,17 +148,13 @@
 	let showCadastreLayer = $state(false);
 	let showProtectedLayer = $state(false);
 	let showMapOnboarding = $state(false);
-	let mapOnboardingSteps = $state<MapOnboardingStepId[]>([]);
 	let mapOnboardingIndex = $state(0);
-	let mapOnboardingLayersVariant = $state<MapOnboardingLayersVariant>('both');
-	let mapOnboardingCadastrePartial = $state(false);
-	let mapOnboardingCadastreSource = $state('parcel data');
-	let mapOnboardingProtectedSource = $state('protected areas');
 	let pulseMenuButton = $state(false);
-	let pulseMenuButtonTimer: ReturnType<typeof setTimeout> | null = null;
+	let pulseFollowButton = $state(false);
+	let pulseControlTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const mapOnboardingStepId = $derived(
-		mapOnboardingSteps[mapOnboardingIndex] ?? 'intro'
+		MAP_ONBOARDING_STEPS[mapOnboardingIndex] ?? 'menu'
 	);
 	type MapCadastreSelection = {
 		latitude: number;
@@ -145,6 +166,7 @@
 	};
 	let mapCadastreSelection = $state<MapCadastreSelection | null>(null);
 	let cadastrePinMarker: Marker | undefined;
+	let lastCadastreScanHapticKey = '';
 	let viewMode = $state<ViewMode>('topdown');
 
 	const defaultCenter: [number, number] = [2.5, 46.5];
@@ -249,13 +271,44 @@
 		}
 		return [...new Set(parts)].join(' · ');
 	});
-	let tileError = $state('');
+	let tileErrorCopy = $state<ErrorCopy | null>(null);
+
+	const RETRYABLE_TILE_SOURCES = [
+		'ign-plan',
+		'ign-ortho',
+		'ign-hillshade',
+		'ign-cadastre',
+		'ign-protected'
+	] as const;
+
+	/** MapLibre keeps errored raster tiles until `setTiles` asks for them again. */
+	function retryFailedMapTiles(): void {
+		tileErrorCopy = null;
+		if (!map) return;
+
+		for (const sourceId of RETRYABLE_TILE_SOURCES) {
+			const source = map.getSource(sourceId);
+			if (!source || source.type !== 'raster') continue;
+			const raster = source as RasterTileSource;
+			if (!raster.tiles?.length || typeof raster.setTiles !== 'function') continue;
+			try {
+				// Drop errored tiles before reload. Promoting them to "expired" can
+				// render a tile that never received a texture.
+				map.style.tileManagers[sourceId]?.clearTiles();
+				raster.setTiles([...raster.tiles]);
+			} catch {
+				// One overlay must not block the basemap from reloading.
+			}
+		}
+		map.triggerRepaint();
+	}
 	let cacheCount = $state(0);
 	let downloadingZone = $state(false);
 	let downloadProgress = $state('');
 	let downloadSelectionMode = $state(false);
-	let downloadTileCount = $state(0);
-	let downloadZoomLevels = $state<number[]>([]);
+	let downloadPackEstimate = $state<OfflinePackEstimate>(EMPTY_OFFLINE_PACK_ESTIMATE);
+	let packSheetOpen = $state(false);
+	let downloadPolygon = $state.raw<LngLat[] | null>(null);
 	let lastMapPositionSyncAt = 0;
 	let mapPositionThrottleTimer: ReturnType<typeof setTimeout> | null = null;
 	let cadastreDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -263,6 +316,7 @@
 	let vetoChecklistOpen = $state(false);
 	let previousHeadingLock = false;
 	let userManualPan = false;
+	let didApplyInitialUserCenter = false;
 	let suppressFollowPanDepth = 0;
 	let followUser = $state(false);
 	let introPlaying = false;
@@ -297,8 +351,34 @@
 		marker.setLngLat(lngLat);
 	}
 
-	function getDownloadLayerIds(): IgnLayerId[] {
-		return basemap === 'satellite' ? ['plan', 'ortho', 'hillshade'] : ['plan', 'ortho'];
+	function packLayerLabel(kind: OfflinePackLayerKind): string {
+		switch (kind) {
+			case 'plan':
+				return m.map_layer_plan();
+			case 'ortho':
+				return m.map_layer_satellite();
+			case 'hillshade':
+				return m.map_layer_relief();
+			case 'cadastre':
+				return m.map_layer_cadastre();
+			case 'protected':
+				return m.map_layer_protected();
+		}
+	}
+
+	function currentPackEstimate(ring: LngLat[]): OfflinePackEstimate {
+		if (!map) {
+			return EMPTY_OFFLINE_PACK_ESTIMATE;
+		}
+		const center = polygonCentroid(ring);
+		const country = resolveCountry(center.latitude, center.longitude);
+		return resolveOfflinePack({
+			ring,
+			currentZoom: map.getZoom(),
+			basemap,
+			country,
+			location: { latitude: center.latitude, longitude: center.longitude }
+		});
 	}
 
 	function scheduleMapContainerResize(instance: maplibregl.Map, container: HTMLElement): void {
@@ -353,13 +433,18 @@
 		return embedded && !headingLock;
 	}
 
+	function getFocusTree(): Tree | undefined {
+		if (!focusTreeId) return undefined;
+		return getTreeById(focusTreeId);
+	}
+
 	function getEmbeddedTargetCoords(): { lng: number; lat: number } | null {
 		if (focusCenter) {
 			return { lng: focusCenter.longitude, lat: focusCenter.latitude };
 		}
 
 		if (focusTreeId) {
-			const tree = getTreeById(focusTreeId);
+			const tree = getFocusTree();
 			if (tree && tree.latitude !== null && tree.longitude !== null) {
 				return { lng: tree.longitude, lat: tree.latitude };
 			}
@@ -429,7 +514,7 @@
 	}
 
 	function syncFollowCamera(): void {
-		if (!map || !followUser || userManualPan || introPlaying) {
+		if (!map || !followUser || userManualPan || introPlaying || downloadSelectionMode) {
 			return;
 		}
 
@@ -679,9 +764,40 @@
 
 	function createCadastrePinElement(): HTMLDivElement {
 		const el = document.createElement('div');
-		el.style.cssText =
-			'width:14px;height:14px;border-radius:50%;border:2px solid #7c3aed;background:#ede9fe;box-shadow:0 1px 4px rgba(0,0,0,0.25);';
+		el.className = cadastrePinClass(appearanceSettingsState.outdoorMode);
+		el.innerHTML =
+			'<span class="cadastre-pin__dot"></span><span class="cadastre-pin__ring"></span><span class="cadastre-pin__ring cadastre-pin__ring--delay"></span>';
 		return el;
+	}
+
+	function playCadastrePinPing(el: HTMLElement): void {
+		void hapticLight();
+		el.classList.remove('cadastre-pin--ping');
+		if (prefersReducedMotion()) {
+			return;
+		}
+		void el.offsetWidth;
+		el.classList.add('cadastre-pin--ping');
+	}
+
+	function maybeFireCadastreScanHaptic(
+		selection: MapCadastreSelection,
+		info: CadastreInfo | null
+	): void {
+		if (selection.source !== 'tap') {
+			return;
+		}
+		const key = cadastreCacheKey(selection.latitude, selection.longitude);
+		if (lastCadastreScanHapticKey === key) {
+			return;
+		}
+		lastCadastreScanHapticKey = key;
+		const kind = cadastreScanHapticKind(info);
+		if (kind === 'selection') {
+			void hapticSelection();
+		} else {
+			void hapticWarning();
+		}
 	}
 
 	function selectMapCadastrePoint(
@@ -696,12 +812,8 @@
 		mapCadastreSelection = { latitude, longitude, stored, species, treeId, source };
 		cadastreDismissedKey = '';
 		vetoChecklistOpen = false;
-		if (
-			showMapOnboarding &&
-			mapOnboardingStepId === 'tap' &&
-			source !== 'focus'
-		) {
-			advanceMapOnboarding();
+		if (source === 'tap') {
+			lastCadastreScanHapticKey = '';
 		}
 	}
 
@@ -716,12 +828,18 @@
 		}
 
 		const lngLat: [number, number] = [selection.longitude, selection.latitude];
+		const shouldPing = selection.source === 'tap';
 		if (!cadastrePinMarker) {
-			cadastrePinMarker = new maplibregl.Marker({ element: createCadastrePinElement() })
-				.setLngLat(lngLat)
-				.addTo(map);
+			const element = createCadastrePinElement();
+			cadastrePinMarker = new maplibregl.Marker({ element }).setLngLat(lngLat).addTo(map);
+			if (shouldPing) {
+				playCadastrePinPing(element);
+			}
 		} else {
 			cadastrePinMarker.setLngLat(lngLat);
+			if (shouldPing) {
+				playCadastrePinPing(cadastrePinMarker.getElement());
+			}
 		}
 	}
 
@@ -752,6 +870,10 @@
 
 		if (focusCenterMarker) {
 			focusCenterMarker.getElement().style.cssText = focusCenterMarkerCss(outdoor);
+		}
+
+		if (cadastrePinMarker) {
+			cadastrePinMarker.getElement().classList.toggle('cadastre-pin--outdoor', outdoor);
 		}
 	}
 
@@ -813,7 +935,7 @@
 	function syncTreeMarkers(): void {
 		if (!map) return;
 
-		const gpsTrees = getAccessibleTrees(treesWithGps());
+		const gpsTrees = treesWithGps();
 		const currentIds = new Set(gpsTrees.map((tree) => tree.id));
 
 		for (const [id, marker] of markers) {
@@ -884,7 +1006,7 @@
 		const source = map.getSource('approach') as GeoJSONSource | undefined;
 		if (!source) return;
 
-		const focusTree = focusTreeId ? getTreeById(focusTreeId) : undefined;
+		const focusTree = getFocusTree();
 		const userPos = userPositionState.position;
 
 		let targetLng: number | null = null;
@@ -1040,6 +1162,13 @@
 		}
 	}
 
+	function maybeApplyInitialUserCenter(position: UserPosition): void {
+		if (didApplyInitialUserCenter || !map || embedded || focusTreeId) return;
+		didApplyInitialUserCenter = true;
+		if (userManualPan || downloadSelectionMode || introPlaying) return;
+		applyRecenterCamera(position);
+	}
+
 	function fitMapToTrees(): void {
 		if (!map) return;
 
@@ -1053,8 +1182,8 @@
 			return;
 		}
 
-		const gpsTrees = getAccessibleTrees(treesWithGps());
-		const focusTree = focusTreeId ? getTreeById(focusTreeId) : undefined;
+		const gpsTrees = treesWithGps();
+		const focusTree = getFocusTree();
 		const focusMarker = focusTreeId ? markers.get(focusTreeId) : undefined;
 
 		if (
@@ -1076,6 +1205,19 @@
 					});
 				});
 				pendingFocusPopupMarker = focusMarker;
+			}
+		} else if (!embedded && !focusTreeId) {
+			if (userPos) {
+				maybeApplyInitialUserCenter(userPos);
+			} else {
+				withProgrammaticCameraMove(() => {
+					map!.flyTo({
+						center: defaultCenter,
+						zoom: defaultZoom,
+						pitch: getPitch(),
+						duration: 800
+					});
+				});
 			}
 		} else if (gpsTrees.length > 1) {
 			const bounds = new maplibregl.LngLatBounds();
@@ -1136,42 +1278,31 @@
 	function dismissMapOnboarding(): void {
 		showMapOnboarding = false;
 		mapOnboardingIndex = 0;
-		mapOnboardingSteps = [];
 		pulseMenuButton = false;
+		pulseFollowButton = false;
 		markMapOnboardingSeen();
 	}
 
-	function pulseMenuControl(): void {
+	function pulseOnboardingControl(): void {
 		if (prefersReducedMotion()) return;
-		pulseMenuButton = true;
-		if (pulseMenuButtonTimer) clearTimeout(pulseMenuButtonTimer);
-		pulseMenuButtonTimer = setTimeout(() => {
+		const followStep = MAP_ONBOARDING_STEPS[mapOnboardingIndex] === 'follow';
+		pulseMenuButton = !followStep;
+		pulseFollowButton = followStep;
+		if (pulseControlTimer) clearTimeout(pulseControlTimer);
+		pulseControlTimer = setTimeout(() => {
 			pulseMenuButton = false;
-			pulseMenuButtonTimer = null;
+			pulseFollowButton = false;
+			pulseControlTimer = null;
 		}, MOTION_MS.pulse);
 	}
 
 	function advanceMapOnboarding(): void {
-		if (mapOnboardingIndex >= mapOnboardingSteps.length - 1) {
+		if (mapOnboardingIndex >= MAP_ONBOARDING_STEPS.length - 1) {
 			dismissMapOnboarding();
 			return;
 		}
 		mapOnboardingIndex += 1;
-		if (mapOnboardingSteps[mapOnboardingIndex] === 'menu') {
-			pulseMenuControl();
-		}
-	}
-
-	function enableUsefulLayers(): void {
-		if (mapOnboardingStepId !== 'layers') return;
-		if (cadastreOverlayAvailable) {
-			setCadastreLayer(true);
-		}
-		if (protectedOverlayAvailable) {
-			setProtectedLayer(true);
-		}
-		pulseMenuControl();
-		advanceMapOnboarding();
+		pulseOnboardingControl();
 	}
 
 	function hasSeenMapOnboarding(): boolean {
@@ -1188,27 +1319,9 @@
 	}
 
 	function startMapOnboarding(): void {
-		const center = map?.getCenter();
-		const lat = center?.lat ?? defaultCenter[1];
-		const lng = center?.lng ?? defaultCenter[0];
-		const country = lastMapStyleCountry ?? resolveCountry(lat, lng);
-		const location = { latitude: lat, longitude: lng };
-		const provider = getMapProvider(country, location);
-		const geo = getGeoCapabilities(country);
-		const caps = {
-			hasCadastreOverlay: Boolean(provider.cadastreOverlay),
-			hasProtectedOverlay: Boolean(provider.protectedAreasOverlay),
-			cadastreLevel: geo.cadastre
-		};
-		mapOnboardingSteps = buildMapOnboardingSteps(caps);
-		mapOnboardingLayersVariant = resolveMapOnboardingLayersVariant(caps);
-		mapOnboardingCadastrePartial = caps.cadastreLevel === 'partial';
-		const sources = getMapOnboardingSources(country);
-		mapOnboardingCadastreSource = sources.cadastreSource;
-		mapOnboardingProtectedSource = sources.protectedSource;
 		mapOnboardingIndex = 0;
 		showMapOnboarding = true;
-		pulseMenuControl();
+		pulseOnboardingControl();
 	}
 
 	$effect(() => {
@@ -1267,29 +1380,52 @@
 			applyRecenterCamera(fresh);
 		} else {
 			followUser = false;
+			showErrorToast(mapRecenterGpsCopy());
+		}
+	}
+
+	function setMapGesturesEnabled(instance: maplibregl.Map, enabled: boolean): void {
+		const handlers = [
+			instance.dragPan,
+			instance.scrollZoom,
+			instance.boxZoom,
+			instance.dragRotate,
+			instance.keyboard,
+			instance.doubleClickZoom,
+			instance.touchZoomRotate,
+			instance.touchPitch
+		];
+		for (const handler of handlers) {
+			if (enabled) {
+				handler.enable();
+			} else {
+				handler.disable();
+			}
 		}
 	}
 
 	function refreshDownloadEstimate(): void {
-		if (!map || !downloadSelectionMode) {
+		if (!map || !downloadSelectionMode || !downloadPolygon) {
+			downloadPackEstimate = EMPTY_OFFLINE_PACK_ESTIMATE;
 			return;
 		}
+		downloadPackEstimate = currentPackEstimate(downloadPolygon);
+	}
 
-		const bounds = boundsFromMapCenter(map);
-		const zoomSet = new Set<number>();
-		let totalTiles = 0;
-
-		for (const layerId of getDownloadLayerIds()) {
-			const layer = getIgnLayerConfig(layerId);
-			const zoomLevels = getDownloadZoomLevels(map.getZoom(), layer.maxZoom);
-			for (const zoom of zoomLevels) {
-				zoomSet.add(zoom);
-			}
-			totalTiles += countTilesForBounds(bounds, zoomLevels);
+	function handleDownloadRegionChange(ring: LngLat[] | null): void {
+		downloadPolygon = ring;
+		if (!ring) {
+			packSheetOpen = false;
 		}
+		refreshDownloadEstimate();
+	}
 
-		downloadZoomLevels = [...zoomSet].sort((a, b) => a - b);
-		downloadTileCount = totalTiles;
+	function openPackSheet(): void {
+		if (!map || !downloadPolygon || downloadingZone) {
+			return;
+		}
+		refreshDownloadEstimate();
+		packSheetOpen = true;
 	}
 
 	function scheduleDownloadEstimateRefresh(): void {
@@ -1306,12 +1442,19 @@
 		if (!map || !canUseApi('ignMap') || downloadingZone) {
 			return;
 		}
+		followUser = false;
+		lastFollowCameraPosition = null;
+		downloadPolygon = null;
+		downloadPackEstimate = EMPTY_OFFLINE_PACK_ESTIMATE;
+		packSheetOpen = false;
 		downloadSelectionMode = true;
-		refreshDownloadEstimate();
 	}
 
 	function cancelDownloadSelection(): void {
 		downloadSelectionMode = false;
+		downloadPolygon = null;
+		downloadPackEstimate = EMPTY_OFFLINE_PACK_ESTIMATE;
+		packSheetOpen = false;
 		downloadProgress = '';
 		downloadAbortController?.abort();
 		downloadAbortController = null;
@@ -1333,14 +1476,23 @@
 		setTimeout(run, 0);
 	}
 
-	async function handleDownloadZone(): Promise<void> {
-		if (!map || !canUseApi('ignMap') || downloadingZone) {
+	async function handleDownloadZone(selection: OfflinePackSelection): Promise<void> {
+		if (!map || downloadingZone || !downloadPolygon) {
+			return;
+		}
+		const wantsTiles = selection.maps || selection.cadastre || selection.protectedAreas;
+		if (wantsTiles && !canUseApi('ignMap')) {
+			return;
+		}
+		if (!wantsTiles && !selection.weather) {
 			return;
 		}
 
+		const ring = downloadPolygon;
+		packSheetOpen = false;
 		downloadingZone = true;
 		downloadProgress = m.map_preparing();
-		tileError = '';
+		tileErrorCopy = null;
 		downloadAbortController?.abort();
 		const abortController = new AbortController();
 		downloadAbortController = abortController;
@@ -1348,69 +1500,36 @@
 		let lastProgressDone = 0;
 
 		try {
-			const bounds = boundsFromMapCenter(map);
+			const bounds = polygonBounds(ring);
+			const includeTile = createIncludeTileForPolygon(ring);
+			const estimate = currentPackEstimate(ring);
+			const downloadLayers = layersForSelection(estimate, selection);
 			let fetched = 0;
-			let failed = 0;
-
-			const userPos = userPositionState.position;
-			const downloadCountry = userPos
-				? resolveCountry(userPos.latitude, userPos.longitude)
-				: resolveCountry(defaultCenter[1], defaultCenter[0]);
-			const mapProvider = getMapProvider(downloadCountry);
-			const useIgnDownload = downloadCountry === 'FR';
-
-			type DownloadLayer = {
-				label: string;
-				maxZoom: number;
-				buildUrl: (z: number, x: number, y: number) => string;
-			};
-
-			const downloadLayers: DownloadLayer[] = [];
-			if (useIgnDownload) {
-				for (const layerId of getDownloadLayerIds()) {
-					const layer = getIgnLayerConfig(layerId);
-					downloadLayers.push({
-						label:
-							layerId === 'plan'
-								? m.map_layer_plan()
-								: layerId === 'ortho'
-									? m.map_layer_satellite()
-									: m.map_layer_relief(),
-						maxZoom: layer.maxZoom,
-						buildUrl: (z, x, y) => buildIgnWmtsUrl(layer.layer, layer.format, z, x, y)
-					});
-				}
-			} else {
-				const pushProviderLayer = (label: string, config: MapLayerConfig | null | undefined) => {
-					if (!config?.tiles?.[0]) return;
-					const template = config.tiles[0];
-					downloadLayers.push({
-						label,
-						maxZoom: config.maxZoom,
-						buildUrl: (z, x, y) => expandTileUrlTemplate(template, z, x, y)
-					});
-				};
-				pushProviderLayer(m.map_layer_plan(), mapProvider.plan);
-				pushProviderLayer(m.map_layer_satellite(), mapProvider.ortho);
-				if (basemap === 'satellite') {
-					pushProviderLayer(m.map_layer_relief(), mapProvider.hillshade);
-				}
-			}
+			let tileFailed = 0;
+			let weatherSaved = 0;
+			let weatherFailed = 0;
+			let parcelsAttempted = false;
+			let parcelsSaved = 0;
+			let parcelsCapped = false;
+			let parcelsIncomplete = false;
+			let protectedAttempted = false;
+			let protectedSaved = 0;
+			let protectedCapped = false;
+			let protectedIncomplete = false;
 
 			for (const layer of downloadLayers) {
 				if (abortController.signal.aborted) {
 					break;
 				}
 
-				const zoomLevels = getDownloadZoomLevels(map.getZoom(), layer.maxZoom);
-				const label = layer.label;
-
+				const label = packLayerLabel(layer.kind);
 				const result = await prefetchTilesForBounds(
 					bounds,
-					zoomLevels,
-					layer.buildUrl,
+					layer.zoomLevels,
+					(z, x, y) => expandTileUrlTemplate(layer.tileTemplate, z, x, y),
 					{
 						signal: abortController.signal,
+						includeTile,
 						onProgress: (done, total) => {
 							const now = Date.now();
 							if (
@@ -1428,29 +1547,173 @@
 				);
 
 				fetched += result.fetched;
-				failed += result.failed;
+				tileFailed += result.failed;
+			}
+
+			if (
+				selection.cadastre &&
+				!abortController.signal.aborted &&
+				isApiEnabled('ignCadastre')
+			) {
+				const centroid = polygonCentroid(ring);
+				if (resolveCountry(centroid.latitude, centroid.longitude) === 'FR') {
+					parcelsAttempted = true;
+					downloadProgress = m.map_offline_parcels_progress({ count: 0 });
+					try {
+						const parcelResult = await prefetchOfflineParcels(ring, {
+							signal: abortController.signal,
+							onProgress: (count) => {
+								downloadProgress = m.map_offline_parcels_progress({ count });
+							}
+						});
+						parcelsSaved = parcelResult.saved;
+						parcelsCapped = parcelResult.capped;
+						parcelsIncomplete = parcelResult.incomplete;
+					} catch (error) {
+						if (error instanceof DOMException && error.name === 'AbortError') throw error;
+						parcelsIncomplete = true;
+					}
+				}
+			}
+
+			if (
+				selection.protectedAreas &&
+				!abortController.signal.aborted &&
+				isApiEnabled('ignProtectedAreas')
+			) {
+				const centroid = polygonCentroid(ring);
+				if (resolveCountry(centroid.latitude, centroid.longitude) === 'FR') {
+					protectedAttempted = true;
+					downloadProgress = m.map_offline_protected_progress({ count: 0 });
+					try {
+						const protectedResult = await prefetchOfflineProtectedAreas(ring, {
+							signal: abortController.signal,
+							onProgress: (count) => {
+								downloadProgress = m.map_offline_protected_progress({ count });
+							}
+						});
+						protectedSaved = protectedResult.saved;
+						protectedCapped = protectedResult.capped;
+						protectedIncomplete = protectedResult.incomplete;
+					} catch (error) {
+						if (error instanceof DOMException && error.name === 'AbortError') throw error;
+						protectedIncomplete = true;
+					}
+				}
+			}
+
+			if (selection.weather && !abortController.signal.aborted && canUseApi('openMeteoForecast')) {
+				const points = forecastPointsForRing(ring);
+				for (let index = 0; index < points.length; index += 1) {
+					if (abortController.signal.aborted) {
+						break;
+					}
+					const point = points[index];
+					downloadProgress = m.map_offline_weather_progress({
+						done: index + 1,
+						total: points.length
+					});
+					try {
+						const forecast = await new Promise<Awaited<ReturnType<typeof fetchAgriDataBase>>>(
+							(resolve, reject) => {
+								const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+								if (abortController.signal.aborted) {
+									onAbort();
+									return;
+								}
+								abortController.signal.addEventListener('abort', onAbort, { once: true });
+								void fetchAgriDataBase(point.latitude, point.longitude).then(
+									(value) => {
+										abortController.signal.removeEventListener('abort', onAbort);
+										resolve(value);
+									},
+									(error: unknown) => {
+										abortController.signal.removeEventListener('abort', onAbort);
+										reject(error);
+									}
+								);
+							}
+						);
+						await saveCachedForecast(
+							point.latitude,
+							point.longitude,
+							forecast.baseData,
+							forecast.forecastBody
+						);
+						weatherSaved += 1;
+					} catch {
+						if (abortController.signal.aborted) {
+							break;
+						}
+						weatherFailed += 1;
+					}
+				}
 			}
 
 			if (abortController.signal.aborted) {
 				downloadProgress = '';
 				downloadSelectionMode = false;
+				downloadPolygon = null;
 				return;
 			}
 
-			downloadProgress =
-				failed > 0
-					? m.map_tiles_with_failures({ count: fetched, failed })
-					: m.map_tiles_downloaded({ count: fetched });
+			const parts: string[] = [];
+			if (downloadLayers.length > 0) {
+				parts.push(
+					tileFailed > 0
+						? m.map_tiles_with_failures({ count: fetched, failed: tileFailed })
+						: m.map_tiles_downloaded({ count: fetched })
+				);
+			} else if (weatherSaved === 0) {
+				showErrorToast(mapDownloadFailedCopy());
+				downloadSelectionMode = false;
+				downloadPolygon = null;
+				return;
+			}
+			if (weatherSaved > 0) {
+				parts.push(m.map_offline_pack_weather_saved({ count: weatherSaved }));
+			}
+			if (parcelsAttempted) {
+				parts.push(m.map_offline_parcels_saved({ count: parcelsSaved }));
+				if (parcelsCapped) {
+					parts.push(m.map_offline_parcels_capped({ count: OFFLINE_PARCEL_LIMIT }));
+				}
+				if (parcelsIncomplete) {
+					parts.push(m.map_offline_parcels_failed());
+				}
+			}
+			if (protectedAttempted) {
+				parts.push(m.map_offline_protected_saved({ count: protectedSaved }));
+				if (protectedCapped) {
+					parts.push(m.map_offline_protected_capped({ count: OFFLINE_PROTECTED_LIMIT }));
+				}
+				if (protectedIncomplete) {
+					parts.push(m.map_offline_protected_failed());
+				}
+			}
+			const summary = parts.join(' · ');
 			await refreshCacheStats();
+			if (selection.cadastre) {
+				showCadastreLayer = true;
+			}
+			if (selection.protectedAreas) {
+				showProtectedLayer = true;
+			}
 			downloadSelectionMode = false;
+			downloadPolygon = null;
+			if (summary && (tileFailed > 0 || weatherFailed > 0 || parcelsIncomplete || protectedIncomplete)) {
+				showAppToast('info', summary, { durationMs: 4000 });
+			} else if (summary) {
+				showOkToast(summary);
+			}
 		} catch (error) {
 			if (error instanceof DOMException && error.name === 'AbortError') {
 				downloadProgress = '';
 				downloadSelectionMode = false;
+				downloadPolygon = null;
 				return;
 			}
-			tileError =
-				error instanceof Error ? error.message : m.map_download_failed();
+			showErrorToast(resolveErrorCopy(error, mapDownloadFailedCopy()));
 		} finally {
 			downloadingZone = false;
 			if (downloadAbortController === abortController) {
@@ -1493,6 +1756,7 @@
 		const container = mapContainer;
 
 		const userPos = userPositionState.position;
+		const openOnUser = !embedded && !focusTreeId && userPos;
 		const styleLat = userPos?.latitude ?? defaultCenter[1];
 		const styleLng = userPos?.longitude ?? defaultCenter[0];
 		const styleCountry = resolveCountry(styleLat, styleLng);
@@ -1501,8 +1765,8 @@
 		const instance = new maplibregl.Map({
 			container,
 			style: createMapStyle(styleCountry, { latitude: styleLat, longitude: styleLng }),
-			center: defaultCenter,
-			zoom: defaultZoom,
+			center: openOnUser ? [userPos.longitude, userPos.latitude] : defaultCenter,
+			zoom: openOnUser ? USER_RECENTER_ZOOM : defaultZoom,
 			pitch: PITCH_TOPDOWN,
 			attributionControl: false,
 			maxPitch: 60
@@ -1520,11 +1784,11 @@
 			if (!isTileish) return;
 
 			if (sourceId === 'ign-protected') {
-				tileError = m.map_tiles_error_protected();
+				tileErrorCopy = mapTilesProtectedErrorCopy();
 				return;
 			}
 			if (sourceId === 'ign-cadastre') {
-				tileError = m.map_tiles_error_cadastre();
+				tileErrorCopy = mapTilesCadastreErrorCopy();
 				return;
 			}
 			// Basemap / hillshade failures — keep a generic map-tiles message (not "IGN").
@@ -1534,7 +1798,7 @@
 				sourceId === 'ign-hillshade' ||
 				sourceId.startsWith('ign-')
 			) {
-				tileError = m.map_tiles_error();
+				tileErrorCopy = mapTilesErrorCopy();
 			}
 		});
 		instance.on('data', (event) => {
@@ -1548,7 +1812,7 @@
 			) {
 				// Clear banner only when the failing source recovers; overlays shouldn't
 				// wipe a basemap error and vice versa — clear whenever any ign source loads.
-				tileError = '';
+				tileErrorCopy = null;
 			}
 		});
 		instance.on('load', () => {
@@ -1623,9 +1887,9 @@
 				clearTimeout(styleSwitchTimer);
 				styleSwitchTimer = null;
 			}
-			if (pulseMenuButtonTimer) {
-				clearTimeout(pulseMenuButtonTimer);
-				pulseMenuButtonTimer = null;
+			if (pulseControlTimer) {
+				clearTimeout(pulseControlTimer);
+				pulseControlTimer = null;
 			}
 			pendingFocusPopupMarker = undefined;
 			mapReady = false;
@@ -1693,13 +1957,31 @@
 	$effect(() => {
 		if (!mapReady || !map) return;
 		void headingLock;
-		void userPositionState.position;
+		const position = userPositionState.position;
 		void focusTreeId;
 		void focusCenter;
 		scheduleUserPositionSync();
 		if (followUser) {
 			syncFollowCamera();
 		}
+		if (position) {
+			maybeApplyInitialUserCenter(position);
+		}
+	});
+
+	$effect(() => {
+		if (!mapReady || !map || !downloadSelectionMode) {
+			return;
+		}
+		const instance = map;
+		setMapGesturesEnabled(instance, false);
+		return () => {
+			try {
+				setMapGesturesEnabled(instance, true);
+			} catch {
+				// Map already removed
+			}
+		};
 	});
 
 	$effect(() => {
@@ -1758,8 +2040,7 @@
 		syncUserMarker();
 	});
 
-	let gpsCount = $derived(getAccessibleTrees(treesWithGps()).length);
-	let canRecenter = $derived(mapReady && userPositionState.position !== null);
+	let canRecenter = $derived(mapReady);
 
 	const cadastreTarget = $derived.by(() => {
 		if (embedded) {
@@ -1767,7 +2048,7 @@
 				return null;
 			}
 
-			const tree = getTreeById(focusTreeId);
+			const tree = getFocusTree();
 			if (
 				tree?.latitude == null ||
 				tree.longitude == null ||
@@ -1801,7 +2082,7 @@
 	);
 
 	const cadastreBannerLoading = $derived(
-		canUseApi('ignCadastre') && cadastreLookup.loading && cadastreDisplay === null
+		cadastreLookup.loading && cadastreDisplay === null
 	);
 
 	const cadastreSpecies = $derived.by(() => {
@@ -1809,16 +2090,31 @@
 			return mapCadastreSelection.species;
 		}
 		if (focusTreeId) {
-			return getTreeById(focusTreeId)?.species ?? '';
+			return getFocusTree()?.species ?? '';
 		}
 		return '';
 	});
+
+	const cadastreLookupFailed = $derived(cadastreLookup.error === 'lookup_failed');
+	const cadastreLookupEmpty = $derived(
+		!embedded &&
+			mapCadastreSelection !== null &&
+			!cadastreBannerLoading &&
+			cadastreDisplay === null &&
+			cadastreLookup.error !== 'lookup_failed' &&
+			cadastreLookup.latitude === mapCadastreSelection.latitude &&
+			cadastreLookup.longitude === mapCadastreSelection.longitude
+	);
 
 	const showCadastreBanner = $derived(
 		!showMapOnboarding &&
 			(embedded
 				? cadastreDisplay !== null
-				: (cadastreBannerLoading || cadastreDisplay !== null) && mapCadastreSelection !== null) &&
+				: mapCadastreSelection !== null &&
+					(cadastreBannerLoading ||
+						cadastreDisplay !== null ||
+						cadastreLookupFailed ||
+						cadastreLookupEmpty)) &&
 			cadastreTargetKey !== '' &&
 			cadastreTargetKey !== cadastreDismissedKey
 	);
@@ -1827,10 +2123,21 @@
 		cadastreDismissedKey = cadastreTargetKey;
 	}
 
+	function retryCadastreLookup(): void {
+		const selection = mapCadastreSelection;
+		if (!selection) return;
+		void resolveCadastre(
+			selection.latitude,
+			selection.longitude,
+			canUseApi('ignCadastre'),
+			null
+		);
+	}
+
 	$effect(() => {
 		if (!mapReady || !map || embedded || !focusTreeId) return;
 
-		const tree = getTreeById(focusTreeId);
+		const tree = getFocusTree();
 		if (tree?.latitude == null || tree.longitude == null) return;
 
 		void tree.latitude;
@@ -1901,17 +2208,35 @@
 
 		if (selection.stored) {
 			cadastreLookup.loading = false;
+			maybeFireCadastreScanHaptic(selection, selection.stored);
 			return;
 		}
 
 		if (!online) {
-			cadastreLookup.loading = false;
+			cadastreLookup.loading = true;
+			void resolveCadastre(selection.latitude, selection.longitude, false, null).then((data) => {
+				if (
+					mapCadastreSelection?.latitude !== selection.latitude ||
+					mapCadastreSelection.longitude !== selection.longitude
+				) {
+					return;
+				}
+				maybeFireCadastreScanHaptic(selection, data);
+			});
 			return;
 		}
 
 		cadastreLookup.loading = true;
 		cadastreDebounceTimer = setTimeout(() => {
-			void resolveCadastre(selection.latitude, selection.longitude, online, null);
+			void resolveCadastre(selection.latitude, selection.longitude, online, null).then((data) => {
+				if (
+					mapCadastreSelection?.latitude !== selection.latitude ||
+					mapCadastreSelection.longitude !== selection.longitude
+				) {
+					return;
+				}
+				maybeFireCadastreScanHaptic(selection, data);
+			});
 		}, 500);
 
 		return () => {
@@ -1948,30 +2273,29 @@
 		class:topo-map--embedded={embedded}
 	></div>
 
-	{#if !embedded}
+	{#if !embedded && !downloadSelectionMode}
 	<div class="map-controls-top absolute left-2 z-30 flex flex-col items-start gap-2 pointer-events-none">
 		<MapControlsMenu
 			{basemap}
 			{showCadastreLayer}
 			{showProtectedLayer}
 			{viewMode}
-			cadastreDisabled={!canUseApi('ignMap') || !cadastreOverlayAvailable}
-			protectedDisabled={!canUseApi('ignMap') || !protectedOverlayAvailable}
+			cadastreDisabled={!cadastreOverlayAvailable || (onlineState.online && !isApiEnabled('ignMap'))}
+			protectedDisabled={!protectedOverlayAvailable || (onlineState.online && !isApiEnabled('ignMap'))}
 			cadastreTitle={!cadastreOverlayAvailable
 				? m.map_layer_cadastre_unavailable()
-				: !canUseApi('ignMap')
-					? onlineState.online
-						? getApiDisabledError('ignMap')
-						: m.settings_offline_map_hint()
-					: m.map_layer_cadastre_title()}
+				: onlineState.online && !isApiEnabled('ignMap')
+					? getApiDisabledError('ignMap')
+					: !onlineState.online
+						? m.map_layer_offline_cached()
+						: m.map_layer_cadastre_title()}
 			protectedTitle={!protectedOverlayAvailable
 				? undefined
-				: !canUseApi('ignMap')
-					? onlineState.online
-						? getApiDisabledError('ignMap')
-						: m.settings_offline_map_hint()
-					: m.map_layer_protected_title()}
-			showCadastreHint={showCadastreLayer && cadastreOverlayAvailable && canUseApi('ignMap')}
+				: onlineState.online && !isApiEnabled('ignMap')
+					? getApiDisabledError('ignMap')
+					: !onlineState.online
+						? m.map_layer_offline_cached()
+						: m.map_layer_protected_title()}
 			offlineAvailable={canUseApi('ignMap') && !downloadSelectionMode}
 			{cacheCount}
 			{downloadingZone}
@@ -1988,11 +2312,21 @@
 			use:nativeTap={{ onactivate: () => void handleRecenterButton(), label: 'map-recenter' }}
 			class="map-follow-toggle pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border shadow-sm backdrop-blur-sm transition active:scale-[0.98] disabled:opacity-50 {followUser
 				? 'map-follow-toggle--active'
-				: 'border-gray-200 bg-white/95 text-forest-900'}"
+				: 'border-gray-200 bg-white/95 text-forest-900'} {pulseFollowButton
+				? 'map-layer-chip-pulse'
+				: ''}"
 			disabled={!canRecenter}
 			aria-pressed={followUser}
-			aria-label={followUser ? m.map_follow_active() : m.map_follow_position()}
-			title={followUser ? m.map_unfollow_position() : m.map_follow_position()}
+			aria-label={followUser
+				? m.map_follow_active()
+				: userPositionState.position
+					? m.map_follow_position()
+					: m.map_follow_locate()}
+			title={followUser
+				? m.map_unfollow_position()
+				: userPositionState.position
+					? m.map_follow_position()
+					: m.map_follow_locate()}
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
@@ -2008,99 +2342,105 @@
 				<path d="M12 5l-1.5 4.5H12h1.5L12 5z" fill="currentColor" stroke="none" />
 			</svg>
 		</button>
+		{#if showMapOnboarding && !downloadSelectionMode}
+			<div class="pointer-events-auto w-[min(100vw-1.5rem,16rem)]">
+				<MapOnboardingSheet
+					stepId={mapOnboardingStepId}
+					stepIndex={mapOnboardingIndex + 1}
+					stepTotal={MAP_ONBOARDING_STEPS.length}
+					onnext={advanceMapOnboarding}
+					ondone={dismissMapOnboarding}
+					onskip={dismissMapOnboarding}
+				/>
+			</div>
+		{/if}
 	</div>
 	{/if}
 
-	{#if !embedded}
+	{#if !embedded && downloadSelectionMode}
 	<MapDownloadOverlay
-		active={downloadSelectionMode}
-		tileCount={downloadTileCount}
+		active={true}
 		downloading={downloadingZone}
 		progress={downloadProgress}
+		sheetOpen={packSheetOpen}
+		unproject={(point) => map!.unproject(point)}
 		onCancel={cancelDownloadSelection}
-		onDownload={() => void handleDownloadZone()}
+		onPrepare={openPackSheet}
+		onRegionChange={handleDownloadRegionChange}
+	/>
+	{/if}
+
+	{#if !embedded && packSheetOpen}
+	<OfflinePackSheet
+		estimate={downloadPackEstimate}
+		weatherEnabled={canUseApi('openMeteoForecast')}
+		oncancel={() => {
+			packSheetOpen = false;
+		}}
+		onconfirm={(selection) => {
+			void handleDownloadZone(selection);
+		}}
 	/>
 	{/if}
 
 	{#if !onlineState.online && cacheCount === 0 && !downloadSelectionMode && !embedded}
 		<div
-			class="pointer-events-none absolute inset-x-4 map-banner-top app-card px-4 py-3 text-center text-sm text-sky-900"
+			class="pointer-events-none absolute inset-x-4 map-banner-top app-card px-3 py-2 text-center text-sm text-sky-900"
 			role="status"
 		>
-			{m.settings_offline_map_hint()}
+			{m.map_offline_no_tiles()}
 		</div>
 	{/if}
 
-	{#if showMapOnboarding && !embedded && !downloadSelectionMode}
-		<div class="map-onboarding-sheet pointer-events-auto">
-			<MapOnboardingSheet
-				stepId={mapOnboardingStepId}
-				stepIndex={mapOnboardingIndex + 1}
-				stepTotal={mapOnboardingSteps.length}
-				layersVariant={mapOnboardingLayersVariant}
-				cadastrePartial={mapOnboardingCadastrePartial}
-				cadastreSource={mapOnboardingCadastreSource}
-				protectedSource={mapOnboardingProtectedSource}
-				onenable={enableUsefulLayers}
-				onnext={advanceMapOnboarding}
-				ondone={dismissMapOnboarding}
-				onskip={dismissMapOnboarding}
+	{#if tileErrorCopy}
+		<div class="pointer-events-auto absolute inset-x-4 map-banner-top">
+			<ErrorBanner
+				copy={tileErrorCopy}
+				tone="warning"
+				onretry={retryFailedMapTiles}
 			/>
 		</div>
 	{/if}
 
-	{#if tileError}
-		<div
-			class="pointer-events-none absolute inset-x-4 map-banner-top app-card border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-900"
-			role="alert"
-		>
-			{tileError}
-		</div>
-	{:else if gpsCount === 0 && !embedded && !showMapOnboarding}
-		<div
-			class="pointer-events-auto absolute inset-x-4 map-banner-top app-card px-4 py-3 text-center shadow-sm"
-			role="status"
-		>
-			<p class="text-sm text-forest-900">{m.gps_no_coords_saved()}</p>
-			<a
-				href={resolve('/capture')}
-				class="btn-primary btn-primary--inline mt-3 !h-10 text-sm"
-			>
-				{m.nav_add()}
-			</a>
+	{#snippet cadastreOverlay()}
+		<CadastreBanner
+			info={cadastreDisplay}
+			loading={cadastreBannerLoading}
+			floating
+			dismissible
+			failed={cadastreLookupFailed}
+			checklistOpen={vetoChecklistOpen}
+			onchecklisttoggle={() => (vetoChecklistOpen = !vetoChecklistOpen)}
+			ondismiss={dismissCadastreBanner}
+			onretry={retryCadastreLookup}
+		/>
+		{#if vetoChecklistOpen && cadastreDisplay && cadastreTarget}
+			<div class="map-cadastre-checklist mt-2">
+				<VetoLegalChecklist
+					cadastreInfo={cadastreDisplay}
+					species={cadastreSpecies}
+					latitude={cadastreTarget.latitude}
+					longitude={cadastreTarget.longitude}
+					scrollable
+					onclose={() => (vetoChecklistOpen = false)}
+				/>
+			</div>
+		{/if}
+	{/snippet}
+
+	{#if showCadastreBanner && embedded}
+		<div class="map-cadastre-banner map-cadastre-banner--embedded pointer-events-auto">
+			{@render cadastreOverlay()}
 		</div>
 	{/if}
 
-	{#if showCadastreBanner}
-		<div
-			class="map-cadastre-banner pointer-events-auto {embedded ? 'map-cadastre-banner--embedded' : ''}"
-		>
-			<CadastreBanner
-				info={cadastreDisplay}
-				loading={cadastreBannerLoading}
-				floating
-				dismissible
-				checklistOpen={vetoChecklistOpen}
-				onchecklisttoggle={() => (vetoChecklistOpen = !vetoChecklistOpen)}
-				ondismiss={dismissCadastreBanner}
-			/>
-			{#if vetoChecklistOpen && cadastreDisplay && cadastreTarget}
-				<div class="map-cadastre-checklist mt-2">
-					<VetoLegalChecklist
-						cadastreInfo={cadastreDisplay}
-						species={cadastreSpecies}
-						latitude={cadastreTarget.latitude}
-						longitude={cadastreTarget.longitude}
-						scrollable
-						onclose={() => (vetoChecklistOpen = false)}
-					/>
-				</div>
-			{/if}
-		</div>
-	{/if}
-
-	<div class="pointer-events-none absolute inset-x-4 bottom-4 z-10 flex flex-col gap-2">
-		{#if !embedded && !showMapOnboarding}
+	<div class="pointer-events-none absolute inset-x-4 bottom-4 z-40 flex flex-col gap-2">
+		{#if showCadastreBanner && !embedded && !downloadSelectionMode}
+			<div class="pointer-events-auto w-full max-w-md self-center">
+				{@render cadastreOverlay()}
+			</div>
+		{/if}
+		{#if !embedded && !downloadSelectionMode}
 		<p
 			class="pointer-events-auto self-end max-w-[min(100%,18rem)] rounded bg-white/90 px-2 py-1 text-right text-[10px] leading-snug text-gray-600 shadow-sm"
 		>

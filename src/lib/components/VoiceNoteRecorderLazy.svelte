@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { ComponentProps } from 'svelte';
 	import * as m from '$lib/paraglide/messages.js';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
+	import { voiceLoadErrorCopy } from '$lib/utils/errorCopy';
 	import type VoiceNoteRecorder from './VoiceNoteRecorder.svelte';
 
 	type VoiceNoteRecorderProps = ComponentProps<typeof VoiceNoteRecorder>;
@@ -13,12 +15,14 @@
 
 	let VoiceNoteRecorderComponent = $state<typeof VoiceNoteRecorder | null>(null);
 	let loadFailed = $state(false);
+	let retryNonce = $state(0);
 	let recorderRef = $state<{
 		toggleVolumeRecording: () => Promise<void>;
 		isVoiceRecording: () => boolean;
 	} | null>(null);
 
 	$effect(() => {
+		void retryNonce;
 		let cancelled = false;
 		loadFailed = false;
 		void import('./VoiceNoteRecorder.svelte')
@@ -54,9 +58,15 @@
 		{...rest}
 	/>
 {:else if loadFailed}
-	<p class="text-sm text-muted" role="status" data-capture-tutorial="voice">
-		{m.voice_note_optional()}
-	</p>
+	<ErrorBanner
+		copy={voiceLoadErrorCopy()}
+		tone="warning"
+		class="mt-1"
+		onretry={() => {
+			loadFailed = false;
+			retryNonce += 1;
+		}}
+	/>
 {:else}
 	<div
 		class="flex min-h-[3rem] items-center justify-center gap-2"

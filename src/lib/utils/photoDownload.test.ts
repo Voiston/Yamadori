@@ -82,4 +82,16 @@ describe('downloadPhoto', () => {
 
 		await expect(downloadPhoto(tinyJpeg)).resolves.toBe('failed');
 	});
+
+	it('refuses SVG data URLs', async () => {
+		const svg = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+		await expect(downloadPhoto(svg, 'photo.svg')).resolves.toBe('failed');
+		expect(saveToDownloadsMock).not.toHaveBeenCalled();
+	});
+
+	it('refuses HTML payloads even when claimed as JPEG', async () => {
+		const html = 'data:image/jpeg;base64,' + btoa('<!DOCTYPE html><html></html>');
+		await expect(downloadPhoto(html, 'photo.jpg')).resolves.toBe('failed');
+		expect(saveToDownloadsMock).not.toHaveBeenCalled();
+	});
 });

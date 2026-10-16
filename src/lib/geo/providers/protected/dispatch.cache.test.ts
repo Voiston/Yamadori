@@ -40,7 +40,7 @@ describe('scanProtectedAreasForCoords online cache', { timeout: 60_000 }, () => 
 			'$lib/geo/providers/protected/dispatch'
 		);
 		clearProtectedAreasDispatchMemoryCache();
-	});
+	}, 60_000);
 
 	it('uses valid IDB entry while online instead of live EEA scan', async () => {
 		const cachedScan = {

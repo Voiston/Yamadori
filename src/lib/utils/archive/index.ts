@@ -1,16 +1,17 @@
-export { ArchiveError, ARCHIVE_FORMAT_VERSION, MAX_ARCHIVE_BYTES } from './types';
 export type {
 	ArchiveBuildOptions,
 	ArchiveExportInput,
 	ArchiveImportPreview,
+	ArchiveKind,
 	ArchiveParseOptions,
 	ArchiveProgressCallback,
 	RebuiltArchive,
 	YamadoriArchiveData
 } from './types';
+export { ArchiveError, ARCHIVE_FORMAT_VERSION, MAX_ARCHIVE_BYTES, resolveArchiveKind } from './types';
 
-export { buildArchive, archiveFilename } from './export';
-export { normalizeZipEntries, parseArchive, readArchiveFile, readArchiveManifestKeyScope, isPasswordProtectedBlob } from './import';
+export { buildArchive, archiveFilename, treeShareFilename } from './export';
+export { normalizeZipEntries, parseArchive, readArchiveFile, readArchiveManifestKeyScope, inspectIncomingArchive, isPasswordProtectedBlob } from './import';
 export { isPasswordProtectedArchive } from './crypto';
 export { deliverArchive, type ArchiveDeliveryMode, type ArchiveDeliveryResult } from './delivery';
 export {
@@ -21,6 +22,7 @@ export {
 	formatIncomingBackupSize,
 	incomingBackupState,
 	initIncomingBackupListener,
+	pickUpPendingIncomingArchiveIfNeeded,
 	readPendingBackupBlob,
 	type IncomingBackupPending
 } from './incomingBackup.svelte';

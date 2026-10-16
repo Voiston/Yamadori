@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as m from '$lib/paraglide/messages.js';
 import type { AgriData } from '$lib/types/agri';
 import { applyEnvironmentExposure } from '$lib/utils/adjustedClimate';
 import { estimatePhenology } from '$lib/utils/gdd';
@@ -12,9 +13,15 @@ import {
 	getHydricScoreBreakdown,
 	getPhenologyScoreBreakdown,
 	getPrimaryYrsConfidenceGap,
+	getSoilScoreBreakdown,
 	getYrsBannerClasses,
 	getYrsConfidenceGaps,
-	getYrsScoreBreakdown
+	getYrsDecisionLabels,
+	getYrsScoreBreakdown,
+	findYrsBreakdownItem,
+	findYrsBreakdownItems,
+	excludeYrsBreakdownItems,
+	formatYrsPoints
 } from './yrs';
 
 function buildIdealAgriData(): AgriData {
@@ -116,6 +123,90 @@ describe('computeYamadoriReadinessScore', () => {
 		expect(result.summary?.toLowerCase()).toMatch(/confiance|confidence|konfidenz|confidenza/);
 	});
 
+	it('names penalties when frost outweighs every layer shortfall', () => {
+		const result = computeYamadoriReadinessScore(
+			{
+				...buildIdealAgriData(),
+				hydricStressKs: 0.65,
+				frostEventsPast7d: 4
+			},
+			{ observedPhenologyStage: 'debourrement' }
+		);
+		const deficits = [
+			30 - result.layers.climate,
+			25 - result.layers.soil,
+			25 - result.layers.phenology,
+			20 - result.layers.hydric
+		];
+
+		expect(result.layers.stressPenalty).toBe(25);
+		expect(result.layers.hydric).toBe(14);
+		expect(result.decision).not.toBe('OPTIMAL');
+		expect(result.layers.stressPenalty).toBeGreaterThan(Math.max(...deficits));
+		expect(result.summary).toBe(
+			m.yrs_climate_summary_limiting({
+				label: getYrsDecisionLabels()[result.decision],
+				factor: m.yrs_layer_penalties()
+			})
+		);
+	});
+
+	it('keeps the hydric summary when Ks is critical even if frost is severe', () => {
+		const result = computeYamadoriReadinessScore({
+			...buildIdealAgriData(),
+			hydricStressKs: 0.2,
+			frostEventsPast7d: 4
+		});
+
+		expect(result.summary).toBe(
+			m.yrs_climate_summary_hydric({
+				label: getYrsDecisionLabels()[result.decision],
+				wsi: '0.2'
+			})
+		);
+	});
+
+	it('keeps the cold-soil summary when frost is also present', () => {
+		const result = computeYamadoriReadinessScore({
+			...buildIdealAgriData(),
+			soilTemperature18cmC: 6,
+			frostEventsPast7d: 4
+		});
+
+		expect(result.summary).toBe(
+			m.yrs_climate_summary_cold_soil({
+				label: getYrsDecisionLabels()[result.decision],
+				temp: '6'
+			})
+		);
+	});
+
+	it('keeps the weakest layer when a smaller penalty does not exceed its deficit', () => {
+		const result = computeYamadoriReadinessScore(
+			{
+				...buildIdealAgriData(),
+				frostEventsPast7d: 1
+			},
+			{ observedPhenologyStage: 'feuillaison' }
+		);
+		const maxDeficit = Math.max(
+			30 - result.layers.climate,
+			25 - result.layers.soil,
+			25 - result.layers.phenology,
+			20 - result.layers.hydric
+		);
+
+		expect(result.layers.stressPenalty).toBe(10);
+		expect(result.layers.stressPenalty).toBeLessThan(maxDeficit);
+		expect(result.decision).not.toBe('OPTIMAL');
+		expect(result.summary).toBe(
+			m.yrs_climate_summary_limiting({
+				label: getYrsDecisionLabels()[result.decision],
+				factor: m.yrs_layer_phenology()
+			})
+		);
+	});
+
 	it('uses observed phenology override when provided', () => {
 		const withOverride = computeYamadoriReadinessScore(buildIdealAgriData(), {
 			observedPhenologyStage: 'debourrement'
@@ -152,8 +243,8 @@ describe('computeYamadoriReadinessScore', () => {
 		};
 		const montagnarde = getClimateScoreBreakdown(data, { species: 'Mélèze' });
 		const foret = getClimateScoreBreakdown(data, { species: 'Charme commun' });
-		const gddMontagnarde = montagnarde.items.find((item) => item.label.includes('GDD'));
-		const gddForet = foret.items.find((item) => item.label.includes('GDD'));
+		const gddMontagnarde = findYrsBreakdownItem(montagnarde, 'gdd');
+		const gddForet = findYrsBreakdownItem(foret, 'gdd');
 
 		expect(gddMontagnarde?.points).toBe(15);
 		expect(gddForet?.points).toBe(8);
@@ -465,8 +556,8 @@ describe('getYrsScoreBreakdown', () => {
 		};
 		const birch = getClimateScoreBreakdown(data, { species: 'Bouleau' });
 		const oak = getClimateScoreBreakdown(data, { species: 'Chêne sessile' });
-		const birchGdd = birch.items.find((item) => item.label.includes('GDD'))?.points ?? 0;
-		const oakGdd = oak.items.find((item) => item.label.includes('GDD'))?.points ?? 0;
+		const birchGdd = findYrsBreakdownItem(birch, 'gdd')?.points ?? 0;
+		const oakGdd = findYrsBreakdownItem(oak, 'gdd')?.points ?? 0;
 		expect(birchGdd).toBeGreaterThan(oakGdd);
 	});
 
@@ -487,5 +578,310 @@ describe('getYrsScoreBreakdown', () => {
 
 		expect(spring.stressPenalty.total).toBeGreaterThan(summer.stressPenalty.total);
 		expect(summer.stressPenalty.total).toBe(0);
+	});
+
+	it('tags every breakdown item with a stable id', () => {
+		const breakdown = getYrsScoreBreakdown({
+			...buildIdealAgriData(),
+			frostEventsPast7d: 1,
+			heatStressDaysForecast7d: 2,
+			windStressIndex: 75,
+			radiationStressIndex: 80
+		});
+
+		for (const layer of Object.values(breakdown)) {
+			expect(layer.items.length).toBeGreaterThan(0);
+			for (const item of layer.items) {
+				expect(item.id).toBeTruthy();
+				expect(item.label.length).toBeGreaterThan(0);
+			}
+		}
+
+		expect(findYrsBreakdownItem(breakdown.climate, 'gdd')?.points).toBeGreaterThan(0);
+		expect(findYrsBreakdownItems(breakdown.soil, ['soil18', 'soil6', 'soilStableDays'])).toHaveLength(
+			3
+		);
+		expect(excludeYrsBreakdownItems(breakdown.climate, ['gdd', 'air', 'et0Climate'])).toEqual([]);
+		expect(findYrsBreakdownItem(breakdown.stressPenalty, 'frost')?.id).toBe('frost');
+	});
+});
+
+describe('getSoilScoreBreakdown soil18 bands', () => {
+	function soil18(temp: number) {
+		return findYrsBreakdownItem(
+			getSoilScoreBreakdown({
+				...buildIdealAgriData(),
+				soilTemperature18cmC: temp,
+				soilMean18cm7dC: temp
+			}),
+			'soil18'
+		);
+	}
+
+	it('keeps the perfect band and the cold side of the scale', () => {
+		expect(soil18(11)).toEqual({
+			id: 'soil18',
+			points: 15,
+			label: m.yrs_breakdown_soil18_perfect({ temp: '11' })
+		});
+		expect(soil18(13)?.points).toBe(15);
+		expect(soil18(8)).toEqual({
+			id: 'soil18',
+			points: 8,
+			label: m.yrs_breakdown_soil18_low_limit({ temp: '8' })
+		});
+		expect(soil18(6)).toEqual({
+			id: 'soil18',
+			points: 2,
+			label: m.yrs_breakdown_soil18_too_cold({ temp: '6' })
+		});
+	});
+
+	it('scores soil warmer than the perfect band on the passable and stress steps', () => {
+		expect(soil18(13.1)).toEqual({
+			id: 'soil18',
+			points: 10,
+			label: m.yrs_breakdown_soil18_high({ temp: '13.1' })
+		});
+		expect(soil18(14)?.points).toBe(10);
+		expect(soil18(25)).toEqual({
+			id: 'soil18',
+			points: 3,
+			label: m.yrs_breakdown_soil18_high({ temp: '25' })
+		});
+	});
+
+	it('prefers the 7-day soil mean over the current hour', () => {
+		const item = findYrsBreakdownItem(
+			getSoilScoreBreakdown({
+				...buildIdealAgriData(),
+				soilTemperature18cmC: 11,
+				soilMean18cm7dC: 14
+			}),
+			'soil18'
+		);
+		expect(item?.points).toBe(10);
+	});
+
+	it('uses the mediterranean passable band', () => {
+		const item = findYrsBreakdownItem(
+			getSoilScoreBreakdown({
+				...buildIdealAgriData(),
+				latitude: 41.9,
+				longitude: 12.5,
+				soilTemperature18cmC: 11,
+				soilMean18cm7dC: 19
+			}),
+			'soil18'
+		);
+		expect(item?.points).toBe(10);
+	});
+
+	it('gives a shoulder to soil at 6 cm just above the active band', () => {
+		const active = findYrsBreakdownItem(
+			getSoilScoreBreakdown({
+				...buildIdealAgriData(),
+				soilTemperature6cmC: 20,
+				soilMean6cm7dC: 11
+			}),
+			'soil6'
+		);
+		const shoulder = findYrsBreakdownItem(
+			getSoilScoreBreakdown({
+				...buildIdealAgriData(),
+				soilMean6cm7dC: 16.5
+			}),
+			'soil6'
+		);
+		const hot = findYrsBreakdownItem(
+			getSoilScoreBreakdown({
+				...buildIdealAgriData(),
+				soilMean6cm7dC: 20
+			}),
+			'soil6'
+		);
+		expect(active?.points).toBe(5);
+		expect(shoulder?.points).toBe(3);
+		expect(hot?.points).toBe(0);
+	});
+});
+
+describe('getClimateScoreBreakdown ET0 windows', () => {
+	function et0Item(past: number | null, forecast: number | null) {
+		return findYrsBreakdownItem(
+			getClimateScoreBreakdown({
+				...buildIdealAgriData(),
+				et0Past7dMeanMm: past,
+				et0Trend7dMeanMm: forecast
+			}),
+			'et0Climate'
+		);
+	}
+
+	it('requires both windows for the stable and moderate tiers', () => {
+		expect(et0Item(0.8, 0.8)).toEqual({
+			id: 'et0Climate',
+			points: 5,
+			label: m.yrs_breakdown_et0_stable({ past: '0.8', forecast: '0.8' })
+		});
+		expect(et0Item(1.2, 1.8)).toEqual({
+			id: 'et0Climate',
+			points: 3,
+			label: m.yrs_breakdown_et0_moderate({ past: '1.2', forecast: '1.8' })
+		});
+		expect(et0Item(1.2, 7.5)).toEqual({
+			id: 'et0Climate',
+			points: 0,
+			label: m.yrs_breakdown_et0_high({ past: '1.2', forecast: '7.5' })
+		});
+		expect(et0Item(7.5, 1.2)?.points).toBe(0);
+		expect(et0Item(7.5, 1.2)?.label).toBe(
+			m.yrs_breakdown_et0_high({ past: '7.5', forecast: '1.2' })
+		);
+	});
+
+	it('omits ET0 points when either window is missing', () => {
+		const breakdown = getClimateScoreBreakdown({
+			...buildIdealAgriData(),
+			et0Past7dMeanMm: null
+		});
+
+		expect(findYrsBreakdownItem(breakdown, 'et0Climate')).toBeUndefined();
+		expect(breakdown.total).toBeLessThanOrEqual(25);
+	});
+});
+
+describe('formatYrsPoints', () => {
+	it('formats gain, zero, loss and penalty', () => {
+		expect(formatYrsPoints(15)).toBe('+15');
+		expect(formatYrsPoints(0)).toBe('0');
+		expect(formatYrsPoints(-8)).toBe('−8');
+		expect(formatYrsPoints(10, 'penalty')).toBe('−10');
+		expect(formatYrsPoints(4, 'context')).toBe('');
+	});
+});
+
+describe('evergreen phenology score', () => {
+	function evergreenData(): AgriData {
+		return {
+			...buildIdealAgriData(),
+			gdd: {
+				...buildIdealAgriData().gdd!,
+				phenology: null,
+				phenologyUnavailableReason: 'evergreen',
+				phenologyUnavailableCode: 'evergreen'
+			}
+		};
+	}
+
+	it('scores unobserved evergreens at a neutral 12, including holm oak', () => {
+		const data = evergreenData();
+		for (const species of [
+			'Pin sylvestre',
+			'Genévrier commun',
+			'Olivier',
+			'Chêne vert',
+			'Coast live oak'
+		]) {
+			expect(
+				findYrsBreakdownItem(getPhenologyScoreBreakdown(data, { species }), 'phenologyStage')
+					?.points
+			).toBe(12);
+		}
+	});
+
+	it('keeps an observed candle stage and does not neutralize a beech estimate', () => {
+		const candle = getPhenologyScoreBreakdown(evergreenData(), {
+			species: 'Pin sylvestre',
+			observedPhenologyStage: 'chandelle'
+		});
+		expect(findYrsBreakdownItem(candle, 'phenologyStage')?.points).toBe(25);
+
+		const beech = getPhenologyScoreBreakdown(buildIdealAgriData(), { species: 'Hêtre commun' });
+		expect(findYrsBreakdownItem(beech, 'phenologyStage')?.points).not.toBe(12);
+	});
+
+	it('does not ask evergreens to fill a deciduous phenology gap', () => {
+		const gaps = getYrsConfidenceGaps(buildIdealAgriData(), { species: 'Pin sylvestre' });
+		expect(gaps).not.toContain('observedPhenology');
+		expect(getPrimaryYrsConfidenceGap(buildIdealAgriData(), { species: 'Pin sylvestre' })).not.toBe(
+			'observedPhenology'
+		);
+		expect(getYrsConfidenceGaps(buildIdealAgriData(), {})).toContain('observedPhenology');
+	});
+});
+
+describe('late-season GDD and phenology', () => {
+	function highGdd(fetchedAt: string, latitude = 47.5, longitude = -0.5): AgriData {
+		return {
+			...buildIdealAgriData(),
+			fetchedAt,
+			latitude,
+			longitude,
+			gdd: {
+				...buildIdealAgriData().gdd!,
+				cumulativeSinceJan1: 1800,
+				phenology: estimatePhenology(1800, 'foret', 'Hêtre commun')
+			}
+		};
+	}
+
+	it('stops punishing cumulative GDD only inside the late-season window', () => {
+		const october = getClimateScoreBreakdown(highGdd('2026-10-15T12:00:00.000Z'), {
+			species: 'Hêtre commun'
+		});
+		const july = getClimateScoreBreakdown(highGdd('2026-07-15T12:00:00.000Z'), {
+			species: 'Hêtre commun'
+		});
+		const april = getClimateScoreBreakdown(
+			{
+				...buildIdealAgriData(),
+				fetchedAt: '2026-04-15T12:00:00.000Z',
+				gdd: {
+					...buildIdealAgriData().gdd!,
+					cumulativeSinceJan1: 200,
+					phenology: estimatePhenology(200, 'foret', 'Hêtre commun')
+				}
+			},
+			{ species: 'Hêtre commun' }
+		);
+		const south = getClimateScoreBreakdown(
+			highGdd('2026-03-15T12:00:00.000Z', -33.87, 151.21),
+			{ species: 'Hêtre commun' }
+		);
+
+		expect(findYrsBreakdownItem(october, 'gdd')?.points).toBe(8);
+		expect(findYrsBreakdownItem(july, 'gdd')?.points).toBe(3);
+		expect(findYrsBreakdownItem(april, 'gdd')?.points).toBe(15);
+		expect(findYrsBreakdownItem(south, 'gdd')?.points).toBe(8);
+	});
+
+	it('neutralizes estimated flush in late season and keeps an observed stage', () => {
+		const autumn = highGdd('2026-10-15T12:00:00.000Z');
+		const estimated = getPhenologyScoreBreakdown(autumn, { species: 'Hêtre commun' });
+		const observed = getPhenologyScoreBreakdown(autumn, {
+			species: 'Hêtre commun',
+			observedPhenologyStage: 'croissance_active'
+		});
+		const july = getPhenologyScoreBreakdown(highGdd('2026-07-15T12:00:00.000Z'), {
+			species: 'Hêtre commun'
+		});
+		const april = getPhenologyScoreBreakdown(
+			{
+				...buildIdealAgriData(),
+				fetchedAt: '2026-04-15T12:00:00.000Z',
+				gdd: {
+					...buildIdealAgriData().gdd!,
+					cumulativeSinceJan1: 200,
+					phenology: estimatePhenology(200, 'foret', 'Hêtre commun')
+				}
+			},
+			{ species: 'Hêtre commun' }
+		);
+
+		expect(findYrsBreakdownItem(estimated, 'phenologyStage')?.points).toBe(8);
+		expect(findYrsBreakdownItem(observed, 'phenologyStage')?.points).toBe(-5);
+		expect(findYrsBreakdownItem(july, 'phenologyStage')?.points).toBe(-5);
+		expect(findYrsBreakdownItem(april, 'phenologyStage')?.points).not.toBe(8);
 	});
 });

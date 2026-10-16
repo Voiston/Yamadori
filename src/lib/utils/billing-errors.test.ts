@@ -9,7 +9,8 @@ import {
 describe('billing-errors', () => {
 	it('maps internal error codes to translated messages', () => {
 		expect(formatBillingError('missing_purchase_token')).toBeTruthy();
-		expect(formatBillingError('restore_failed')).toBeTruthy();
+		expect(formatBillingError('consume_failed')).toBeTruthy();
+		expect(formatBillingError('purchase_timeout')).toBeTruthy();
 		expect(formatBillingError('purchase_failed')).toBeTruthy();
 	});
 
@@ -37,7 +38,7 @@ describe('billing-errors', () => {
 		expect(normalizeBillingErrorCode(new Error('billing_unavailable'))).toBe(
 			'billing_unavailable'
 		);
-		expect(normalizeBillingErrorCode('restore_failed')).toBe('restore_failed');
+		expect(normalizeBillingErrorCode('consume_failed')).toBe('consume_failed');
 		expect(normalizeBillingErrorCode(null)).toBe('purchase_failed');
 	});
 });

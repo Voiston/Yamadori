@@ -40,7 +40,6 @@ export function formatMigrationErrorMessage(error: unknown): string {
 		if (error.message === 'local_encryption_native_only') {
 			return m.settings_local_encryption_hint();
 		}
-		return error.message;
 	}
 	return m.settings_local_encryption_migration_failed();
 }

@@ -1,4 +1,5 @@
 import * as m from '$lib/paraglide/messages.js';
+import { formatErrorToast, UserFacingError } from '$lib/utils/userFacingError';
 import type { VoiceNote } from '$lib/types/tree';
 import { isNativeApp } from '$lib/utils/platform';
 import { RecordingStatus, VoiceRecorder } from 'capacitor-voice-recorder';
@@ -51,13 +52,16 @@ export function getVoiceRecordingErrorMessage(err: unknown): string {
 			case 'NotReadableError':
 				return m.voice_mic_busy();
 			default:
-				return err.message || m.voice_start_error();
+				return m.voice_start_error();
 		}
 	}
-	if (err instanceof Error) {
-		return err.message;
+	if (err instanceof UserFacingError) {
+		return formatErrorToast(err.copy);
 	}
-	return m.voice_start_error();
+	return formatErrorToast({
+		what: m.voice_start_error(),
+		action: { label: m.action_retry(), kind: 'retry' }
+	});
 }
 
 export function isVoiceRecordingPermissionError(err: unknown): boolean {

@@ -20,6 +20,7 @@ import { auLegalPack } from '$lib/geo/legal/au';
 import { dkLegalPack } from '$lib/geo/legal/dk';
 import { fiLegalPack } from '$lib/geo/legal/fi';
 import { jpLegalPack } from '$lib/geo/legal/jp';
+import { JP_LEGAL_HUMAN_REVIEW } from '$lib/geo/legal/jpSources';
 
 const LEGAL_PACKS: Record<CountryCode, LegalContentPack> = {
 	FR: frLegalPack,
@@ -47,6 +48,14 @@ const LEGAL_PACKS: Record<CountryCode, LegalContentPack> = {
 /** Country-aware legal content pack; defaults to FR when the country can't be resolved. */
 export function getLegalContentPack(country: CountryCode | null): LegalContentPack {
 	return LEGAL_PACKS[country ?? 'FR'];
+}
+
+/** False for JP until a human reviewer sets `reviewed` + `reviewedAt`. */
+export function isLegalPackReadyForUi(country: CountryCode | null): boolean {
+	if (country !== 'JP') return true;
+	return (
+		JP_LEGAL_HUMAN_REVIEW.status === 'reviewed' && Boolean(JP_LEGAL_HUMAN_REVIEW.reviewedAt)
+	);
 }
 
 export function articlesForGroup(pack: LegalContentPack, group: LegalArticleGroup): LegalArticleRef[] {

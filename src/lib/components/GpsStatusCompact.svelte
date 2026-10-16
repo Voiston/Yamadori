@@ -1,6 +1,13 @@
 <script lang="ts">
+	import GpsIrisDot from '$lib/components/GpsIrisDot.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
-	import { formatAccuracy, getGpsSignalQuality, type GpsSignalQuality } from '$lib/utils/gps';
+	import {
+		formatAccuracy,
+		getGpsSignalQuality,
+		gpsQualityUpgrade,
+		type GpsSignalQuality
+	} from '$lib/utils/gps';
+	import { hapticSelection, hapticSuccess } from '$lib/utils/haptics';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let {
@@ -23,24 +30,26 @@
 	);
 	const dualMode = $derived(bestAccuracyMeters !== undefined);
 
-	function qualityClasses(qualityValue: GpsSignalQuality): string {
-		return [
-			qualityValue === 'excellent' && 'bg-green-500',
-			qualityValue === 'fair' && 'bg-amber-500',
-			qualityValue === 'poor' && 'bg-red-500',
-			qualityValue === 'unknown' && 'bg-gray-400'
-		]
-			.filter(Boolean)
-			.join(' ');
-	}
+	let prevQuality: GpsSignalQuality = 'unknown';
+
+	$effect(() => {
+		if (loading) {
+			return;
+		}
+		const next = quality;
+		const kind = gpsQualityUpgrade(prevQuality, next);
+		if (kind === 'selection') {
+			void hapticSelection();
+		} else if (kind === 'success') {
+			void hapticSuccess();
+		}
+		prevQuality = next;
+	});
 </script>
 
 {#snippet compactBadge(label: string, meters: number | null, qualityValue: GpsSignalQuality)}
 	<span class="inline-flex items-center gap-1.5">
-		<span
-			class="inline-block h-2 w-2 shrink-0 rounded-full {qualityClasses(qualityValue)}"
-			aria-hidden="true"
-		></span>
+		<GpsIrisDot quality={qualityValue} size="sm" />
 		<span class="font-medium tabular-nums">
 			<span class="sr-only">{label}</span>
 			<span aria-hidden="true" class="mr-1 text-xs font-medium text-forest-600">{label}</span>
@@ -75,10 +84,7 @@
 			{@render compactBadge(m.gps_accuracy_best(), bestAccuracyMeters ?? null, bestQuality)}
 		{:else}
 			<span class="inline-flex items-center gap-1.5">
-				<span
-					class="inline-block h-2 w-2 shrink-0 rounded-full {qualityClasses(quality)}"
-					aria-hidden="true"
-				></span>
+				<GpsIrisDot {quality} size="sm" />
 				<span class="font-medium tabular-nums">{formatAccuracy(accuracyMeters)}</span>
 			</span>
 		{/if}

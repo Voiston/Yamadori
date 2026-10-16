@@ -3,6 +3,7 @@
 	import type { CompassTarget } from '$lib/types/compass';
 	import { getCoverPhotoThumb, type Tree } from '$lib/types/tree';
 	import CompassDial from '$lib/components/CompassDial.svelte';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
 	import CompassNavArrow from '$lib/components/CompassNavArrow.svelte';
 	import TopoMapLazy from '$lib/components/TopoMapLazy.svelte';
 	import AppLogoImage from './AppLogoImage.svelte';
@@ -39,7 +40,13 @@
 		requestCurrentPosition,
 		userPositionState
 	} from '$lib/utils/userPosition.svelte';
-	import { hapticSuccess } from '$lib/utils/haptics';
+	import {
+		compassApproachHaptic,
+		resolveCompassApproachBand,
+		type CompassApproachBand
+	} from '$lib/utils/compassApproach';
+	import { hapticSelection, hapticSuccess } from '$lib/utils/haptics';
+	import { prefersReducedMotion } from '$lib/utils/motion';
 	import { isNativeApp } from '$lib/utils/platform';
 	import { acquireScreenWakeLock, releaseScreenWakeLock } from '$lib/utils/wakeLock';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
@@ -95,6 +102,9 @@
 	let displayRotation = $state(0);
 	let declinationDeg = $state<number | null>(null);
 	let wasAligned = $state(false);
+	let distancePulseNonce = $state(0);
+	let approachBand: CompassApproachBand = 'far';
+	let approachTargetKey = '';
 	let viewMode = $state<CompassViewMode>(readStoredViewMode());
 	let headingLocked = $state(readStoredHeadingLock());
 	let orientationAttempt = $state(0);
@@ -323,6 +333,27 @@
 	});
 
 	$effect(() => {
+		const targetKey = `${target.latitude},${target.longitude}`;
+		let previous = approachBand;
+		if (targetKey !== approachTargetKey) {
+			approachTargetKey = targetKey;
+			previous = 'far';
+		}
+		const next = resolveCompassApproachBand(distance, accuracyMeters, previous);
+		const kind = compassApproachHaptic(previous, next);
+		if (kind === 'selection') {
+			void hapticSelection();
+		} else if (kind === 'success') {
+			void hapticSuccess();
+		}
+		if (kind !== null && !prefersReducedMotion()) {
+			const nextNonce = untrack(() => distancePulseNonce) + 1;
+			distancePulseNonce = nextNonce;
+		}
+		approachBand = next;
+	});
+
+	$effect(() => {
 		void acquireScreenWakeLock();
 		return () => {
 			void releaseScreenWakeLock();
@@ -458,7 +489,11 @@
 			<div class="app-card bg-white/95 px-3 py-2 backdrop-blur-sm">
 				<p class="text-sm font-semibold text-forest-900">{target.label}</p>
 				{#if distance !== null}
-					<p class="text-xs font-medium text-forest-800">{distanceLabel}</p>
+					<p class="text-xs font-medium text-forest-800">
+						{#key distancePulseNonce}
+							<span class={distancePulseNonce > 0 ? 'compass-distance--pulse' : ''}>{distanceLabel}</span>
+						{/key}
+					</p>
 				{/if}
 			</div>
 			<div class="flex shrink-0 items-center gap-2">
@@ -545,7 +580,11 @@
 			<div class="min-w-0 flex-1 text-center">
 				<h2 class="text-xl font-semibold text-forest-900">{target.label}</h2>
 				{#if distance !== null}
-					<p class="mt-2 text-2xl font-semibold text-forest-800">{distanceLabel}</p>
+					<p class="mt-2 text-2xl font-semibold text-forest-800">
+						{#key distancePulseNonce}
+							<span class={distancePulseNonce > 0 ? 'compass-distance--pulse' : ''}>{distanceLabel}</span>
+						{/key}
+					</p>
 				{:else}
 					<p class="mt-2 text-sm text-muted">{m.compass_calculating()}</p>
 				{/if}
@@ -628,8 +667,13 @@
 			</button>
 		{/if}
 
-		{#if userPositionState.error}
-			<p class="text-center text-sm text-amber-800">{userPositionState.error}</p>
+		{#if userPositionState.errorCopy}
+			<ErrorBanner
+				copy={userPositionState.errorCopy}
+				tone="warning"
+				class="text-left"
+				onretry={() => void requestCurrentPosition()}
+			/>
 		{/if}
 	</div>
 {/if}

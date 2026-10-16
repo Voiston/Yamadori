@@ -20,6 +20,7 @@ export interface YamadoriBackupPlugin {
 		mimeType?: string;
 	}): Promise<{ uri: string; fileName: string }>;
 	consumePendingImport(): Promise<Partial<YamadoriBackupPendingImport>>;
+	clearPendingImport(): Promise<void>;
 	readPendingImportFile(options: { cachePath: string }): Promise<{ base64: string }>;
 	deletePendingImportFile(options: { cachePath: string }): Promise<void>;
 	addListener(

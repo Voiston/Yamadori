@@ -3,10 +3,10 @@ import { unzip, zip } from 'fflate';
 import { DEFAULT_ASSESSMENT, type Tree } from '$lib/types/tree';
 import { DEFAULT_ENVIRONMENT_EXPOSURE } from '$lib/types/environment';
 import { isValidTreeId } from '$lib/utils/id';
-import { buildArchive } from './export';
+import { buildArchive, treeShareFilename } from './export';
 import { encryptPayload, ivToBase64 } from './crypto';
 import { sha256Hex } from './checksums';
-import { normalizeZipEntries, parseArchive, scanEntriesForGpsLeak, isPasswordProtectedBlob } from './import';
+import { inspectIncomingArchive, normalizeZipEntries, parseArchive, scanEntriesForGpsLeak, isPasswordProtectedBlob } from './import';
 import { isPasswordProtectedArchive } from './crypto';
 import { parseLegacyBackup } from './legacy';
 import { parseDataUrl } from './media';
@@ -91,6 +91,17 @@ async function rezip(entries: Record<string, Uint8Array>): Promise<Blob> {
 	return new Blob([new Uint8Array(zipped)], { type: 'application/zip' });
 }
 
+describe('tree-share filename', () => {
+	it('slugifies species and keeps the .yamadori.zip suffix', () => {
+		expect(treeShareFilename('Érable champêtre', new Date('2026-09-07T12:00:00.000Z'))).toBe(
+			'yamadori-arbre-erable-champetre-2026-09-07.yamadori.zip'
+		);
+		expect(treeShareFilename('   ', new Date('2026-01-02T00:00:00.000Z'))).toBe(
+			'yamadori-arbre-arbre-2026-01-02.yamadori.zip'
+		);
+	});
+});
+
 describe('archive media helpers', () => {
 	it('parses data URLs with codec parameters', () => {
 		const parsed = parseDataUrl(tinyWebmWithCodecs);
@@ -145,11 +156,68 @@ describe('archive export/import', () => {
 		expect(restored.trees[0]?.species).toBe('Érable');
 		expect(restored.trees[0]?.latitude).toBe(45.123456);
 		expect(restored.trees[0]?.longitude).toBe(6.654321);
-		expect(restored.trees[0]?.photos[0]).toContain('data:image/');
+		expect(restored.trees[0]?.photos[0]).toContain('data:image/png');
 		expect(restored.parking?.latitude).toBe(45.1);
 		expect(restored.appearanceSettings.outdoorMode).toBe(true);
 		expect(restored.apiSettings?.ignMap).toBe(false);
 		expect(restored.apiSettings?.openMeteoArchive).toBe(false);
+		expect(restored.kind).toBe('backup');
+		expect(restored.preview.kind).toBe('backup');
+	});
+
+	it('round-trips a tree-share archive without parking or notify flags', async () => {
+		const treeId = '00000000-0000-4000-8000-000000000099';
+		const blob = await buildArchive({
+			trees: [
+				sampleTree({
+					id: treeId,
+					isFavorite: false,
+					notifyOnWindow: true,
+					windowNotifyArmed: true,
+					dateNotifySentFor: '2026-03-01',
+					nextRevisitAt: '2026-04-01'
+				})
+			],
+			parking: null,
+			appearanceSettings: { outdoorMode: false, darkMode: false, simpleMode: true },
+			appVersion: '0.0.2-test',
+			kind: 'tree-share'
+		});
+		const entries = await unzipBlob(blob);
+		const manifest = JSON.parse(new TextDecoder().decode(entries['manifest.json']!));
+		expect(manifest.kind).toBe('tree-share');
+
+		const restored = await parseArchive(blob);
+		expect(restored.kind).toBe('tree-share');
+		expect(restored.parking).toBeNull();
+		expect(restored.apiSettings).toBeUndefined();
+		expect(restored.trees[0]?.id).toBe(treeId);
+		expect(restored.trees[0]?.latitude).toBe(45.123456);
+		expect(restored.trees[0]?.frontHeadingDegrees).toBe(90);
+		expect(restored.trees[0]?.photos[0]).toContain('data:image/png');
+		expect(restored.trees[0]?.isFavorite).toBe(false);
+		expect(restored.trees[0]?.nextRevisitAt).toBe('2026-04-01');
+		expect(restored.trees[0]?.notifyOnWindow).toBe(false);
+		expect(restored.trees[0]?.windowNotifyArmed).toBe(false);
+		expect(restored.trees[0]?.dateNotifySentFor).toBeNull();
+	});
+
+	it('inspects incoming archives by kind without applying backup parking', async () => {
+		const backup = await buildArchive(baseInput);
+		const backupInspect = await inspectIncomingArchive(backup);
+		expect(backupInspect.kind).toBe('backup');
+		expect(backupInspect.archive).toBeNull();
+
+		const share = await buildArchive({
+			...baseInput,
+			parking: null,
+			apiSettings: undefined,
+			kind: 'tree-share'
+		});
+		const shareInspect = await inspectIncomingArchive(share);
+		expect(shareInspect.kind).toBe('tree-share');
+		expect(shareInspect.archive?.trees).toHaveLength(1);
+		expect(shareInspect.archive?.parking).toBeNull();
 	});
 
 	it('writes plaintext donnees.json without embedded key material', async () => {
@@ -515,5 +583,38 @@ describe('legacy JSON backup', () => {
 
 		expect(legacy.trees).toHaveLength(1);
 		expect(legacy.trees[0]?.latitude).toBe(45.123456);
+		expect(legacy.trees[0]?.photos[0]).toContain('data:image/png');
+	});
+
+	it('keeps real PNG photos and drops SVG payloads', () => {
+		const svg = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+		const legacy = parseLegacyBackup(
+			JSON.stringify({
+				version: 1,
+				trees: [
+					sampleTree({
+						photos: [tinyPng, svg],
+						visits: [
+							{
+								id: 'visit-1',
+								visitedAt: '2026-01-15T10:00:00.000Z',
+								note: '',
+								photos: [tinyPng, svg]
+							}
+						]
+					})
+				]
+			})
+		);
+
+		expect(legacy.trees[0]?.photos).toEqual([tinyPng]);
+		expect(legacy.trees[0]?.visits[0]?.photos).toEqual([tinyPng]);
+	});
+
+	it('rejects backups with more than 200 trees', () => {
+		const trees = Array.from({ length: 201 }, (_, i) => sampleTree({ id: `tree-${i}` }));
+		expect(() =>
+			parseLegacyBackup(JSON.stringify({ version: 1, trees, parking: null }))
+		).toThrow(/200|trop|too many|máximo|massimo|mange|liikaa|muitos/i);
 	});
 });

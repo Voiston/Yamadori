@@ -1,26 +1,51 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { clearParking, parkingStore, saveParking } from '$lib/stores/parking.svelte';
-	import { showErrorToast, showOkToast } from '$lib/stores/appToast.svelte';
+	import { showOkToast } from '$lib/stores/appToast.svelte';
+	import { resolveErrorCopy, type ErrorCopy } from '$lib/utils/userFacingError';
+	import { mapRecenterGpsCopy, parkingSaveFailedCopy } from '$lib/utils/errorCopy';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
+	import {
+		compassSettingsState,
+		initCompassSettings
+	} from '$lib/stores/compassSettings.svelte';
 	import { headingToCardinal } from '$lib/utils/compass';
 	import { getCoordinates, type GpsCapture } from '$lib/utils/geo';
 	import { formatAccuracy, isBetterAccuracy, isPoorAccuracy } from '$lib/utils/gps';
+	import { shouldUpdateCompassPosition } from '$lib/utils/compassPosition';
+	import { COMPASS_GPS_CONSUMER_ID } from '$lib/utils/gpsSession';
 	import {
 		formatDistance,
 		haversineBearingDeg,
-		haversineDistanceM
+		haversineDistanceM,
+		magneticToTrueHeading,
+		normalizeHeading360,
+		shortestAngleDelta,
+		smoothBearing
 	} from '$lib/utils/haversine';
 	import { hapticLight, hapticSelection } from '$lib/utils/haptics';
 	import {
+		createHeadingFusionState,
+		processHeadingFusion,
+		resetHeadingFusionState
+	} from '$lib/utils/headingFusion';
+	import { watchFusedHeading } from '$lib/utils/headingProvider';
+	import { loadMagneticDeclinationDeg } from '$lib/utils/magneticDeclination';
+	import {
+		acquireLocationWatch,
 		getPublishedUserPosition,
-		getPublishedUserPositionUpdatedAt
+		getPublishedUserPositionUpdatedAt,
+		requestCurrentPosition,
+		userPositionState
 	} from '$lib/utils/userPosition.svelte';
 	import * as m from '$lib/paraglide/messages.js';
+	import { untrack } from 'svelte';
 
 	const PARKING_PUBLISHED_MAX_AGE_MS = 15_000;
 	const PARKING_GPS_WAIT_MS = 20_000;
 	const PARKING_GPS_POLL_MS = 500;
+	const DISPLAY_ROTATION_DEADBAND_DEG = 0.5;
 
 	let {
 		variant = 'overlay'
@@ -31,7 +56,17 @@
 	let expanded = $state(false);
 	let saving = $state(false);
 	let warning = $state('');
+	let saveError = $state<ErrorCopy | null>(null);
 	let liveAccuracyMeters = $state<number | null>(null);
+	let sensorHeadingRaw = $state<number | null>(null);
+	let sensorReference = $state<'true' | 'magnetic'>('true');
+	let declinationDeg = $state<number | null>(null);
+	let displayRotation = $state(0);
+	let smoothedBearing = $state<number | null>(null);
+	let lastBearingPosition = $state<{ latitude: number; longitude: number } | null>(null);
+	let lastParkingKey = $state('');
+
+	const fusionState = createHeadingFusionState();
 
 	let parking = $derived(parkingStore.position);
 
@@ -41,7 +76,7 @@
 	});
 
 	let distance = $derived.by(() => {
-		const position = getPublishedUserPosition();
+		const position = userPositionState.position;
 		if (!parking || !position) return null;
 		return haversineDistanceM(
 			position.latitude,
@@ -51,15 +86,153 @@
 		);
 	});
 
-	let bearing = $derived.by(() => {
-		const position = getPublishedUserPosition();
-		if (!parking || !position) return null;
-		return haversineBearingDeg(
+	const declinationGridKey = $derived.by(() => {
+		const position = userPositionState.position;
+		if (!position) {
+			return null;
+		}
+		return `${position.latitude.toFixed(3)},${position.longitude.toFixed(3)}`;
+	});
+
+	let trueSensorHeading = $derived.by(() => {
+		if (sensorHeadingRaw === null) {
+			return null;
+		}
+		if (sensorReference === 'magnetic' && declinationDeg !== null) {
+			return magneticToTrueHeading(sensorHeadingRaw, declinationDeg);
+		}
+		return sensorHeadingRaw;
+	});
+
+	let heading = $derived.by(() => {
+		if (!parking) return null;
+		const position = userPositionState.position;
+		return processHeadingFusion(fusionState, {
+			sensorHeading: trueSensorHeading,
+			gpsHeading: position?.courseDegrees ?? null,
+			speedMps: position?.speedMps ?? null
+		});
+	});
+
+	let bearing = $derived(smoothedBearing);
+
+	let arrowRotation = $derived.by(() => {
+		if (bearing === null) return 0;
+		if (heading !== null) return normalizeHeading360(bearing - heading);
+		return bearing;
+	});
+
+	$effect(() => {
+		void initCompassSettings();
+	});
+
+	$effect(() => {
+		if (!parking) {
+			return;
+		}
+		const profile = compassSettingsState.gpsProfile;
+		void requestCurrentPosition(profile);
+		const release = acquireLocationWatch(COMPASS_GPS_CONSUMER_ID, profile);
+		return () => release();
+	});
+
+	$effect(() => {
+		if (!parking) {
+			sensorHeadingRaw = null;
+			displayRotation = 0;
+			resetHeadingFusionState(fusionState);
+			return;
+		}
+
+		const stop = watchFusedHeading({
+			onSample(sample) {
+				sensorHeadingRaw = sample.heading;
+				sensorReference = sample.reference;
+			},
+			onPause() {
+				sensorHeadingRaw = null;
+			}
+		});
+
+		return () => {
+			stop();
+			resetHeadingFusionState(fusionState);
+		};
+	});
+
+	$effect(() => {
+		const gridKey = declinationGridKey;
+		if (!gridKey) {
+			declinationDeg = null;
+			return;
+		}
+
+		const [latitude, longitude] = gridKey.split(',').map(Number);
+		let cancelled = false;
+		void loadMagneticDeclinationDeg(latitude, longitude).then((decl) => {
+			if (!cancelled) {
+				declinationDeg = decl;
+			}
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	$effect(() => {
+		const parkingKey = parking ? `${parking.latitude},${parking.longitude}` : '';
+		const position = userPositionState.position;
+		if (!parking || !position) {
+			untrack(() => {
+				smoothedBearing = null;
+				lastBearingPosition = null;
+				lastParkingKey = '';
+			});
+			return;
+		}
+
+		let previousPosition = untrack(() => lastBearingPosition);
+		if (parkingKey !== untrack(() => lastParkingKey)) {
+			lastParkingKey = parkingKey;
+			previousPosition = null;
+		}
+
+		if (!shouldUpdateCompassPosition(previousPosition, position)) {
+			return;
+		}
+
+		const nextBearing = haversineBearingDeg(
 			position.latitude,
 			position.longitude,
 			parking.latitude,
 			parking.longitude
 		);
+
+		const previousBearing = untrack(() => smoothedBearing);
+		const movedMeters = previousPosition
+			? haversineDistanceM(
+					previousPosition.latitude,
+					previousPosition.longitude,
+					position.latitude,
+					position.longitude
+				)
+			: Number.POSITIVE_INFINITY;
+
+		smoothedBearing = smoothBearing(previousBearing, nextBearing, movedMeters);
+		lastBearingPosition = {
+			latitude: position.latitude,
+			longitude: position.longitude
+		};
+	});
+
+	$effect(() => {
+		const targetRotation = arrowRotation;
+		const current = untrack(() => displayRotation);
+		const delta = shortestAngleDelta(current, targetRotation);
+		if (Math.abs(delta) >= DISPLAY_ROTATION_DEADBAND_DEG) {
+			displayRotation = current + delta;
+		}
 	});
 
 	let statusText = $derived.by(() => {
@@ -150,18 +323,20 @@
 		if (saving) return;
 		expanded = false;
 		warning = '';
+		saveError = null;
 		liveAccuracyMeters = null;
 	}
 
 	async function handleSave() {
 		saving = true;
 		warning = '';
+		saveError = null;
 		liveAccuracyMeters = null;
 
 		try {
 			const capture = await resolveParkingCapturePrecise();
 			if (capture.latitude === null || capture.longitude === null) {
-				showErrorToast(m.parking_gps_unavailable());
+				saveError = mapRecenterGpsCopy();
 				return;
 			}
 
@@ -178,9 +353,9 @@
 				showOkToast(
 					m.parking_saved_approximate({ accuracy: formatAccuracy(capture.accuracyMeters) })
 				);
-			} else {
-				showOkToast(m.parking_saved());
 			}
+		} catch (error) {
+			saveError = resolveErrorCopy(error, parkingSaveFailedCopy());
 		} finally {
 			saving = false;
 		}
@@ -189,6 +364,7 @@
 	async function handleClear() {
 		await clearParking();
 		warning = '';
+		saveError = null;
 		expanded = false;
 		liveAccuracyMeters = null;
 		void hapticSelection();
@@ -196,14 +372,42 @@
 
 	const showEmptyOverlayChip = $derived(variant === 'overlay' && !parking && !expanded);
 	const showEmptyPanel = $derived(!parking && (variant === 'inline' || expanded));
+	const showSavedOverlayChip = $derived(
+		variant === 'overlay' && Boolean(parking) && !expanded && !saving
+	);
+
+	const chipDistanceLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (!parking) return '';
+		if (distance === null || bearing === null) {
+			return m.parking_calculating();
+		}
+		return `${formatDistance(distance)} · ${headingToCardinal(bearing)}`;
+	});
 </script>
+
+{#snippet compassNeedle()}
+	<svg
+		xmlns="http://www.w3.org/2000/svg"
+		viewBox="0 0 24 24"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="2"
+		class="origin-center h-9 w-9 shrink-0"
+		style:transform="rotate({displayRotation}deg)"
+		aria-hidden="true"
+	>
+		<circle cx="12" cy="12" r="10" />
+		<path d="M12 8l3 8-3-2-3 2 3-8z" fill="currentColor" stroke="none" />
+	</svg>
+{/snippet}
 
 {#if showEmptyOverlayChip}
 	<div class="flex w-full flex-col items-end gap-2">
 		<button
 			type="button"
 			onclick={openPanel}
-			class="btn-primary btn-primary--inline !h-12 gap-2 text-sm shadow-md"
+			class="btn-primary btn-primary--inline !h-16 gap-2 text-sm shadow-md"
 			aria-label={m.parking_save()}
 			aria-expanded="false"
 		>
@@ -226,6 +430,27 @@
 			</svg>
 			{m.parking_save_short()}
 		</button>
+	</div>
+{:else if showSavedOverlayChip}
+	<div class="flex w-full flex-col items-end gap-2">
+		<div class="flex h-16 overflow-hidden rounded-lg border border-forest-700 shadow-md">
+			<button
+				type="button"
+				onclick={openPanel}
+				class="flex max-w-[11rem] items-center bg-white/95 px-3 text-sm font-semibold text-forest-900 backdrop-blur-sm"
+				aria-expanded="false"
+				aria-label={statusText}
+			>
+				<span class="block truncate">{chipDistanceLabel}</span>
+			</button>
+			<a
+				href={resolve('/parking/compass')}
+				class="btn-primary flex !h-16 !w-16 !rounded-none items-center justify-center"
+				aria-label={compassLabel}
+			>
+				{@render compassNeedle()}
+			</a>
+		</div>
 	</div>
 {:else}
 	<div
@@ -338,18 +563,7 @@
 					href={resolve('/parking/compass')}
 					class="btn-primary col-span-2 gap-2 text-sm {variant === 'overlay' ? '!h-11' : ''}"
 				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						class="h-5 w-5"
-						aria-hidden="true"
-					>
-						<circle cx="12" cy="12" r="10" />
-						<path d="M12 8l3 8-3-2-3 2 3-8z" fill="currentColor" stroke="none" />
-					</svg>
+					{@render compassNeedle()}
 					{compassLabel}
 				</a>
 				<button
@@ -369,8 +583,24 @@
 					{m.action_clear()}
 				</button>
 			</div>
+
+			{#if variant === 'overlay'}
+				<button
+					type="button"
+					onclick={closePanel}
+					disabled={saving}
+					class="btn-secondary mt-2 !h-10 text-xs"
+				>
+					{m.action_close()}
+				</button>
+			{/if}
 		{/if}
 
+		{#if saveError}
+			<div class="mt-2">
+				<ErrorBanner copy={saveError} onretry={() => void handleSave()} />
+			</div>
+		{/if}
 		{#if warning}
 			<p class="mt-2 text-center text-xs text-amber-800" role="status">{warning}</p>
 		{/if}

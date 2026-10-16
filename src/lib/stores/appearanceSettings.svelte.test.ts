@@ -17,10 +17,48 @@ vi.mock('$lib/utils/refreshLocationLabels', () => ({
 		mockRefreshLocationLabelsForUiLocale(...args)
 }));
 
+import { get, set } from 'idb-keyval';
 import {
 	appearanceSettingsState,
+	initAppearanceSettings,
 	restoreAppearanceSettings
 } from './appearanceSettings.svelte';
+
+describe('initAppearanceSettings', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		appearanceSettingsState.loaded = false;
+		appearanceSettingsState.locale = 'fr';
+		appearanceSettingsState.outdoorMode = false;
+		appearanceSettingsState.darkMode = false;
+		appearanceSettingsState.simpleMode = false;
+	});
+
+	it('applies and persists focus mode when no settings are stored', async () => {
+		vi.mocked(get).mockResolvedValue(undefined);
+
+		await initAppearanceSettings();
+
+		expect(appearanceSettingsState.simpleMode).toBe(true);
+		expect(set).toHaveBeenCalledWith(
+			'yamadori-appearance-settings',
+			expect.objectContaining({ simpleMode: true })
+		);
+	});
+
+	it('keeps persisted simpleMode false for existing installs', async () => {
+		vi.mocked(get).mockResolvedValue({
+			outdoorMode: false,
+			darkMode: false,
+			simpleMode: false,
+			locale: 'fr'
+		});
+
+		await initAppearanceSettings();
+
+		expect(appearanceSettingsState.simpleMode).toBe(false);
+	});
+});
 
 describe('restoreAppearanceSettings', () => {
 	beforeEach(() => {

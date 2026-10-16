@@ -15,11 +15,13 @@ import {
 	type ArchiveBuildOptions,
 	type ArchiveExportInput,
 	type ArchiveFileEntry,
+	type ArchiveKind,
 	type ArchiveManifest,
 	type ArchiveProgressCallback,
 	type TreeArchive,
 	type TreeVisitArchive,
 	type VoiceNoteArchive,
+	resolveArchiveKind,
 	voiceNoteToArchive,
 	type YamadoriArchiveData,
 	type ZipEntryMap
@@ -67,7 +69,7 @@ function exportVoiceNote(
 	return voiceNoteToArchive(note, mediaPath);
 }
 
-function treeToArchive(tree: Tree, collector: MediaCollector): TreeArchive {
+function treeToArchive(tree: Tree, collector: MediaCollector, kind: ArchiveKind): TreeArchive {
 	const visits: TreeVisitArchive[] = tree.visits.map((visit) => {
 		const photoPaths = visit.photos
 			.map((photo, index) =>
@@ -119,6 +121,10 @@ function treeToArchive(tree: Tree, collector: MediaCollector): TreeArchive {
 		harvestEthicsConfirmation: tree.harvestEthicsConfirmation,
 		environmentExposure: tree.environmentExposure,
 		yrsAtCapture: tree.yrsAtCapture,
+		nextRevisitAt: tree.nextRevisitAt ?? null,
+		notifyOnWindow: kind === 'tree-share' ? false : tree.notifyOnWindow === true,
+		windowNotifyArmed: kind === 'tree-share' ? false : tree.windowNotifyArmed === true,
+		dateNotifySentFor: kind === 'tree-share' ? null : (tree.dateNotifySentFor ?? null),
 		capturedAt: tree.capturedAt
 	};
 }
@@ -169,7 +175,8 @@ export async function buildArchive(
 	const { password, onProgress } =
 		typeof options === 'function' ? { onProgress: options } : (options ?? {});
 	const collector = createMediaCollector();
-	const trees = input.trees.map((tree) => treeToArchive(tree, collector));
+	const kind = resolveArchiveKind(input.kind);
+	const trees = input.trees.map((tree) => treeToArchive(tree, collector, kind));
 
 	onProgress?.('media', 40);
 
@@ -196,6 +203,7 @@ export async function buildArchive(
 		appVersion: input.appVersion,
 		exportedAt: new Date().toISOString(),
 		encryption: null,
+		kind,
 		stats: {
 			treeCount: trees.length,
 			mediaFileCount: collector.paths.length
@@ -226,4 +234,20 @@ export async function buildArchive(
 export function archiveFilename(): string {
 	const date = new Date().toISOString().slice(0, 10);
 	return `yamadori-backup-${date}.yamadori.zip`;
+}
+
+function slugForFilename(value: string): string {
+	const slug = value
+		.normalize('NFD')
+		.replace(/\p{M}/gu, '')
+		.replace(/[^a-zA-Z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 40)
+		.toLowerCase();
+	return slug || 'arbre';
+}
+
+export function treeShareFilename(species: string, now = new Date()): string {
+	const date = now.toISOString().slice(0, 10);
+	return `yamadori-arbre-${slugForFilename(species)}-${date}.yamadori.zip`;
 }
