@@ -90,6 +90,10 @@ export type StoredTreeRecord = {
 	harvestEthicsConfirmation: import('$lib/types/harvest-ethics').HarvestEthicsConfirmation | null;
 	environmentExposure: import('$lib/types/environment').EnvironmentExposure;
 	yrsAtCapture: YrsStoredSnapshot | null;
+	nextRevisitAt?: string | null;
+	notifyOnWindow?: boolean;
+	windowNotifyArmed?: boolean;
+	dateNotifySentFor?: string | null;
 	capturedAt: string;
 };
 

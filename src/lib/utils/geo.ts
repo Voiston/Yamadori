@@ -28,11 +28,11 @@ export const GPS_CAPTURE_FIX_OPTIONS: PositionOptions = {
 	maximumAge: 0
 };
 
-/** Live capture watch — allow a short OS cache while GNSS refines. */
+/** Live capture watch — no OS cache; GNSS must produce a fresh reading. */
 export const GPS_CAPTURE_WATCH_OPTIONS: PositionOptions = {
 	enableHighAccuracy: true,
 	timeout: 30_000,
-	maximumAge: 5_000
+	maximumAge: 0
 };
 
 /** @deprecated Use GPS_CAPTURE_FIX_OPTIONS or GPS_CAPTURE_WATCH_OPTIONS */
@@ -112,6 +112,10 @@ export type CapacitorGpsOptions = PositionOptions & {
 	enableLocationFallback?: boolean;
 };
 
+function shouldEnableLocationFallback(profile: GpsProfile): boolean {
+	return profile !== 'capture';
+}
+
 export function getCapacitorGpsOptions(profile: GpsProfile = 'capture'): CapacitorGpsOptions {
 	const base = getGpsOptions(profile);
 	const intervals = CAPACITOR_INTERVALS_BY_PROFILE[profile];
@@ -119,7 +123,7 @@ export function getCapacitorGpsOptions(profile: GpsProfile = 'capture'): Capacit
 	return {
 		...base,
 		...intervals,
-		enableLocationFallback: true
+		enableLocationFallback: shouldEnableLocationFallback(profile)
 	};
 }
 
@@ -130,7 +134,7 @@ export function getCapacitorGpsFixOptions(profile: GpsProfile = 'capture'): Capa
 	return {
 		...base,
 		...intervals,
-		enableLocationFallback: true
+		enableLocationFallback: shouldEnableLocationFallback(profile)
 	};
 }
 

@@ -1,6 +1,7 @@
 import * as m from '$lib/paraglide/messages.js';
 import { getLocale } from '$lib/paraglide/runtime.js';
 import { POOR_ACCURACY_THRESHOLD_M } from '$lib/utils/geo';
+import { haversineDistanceM } from '$lib/utils/haversine';
 
 const INTL_LOCALE: Record<string, string> = {
 	fr: 'fr-FR',
@@ -34,6 +35,30 @@ export function getGpsSignalQuality(meters: number | null): GpsSignalQuality {
 	return 'poor';
 }
 
+const GPS_QUALITY_RANK: Record<GpsSignalQuality, number> = {
+	unknown: 0,
+	poor: 1,
+	fair: 2,
+	excellent: 3
+};
+
+/** Haptic only when live accuracy steps up a quality band — never on retreat or every metre. */
+export function gpsQualityUpgrade(
+	prev: GpsSignalQuality,
+	next: GpsSignalQuality
+): 'selection' | 'success' | null {
+	if (GPS_QUALITY_RANK[next] <= GPS_QUALITY_RANK[prev]) {
+		return null;
+	}
+	if (next === 'excellent') {
+		return 'success';
+	}
+	if (next === 'fair') {
+		return 'selection';
+	}
+	return null;
+}
+
 export function formatAccuracy(meters: number | null): string {
 	if (meters === null) {
 		return m.gps_accuracy_unknown();
@@ -62,6 +87,45 @@ export function isBetterAccuracy(candidate: number | null, currentBest: number |
 		return true;
 	}
 	return candidate < currentBest;
+}
+
+/** Floor so forest GNSS wobble (10–20 m) does not reset best; house→forest is km. */
+export const BEST_CAPTURE_JUMP_FLOOR_M = 50;
+
+export type CapturePositionSample = {
+	latitude: number;
+	longitude: number;
+	accuracyMeters: number | null;
+};
+
+export function isCaptureBestNearLive(
+	best: CapturePositionSample,
+	live: CapturePositionSample
+): boolean {
+	const distanceM = haversineDistanceM(
+		best.latitude,
+		best.longitude,
+		live.latitude,
+		live.longitude
+	);
+	const accBest = best.accuracyMeters ?? 0;
+	const accLive = live.accuracyMeters ?? 0;
+	const jumpThresholdM = Math.max(BEST_CAPTURE_JUMP_FLOOR_M, 3 * (accBest + accLive));
+	return distanceM <= jumpThresholdM;
+}
+
+/** Replace session-best when live jumped away (cached house) or is more accurate on-site. */
+export function shouldReplaceBestCapturePosition(
+	best: CapturePositionSample | null,
+	live: CapturePositionSample
+): boolean {
+	if (!best) {
+		return true;
+	}
+	if (!isCaptureBestNearLive(best, live)) {
+		return true;
+	}
+	return isBetterAccuracy(live.accuracyMeters, best.accuracyMeters);
 }
 
 export function hasApproximateGps(

@@ -30,6 +30,9 @@ import {
 	sumPrecipitation,
 	worstAgriRisk
 } from './agri';
+import { applyEnvironmentExposure } from './adjustedClimate';
+import { enrichAgriData } from './agriCache';
+import { computeYamadoriReadinessScore } from './yrs';
 
 const idealConditions: AgriData = {
 	fetchedAt: '2026-06-22T12:00:00.000Z',
@@ -145,6 +148,29 @@ function buildMockBody(referenceDate: Date) {
 	};
 }
 
+/** 7 jours passés + 14 jours de prévision, pour qu'un jour J+6 ait encore 7 jours devant lui. */
+function buildLongForecastBody(referenceDate: Date) {
+	const body = buildMockBody(referenceDate);
+	const extraDates = [
+		'2026-06-29',
+		'2026-06-30',
+		'2026-07-01',
+		'2026-07-02',
+		'2026-07-03',
+		'2026-07-04',
+		'2026-07-05'
+	];
+	body.daily.time = [...body.daily.time, ...extraDates];
+	body.daily.precipitation_sum = [...body.daily.precipitation_sum, ...extraDates.map(() => 0)];
+	body.daily.temperature_2m_min = [...body.daily.temperature_2m_min, ...extraDates.map(() => 4)];
+	body.daily.temperature_2m_max = [...body.daily.temperature_2m_max, ...extraDates.map(() => 24)];
+	body.daily.et0_fao_evapotranspiration = [
+		...body.daily.et0_fao_evapotranspiration,
+		...extraDates.map(() => 0.8)
+	];
+	return body;
+}
+
 describe('findCurrentHourIndex', () => {
 	it('returns the first slot at or after the reference time', () => {
 		const times = ['2026-06-22T10:00', '2026-06-22T11:00', '2026-06-22T12:00', '2026-06-22T13:00'];
@@ -177,13 +203,15 @@ describe('sumPastPrecipitation', () => {
 });
 
 describe('countConsecutiveSoilStableDays', () => {
-	it('counts the longest run in the 8–15 °C range', () => {
-		expect(countConsecutiveSoilStableDays([10, 11, 12, 13, 4])).toBe(4);
+	it('counts the current streak from the most recent day in the 8–15 °C range', () => {
+		expect(countConsecutiveSoilStableDays([10, 11, 12, 13, 4])).toBe(0);
+		expect(countConsecutiveSoilStableDays([10, 11, 12, 3, 11])).toBe(1);
+		expect(countConsecutiveSoilStableDays([10, 11, 12, 13, 14])).toBe(5);
 	});
 
 	it('uses custom profile soil-stable bounds when provided', () => {
 		expect(countConsecutiveSoilStableDays([9, 10, 17, 18], 9, 18)).toBe(4);
-		expect(countConsecutiveSoilStableDays([9, 10, 17, 18], 8, 15)).toBe(2);
+		expect(countConsecutiveSoilStableDays([9, 10, 17, 18], 8, 15)).toBe(0);
 	});
 });
 
@@ -289,6 +317,7 @@ describe('parseAgriForecastResponse', () => {
 		});
 		expect(result.soilTemperature6cmC).toBe(10);
 		expect(result.soilTemperature18cmC).toBe(11);
+		expect(result.soilMoisture7cmPct).toBeNull();
 		expect(result.soilBrutalNightDrop).toBe(false);
 		expect(result.frostMinNext7dC).toBe(2);
 		expect(result.et0TodayMm).toBe(0.8);
@@ -299,6 +328,25 @@ describe('parseAgriForecastResponse', () => {
 		expect(result.soilStabilityScore).toBeGreaterThan(80);
 		expect(result.shortwaveRadiationMaxTodayWm2).toBe(300);
 		expect(result.weeklyViability).toBeNull();
+	});
+
+	it('stores Open-Meteo volumetric moisture as available-water percent', () => {
+		const referenceDate = new Date('2026-06-22T12:00:00');
+		const body = buildMockBody(referenceDate);
+		const parsed = parseAgriForecastResponse(
+			{
+				...body,
+				hourly: {
+					...body.hourly,
+					soil_moisture_0_to_7cm: body.hourly.time.map(() => 0.274)
+				}
+			},
+			47.5,
+			-0.5,
+			referenceDate
+		);
+
+		expect(parsed.soilMoisture7cmPct).toBe(79);
 	});
 });
 
@@ -646,27 +694,75 @@ describe('computeWeeklyViability', () => {
 		expect(weekly.days.length).toBe(7);
 	});
 
-	it('keeps frost forecast stress anchored to true today on late sim days', () => {
+	it('counts an early-week frost as future on J+0 and only as past on J+3', () => {
 		const referenceDate = new Date('2026-06-22T12:00:00');
-		const body = buildMockBody(referenceDate);
-		// Hard frost on June 28 (last forecast day) — must still register when scoring that day
-		body.daily.temperature_2m_min = [4, 5, 6, 5, 6, 7, 3, 2, 4, 5, 6, 4, 5, -4];
+		const body = buildLongForecastBody(referenceDate);
+		const frostOnJ1 = body.daily.time.indexOf('2026-06-23');
+		body.daily.temperature_2m_min = body.daily.temperature_2m_min.map((value, index) =>
+			index === frostOnJ1 ? -4 : value
+		);
 
 		const todayParsed = parseAgriForecastResponse(body, 47.5, -0.5, referenceDate);
 		expect(todayParsed.frostRiskNext7d).toBe(true);
+		expect(todayParsed.frostEventsPast7d).toBe(0);
 
-		const lateSim = new Date('2026-06-28T12:00:00');
-		const lateWithoutAnchor = parseAgriForecastResponse(body, 47.5, -0.5, lateSim);
-		const lateWithAnchor = parseAgriForecastResponse(body, 47.5, -0.5, lateSim, {
+		const simDate = new Date('2026-06-25T12:00:00');
+		const sliding = parseAgriForecastResponse(body, 47.5, -0.5, simDate);
+		const anchored = parseAgriForecastResponse(body, 47.5, -0.5, simDate, {
 			stressHorizonDate: referenceDate
 		});
+		expect(sliding.frostEventsPast7d).toBe(1);
+		expect(sliding.frostRiskNext7d).toBe(false);
+		expect(anchored.frostRiskNext7d).toBe(true);
 
-		// Sliding window from June 28 only sees that day — still frost, but ET0/heat windows shrink
-		expect(lateWithAnchor.frostRiskNext7d).toBe(true);
-		expect(lateWithAnchor.et0Forecast7dSumMm).toBe(todayParsed.et0Forecast7dSumMm);
-		expect(lateWithoutAnchor.et0Forecast7dSumMm ?? 0).toBeLessThan(
-			todayParsed.et0Forecast7dSumMm ?? 0
+		const weekly = computeWeeklyViability(body, 47.5, -0.5, referenceDate);
+		expect(weekly.days).toHaveLength(7);
+		expect(weekly.todayScore).toBe(weekly.days[0]?.score);
+		expect(weekly.days[3]?.date).toBe('2026-06-25');
+		expect(weekly.days[3]?.score).toBe(computeYamadoriReadinessScore(sliding, {}).score);
+		expect(weekly.days[3]?.score).not.toBe(computeYamadoriReadinessScore(anchored, {}).score);
+	});
+
+	it('keeps a full 7-day ET0 window on J+6 when the forecast body covers 14 days', () => {
+		const referenceDate = new Date('2026-06-22T12:00:00');
+		const body = buildLongForecastBody(referenceDate);
+		const todayParsed = parseAgriForecastResponse(body, 47.5, -0.5, referenceDate);
+		const lateParsed = parseAgriForecastResponse(
+			body,
+			47.5,
+			-0.5,
+			new Date('2026-06-28T12:00:00')
 		);
+
+		expect(lateParsed.et0Forecast7dSumMm).toBe(todayParsed.et0Forecast7dSumMm);
+		expect(lateParsed.et0Forecast7dSumMm).toBe(5.6);
+	});
+});
+
+describe('enrichAgriData weekly exposure', () => {
+	it('applies forest cover to the week from the unscaled GDD snapshot', () => {
+		const referenceDate = new Date('2026-06-22T12:00:00');
+		const body = buildMockBody(referenceDate);
+		const parsed = parseAgriForecastResponse(body, 47.5, -0.5, referenceDate);
+		const gdd = {
+			baseTempC: 4,
+			baseCategory: 'foret' as const,
+			cumulativeSinceJan1: 200,
+			last7dSum: 40,
+			dailySeries: [],
+			phenology: estimatePhenology(200, 'foret', 'Bouleau'),
+			phenologyUnavailableReason: null,
+			speciesLabel: 'Bouleau'
+		};
+		const data = { ...parsed, gdd, weeklyViability: null, yrs: null };
+		const inputs = { species: 'Bouleau' as const, environmentExposure: 'FOREST_DENSE' as const };
+
+		const enriched = enrichAgriData(data, inputs, body);
+		const exposedOnce = applyEnvironmentExposure(data, data.gdd, 'FOREST_DENSE');
+		const onceScore = computeYamadoriReadinessScore(exposedOnce.data, inputs).score;
+
+		expect(enriched.gdd?.cumulativeSinceJan1).toBe(140);
+		expect(enriched.weeklyViability?.todayScore).toBe(onceScore);
 	});
 });
 
@@ -780,6 +876,49 @@ describe('assessYrsDetailRisks', () => {
 	});
 });
 
+describe('regional risk thresholds', () => {
+	const mediterranean = {
+		...idealConditions,
+		latitude: 41.9,
+		longitude: 12.5
+	};
+	const boreal = {
+		...idealConditions,
+		latitude: 69.6492,
+		longitude: 18.9553
+	};
+
+	it('scores Mediterranean soil and air on the regional bands', () => {
+		expect(assessYrsDetailRisks({ ...mediterranean, soilTemperature18cmC: 15 }).soil).toBe(
+			'Excellent'
+		);
+		expect(assessYrsDetailRisks({ ...mediterranean, airTemperatureC: 33 }).air).toBe('Passable');
+	});
+
+	it('keeps boreal soil at 6 °C out of the dangerous band', () => {
+		expect(assessYrsDetailRisks({ ...boreal, soilTemperature18cmC: 6 }).soil).toBe('Excellent');
+	});
+
+	it('explains a Mediterranean soil just under the regional minimum as cold', () => {
+		const details = assessYamadoriRiskDetails({
+			...mediterranean,
+			soilTemperature18cmC: 9.5
+		});
+		expect(details.level).toBe('Dangereux');
+		expect(details.reason).toBe(m.agri_verdict_soil_cold({ temp: '9.5' }));
+	});
+
+	it('keeps Mediterranean ET0 of 1.2 mm/day inside the regional excellent band', () => {
+		expect(
+			assessYamadoriRiskDetails({
+				...mediterranean,
+				et0Past7dMeanMm: 1.2,
+				et0Trend7dMeanMm: 1.2
+			}).level
+		).toBe('Excellent');
+	});
+});
+
 describe('worstAgriRisk', () => {
 	it('returns the highest severity among risk levels', () => {
 		expect(worstAgriRisk('Excellent', 'Passable', 'Excellent')).toBe('Passable');
@@ -809,5 +948,7 @@ describe('fetchAgriDataBase', () => {
 		const calledUrl = String(fetchMock.mock.calls[0]?.[0]);
 		expect(calledUrl).toContain('latitude=47.26');
 		expect(calledUrl).toContain('longitude=-1.52');
+		expect(calledUrl).toContain('forecast_days=14');
+		expect(calledUrl).toContain('past_days=7');
 	});
 });

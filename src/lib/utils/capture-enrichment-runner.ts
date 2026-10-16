@@ -249,7 +249,7 @@ async function loadClimateWave(
 				return;
 			}
 			result.climate.history = null;
-			result.climate.error = err instanceof Error ? err.message : 'climate';
+			result.climate.error = 'failed';
 		} finally {
 			result.climate.loading = false;
 			result.climate.fetchInFlight = false;

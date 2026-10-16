@@ -14,7 +14,6 @@ import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.PluginHandle;
 
 import java.io.File;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainActivity extends BridgeActivity {
@@ -93,19 +92,11 @@ public class MainActivity extends BridgeActivity {
             return;
         }
 
-        if (YamadoriBackupPlugin.hasPendingImport()) {
-            return;
-        }
-
         String displayName = YamadoriBackupPlugin.resolveDisplayName(
                 getContentResolver(),
                 uri,
                 PENDING_IMPORT_NAME
         );
-
-        if (!isAcceptableImportName(displayName) && !isAcceptableImportName(uri.getLastPathSegment())) {
-            return;
-        }
 
         File importsDir = new File(getCacheDir(), "imports");
         if (!importsDir.exists() && !importsDir.mkdirs()) {
@@ -128,14 +119,6 @@ public class MainActivity extends BridgeActivity {
         intent.setAction(null);
         intent.setData(null);
         intent.removeExtra(Intent.EXTRA_STREAM);
-    }
-
-    private static boolean isAcceptableImportName(String name) {
-        if (name == null || name.isEmpty()) {
-            return false;
-        }
-        String lower = name.toLowerCase(Locale.ROOT);
-        return lower.endsWith(".yamadori.zip");
     }
 
     private void notifyPendingImportIfNeeded() {

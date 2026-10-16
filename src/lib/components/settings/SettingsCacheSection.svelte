@@ -45,12 +45,17 @@
 	<div>
 		<h2 class="text-lg font-semibold text-forest-900">{m.settings_offline_storage()}</h2>
 		<p class="mt-1 text-sm text-muted">{m.settings_offline_storage_hint()}</p>
-		<p class="mt-2 text-sm text-muted">{m.settings_offline_map_hint()}</p>
-		<ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-muted">
-			<li>{m.settings_offline_tip_1()}</li>
-			<li>{m.settings_offline_tip_2()}</li>
-			<li>{m.settings_offline_tip_3()}</li>
-		</ul>
+		<details class="mt-2 text-sm text-muted">
+			<summary class="cursor-pointer font-medium text-forest-800 select-none">
+				{m.settings_offline_tips()}
+			</summary>
+			<p class="mt-2">{m.settings_offline_map_hint()}</p>
+			<ul class="mt-2 list-disc space-y-1 pl-5 text-xs">
+				<li>{m.settings_offline_tip_1()}</li>
+				<li>{m.settings_offline_tip_2()}</li>
+				<li>{m.settings_offline_tip_3()}</li>
+			</ul>
+		</details>
 	</div>
 
 	<div class="app-section-list">

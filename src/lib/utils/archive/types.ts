@@ -54,12 +54,16 @@ export type ArchiveManifestEncryption = {
 	kdf?: string;
 };
 
+export type ArchiveKind = 'backup' | 'tree-share';
+
 export type ArchiveManifest = {
 	formatVersion: number;
 	appVersion: string;
 	exportedAt: string;
 	/** `null` for plaintext exports; object for legacy inner AES (`donnees.enc`). */
 	encryption: ArchiveManifestEncryption | null;
+	/** Absent on archives written before tree-share; treat as `backup`. */
+	kind?: ArchiveKind;
 	stats: {
 		treeCount: number;
 		mediaFileCount: number;
@@ -106,6 +110,10 @@ export type TreeArchive = {
 	harvestEthicsConfirmation?: HarvestEthicsConfirmation | null;
 	environmentExposure: EnvironmentExposure;
 	yrsAtCapture?: import('$lib/types/yrs').YrsStoredSnapshot | null;
+	nextRevisitAt?: string | null;
+	notifyOnWindow?: boolean;
+	windowNotifyArmed?: boolean;
+	dateNotifySentFor?: string | null;
 	capturedAt: string;
 };
 
@@ -123,6 +131,7 @@ export type ArchiveExportInput = {
 	appearanceSettings: { outdoorMode: boolean; darkMode?: boolean; simpleMode?: boolean; locale?: import('$lib/stores/appearanceSettings.svelte').AppLocale };
 	apiSettings?: StoredApiSettings;
 	appVersion: string;
+	kind?: ArchiveKind;
 };
 
 export type ArchiveBuildOptions = {
@@ -140,6 +149,7 @@ export type ArchiveImportPreview = {
 	mediaFileCount: number;
 	exportedAt: string;
 	appVersion: string;
+	kind: ArchiveKind;
 };
 
 export type ArchiveProgressPhase = 'media' | 'encrypt' | 'zip' | 'validate' | 'decrypt';
@@ -155,7 +165,12 @@ export type RebuiltArchive = {
 	appearanceSettings: YamadoriArchiveData['appearanceSettings'];
 	apiSettings?: StoredApiSettings;
 	preview: ArchiveImportPreview;
+	kind: ArchiveKind;
 };
+
+export function resolveArchiveKind(kind: unknown): ArchiveKind {
+	return kind === 'tree-share' ? 'tree-share' : 'backup';
+}
 
 export function voiceNoteToArchive(note: VoiceNote, mediaPath: string): VoiceNoteArchive {
 	return {

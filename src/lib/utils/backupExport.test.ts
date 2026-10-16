@@ -39,7 +39,7 @@ vi.mock('$lib/utils/backupReminder.svelte', () => ({
 }));
 
 vi.mock('$lib/utils/nativeInit', () => ({
-	getAppVersionLabel: vi.fn().mockResolvedValue('0.7.8')
+	getAppVersionLabel: vi.fn().mockResolvedValue('1.0.5')
 }));
 
 vi.mock('$lib/stores/appearanceSettings.svelte', () => ({
@@ -98,7 +98,7 @@ describe('exportAppBackup', () => {
 		const result = await exportAppBackup('share', { password: 'secret-pass' });
 		expect(mockBuildArchive).toHaveBeenCalledWith(
 			expect.objectContaining({ trees: fullTrees }),
-			{ password: 'secret-pass' }
+			expect.objectContaining({ password: 'secret-pass' })
 		);
 		expect(mockDeliverArchive).toHaveBeenCalledWith(
 			expect.any(Blob),
@@ -108,6 +108,15 @@ describe('exportAppBackup', () => {
 		expect(mockMarkBackupExported).toHaveBeenCalled();
 		expect(result.delivery).toBe('shared');
 		expect(result.missingPhotoTrees).toBe(0);
+	});
+
+	it('forwards onProgress to buildArchive', async () => {
+		const onProgress = vi.fn();
+		await exportAppBackup('share', { onProgress });
+		expect(mockBuildArchive).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ onProgress })
+		);
 	});
 
 	it('flushes pending writes then loads full trees for the archive', async () => {

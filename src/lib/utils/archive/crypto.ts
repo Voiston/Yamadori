@@ -202,13 +202,13 @@ export async function decryptEnvelope(
 	password: string
 ): Promise<Uint8Array> {
 	if (!isPasswordProtectedArchive(bytes)) {
-		throw new ArchiveError('ARCHIVE_INVALID_ZIP', 'Not a password-protected archive.');
+		throw new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_not_password_protected_what());
 	}
 
 	const version = bytes[ENVELOPE_MAGIC.length]!;
 	const iterations = iterationsForEnvelopeVersion(version);
 	if (iterations === null) {
-		throw new ArchiveError('ARCHIVE_INVALID_ZIP', 'Unsupported envelope version.');
+		throw new ArchiveError('ARCHIVE_INVALID_ZIP', m.archive_unsupported_envelope_what());
 	}
 
 	const salt = bytes.slice(ENVELOPE_MAGIC.length + 1, ENVELOPE_MAGIC.length + 1 + SALT_BYTES);
@@ -227,7 +227,7 @@ export async function decryptEnvelope(
 		);
 		return new Uint8Array(decrypted);
 	} catch {
-		throw new ArchiveError('ARCHIVE_WRONG_PASSWORD', 'Wrong password.');
+		throw new ArchiveError('ARCHIVE_WRONG_PASSWORD', m.archive_wrong_password());
 	}
 }
 

@@ -31,6 +31,8 @@
 			</span>
 		</span>
 		<span class="mt-0.5 block text-muted">{description}</span>
-		<span class="mt-1.5 block border-l-2 border-amber-200 pl-3 text-muted">{disabledConsequence}</span>
+		{#if !checked}
+			<span class="mt-1.5 block border-l-2 border-amber-200 pl-3 text-muted">{disabledConsequence}</span>
+		{/if}
 	</span>
 </label>

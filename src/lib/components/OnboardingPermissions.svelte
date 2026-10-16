@@ -6,7 +6,8 @@
 		requestCameraPermission,
 		requestCompassPermission,
 		requestLocationPermission,
-		requestMicrophonePermission
+		requestMicrophonePermission,
+		requestNotificationPermission
 	} from '$lib/utils/permissions';
 	import * as m from '$lib/paraglide/messages.js';
 	import { portal, BODY_PORTAL_TARGET, ONBOARDING_PANEL_CLASS } from '$lib/utils/portal';
@@ -14,13 +15,22 @@
 
 	let { onphasecomplete }: { onphasecomplete: () => void } = $props();
 
-	type StepId = 'welcome' | 'location' | 'media' | 'compass' | 'capture_intro' | 'legal';
+	type StepId = 'welcome' | 'location' | 'media' | 'compass' | 'notifications' | 'capture_intro' | 'legal';
 
-	const stepIds: StepId[] = ['welcome', 'location', 'media', 'compass', 'capture_intro', 'legal'];
+	const stepIds: StepId[] = [
+		'welcome',
+		'location',
+		'media',
+		'compass',
+		'notifications',
+		'capture_intro',
+		'legal'
+	];
 
 	let stepIndex = $state(0);
 	let working = $state(false);
 	let feedback = $state('');
+	let feedbackDenied = $state(false);
 	let locationGranted = $state(false);
 
 	function blurActiveElement() {
@@ -48,6 +58,8 @@
 				return m.onboarding_camera_title();
 			case 'compass':
 				return m.onboarding_compass_title();
+			case 'notifications':
+				return m.onboarding_notifications_title();
 			case 'capture_intro':
 				return m.onboarding_capture_intro_title();
 			case 'legal':
@@ -66,10 +78,12 @@
 				return m.onboarding_camera_desc();
 			case 'compass':
 				return m.onboarding_compass_desc();
+			case 'notifications':
+				return m.onboarding_notifications_desc();
 			case 'capture_intro':
 				return m.onboarding_capture_intro_desc();
 			case 'legal':
-				return m.onboarding_legal_desc();
+				return `${m.onboarding_legal_desc()} ${m.legal_aid_disclaimer()}`;
 		}
 	});
 
@@ -101,11 +115,13 @@
 
 		working = true;
 		feedback = '';
+		feedbackDenied = false;
 
 		try {
 			switch (currentStepId) {
 				case 'location': {
 					locationGranted = await requestLocationPermission();
+					feedbackDenied = !locationGranted;
 					feedback = locationGranted
 						? m.onboarding_location_ok()
 						: m.onboarding_location_denied();
@@ -115,19 +131,31 @@
 					const cameraOk = await requestCameraPermission();
 					const micOk = await requestMicrophonePermission();
 					if (cameraOk && micOk) {
+						feedbackDenied = false;
 						feedback = m.onboarding_camera_ok();
 					} else if (cameraOk || micOk) {
+						feedbackDenied = true;
 						feedback = m.onboarding_camera_partial();
 					} else {
+						feedbackDenied = true;
 						feedback = m.onboarding_camera_denied();
 					}
 					break;
 				}
 				case 'compass': {
 					const granted = await requestCompassPermission();
+					feedbackDenied = !granted;
 					feedback = granted
 						? m.onboarding_compass_ok()
 						: m.onboarding_compass_denied();
+					break;
+				}
+				case 'notifications': {
+					const granted = await requestNotificationPermission();
+					feedbackDenied = !granted;
+					feedback = granted
+						? m.onboarding_notifications_ok()
+						: m.onboarding_notifications_denied();
 					break;
 				}
 			}
@@ -172,7 +200,12 @@
 	>
 		{#snippet middle()}
 			{#if feedback}
-				<p class="rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
+				<p
+					class="rounded-xl px-3 py-2 text-sm {feedbackDenied
+						? 'bg-amber-50 text-amber-950'
+						: 'bg-green-50 text-green-800'}"
+					role={feedbackDenied ? 'alert' : 'status'}
+				>
 					{feedback}
 				</p>
 			{/if}

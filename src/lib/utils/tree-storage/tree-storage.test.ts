@@ -92,6 +92,30 @@ describe('tree-storage codec', () => {
 		expect(hydrated.mediaHydration).toBe('full');
 	});
 
+	it('defaults missing revisit reminder fields and round-trips them', () => {
+		const tree = sampleTree();
+		const mediaById = new Map<string, StoredMediaRecord>();
+		const stored = treeToStoredRecord(tree, mediaById);
+		expect(stored.nextRevisitAt).toBeNull();
+		expect(stored.notifyOnWindow).toBe(false);
+		expect(stored.windowNotifyArmed).toBe(false);
+		expect(stored.dateNotifySentFor).toBeNull();
+
+		const withReminder: Tree = {
+			...tree,
+			nextRevisitAt: '2026-09-01',
+			notifyOnWindow: true,
+			windowNotifyArmed: false,
+			dateNotifySentFor: '2026-09-01'
+		};
+		const storedReminder = treeToStoredRecord(withReminder, new Map());
+		const hydrated = storedRecordToTree(storedReminder, new Map(), 'full');
+		expect(hydrated.nextRevisitAt).toBe('2026-09-01');
+		expect(hydrated.notifyOnWindow).toBe(true);
+		expect(hydrated.windowNotifyArmed).toBe(false);
+		expect(hydrated.dateNotifySentFor).toBe('2026-09-01');
+	});
+
 	it('loads thumbs without full photo bytes in memory', () => {
 		const tree = sampleTree();
 		const mediaById = new Map<string, StoredMediaRecord>();

@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import CompassView from '$lib/components/CompassView.svelte';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
+	import { compassTreeMissingCopy } from '$lib/utils/errorCopy';
 	import { speciesDisplayName } from '$lib/constants/species-i18n';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import { getTreeById } from '$lib/stores/trees.svelte';
@@ -38,8 +39,7 @@
 		trackedTree={tree}
 	/>
 {:else}
-	<div class="flex flex-col items-center py-16 text-center">
-		<h2 class="text-xl font-semibold text-forest-900">{m.list_no_trees()}</h2>
-		<a href="{base}/" class="mt-6 text-forest-800 underline">{m.layout_back()}</a>
+	<div class="flex flex-col items-center px-4 py-16 text-center">
+		<ErrorBanner copy={compassTreeMissingCopy()} class="w-full max-w-sm text-left" />
 	</div>
 {/if}

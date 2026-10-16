@@ -11,6 +11,8 @@
 	} from '$lib/stores/backupPasswordSettings.svelte';
 	import type { ArchiveDeliveryMode, ArchiveDeliveryResult } from '$lib/utils/archive/delivery';
 	import { exportAppBackup } from '$lib/utils/backupExport';
+	import { showOkToast } from '$lib/stores/appToast.svelte';
+	import { formatUserFacingError } from '$lib/utils/userFacingError';
 	import * as m from '$lib/paraglide/messages.js';
 	import { isAndroidApp } from '$lib/utils/platform';
 	import { portal, BODY_PORTAL_TARGET, ONBOARDING_PANEL_CLASS } from '$lib/utils/portal';
@@ -119,11 +121,11 @@
 			const { delivery } = await exportAppBackup(mode, {
 				password: exportPassword
 			});
-			showFeedback(formatExportSuccessMessage(delivery));
+			showOkToast(formatExportSuccessMessage(delivery));
 			await dismissAndComplete();
 		} catch (error) {
 			showFeedback(
-				error instanceof Error ? error.message : m.onboarding_protection_export_failed(),
+				formatUserFacingError(error, m.onboarding_protection_export_failed()),
 				true
 			);
 		} finally {
@@ -143,8 +145,10 @@
 			showFeedback(m.onboarding_protection_password_configured());
 			setupView = 'export';
 		} catch (error) {
-			passwordFormError =
-				error instanceof Error ? error.message : m.settings_backup_password_too_short();
+			passwordFormError = formatUserFacingError(
+				error,
+				m.settings_backup_password_too_short()
+			);
 		}
 	}
 </script>

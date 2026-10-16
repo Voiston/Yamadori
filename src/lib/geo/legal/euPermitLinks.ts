@@ -702,8 +702,8 @@ export type NoStatsforvalterCode =
 const NO_STATSFORVALTER_LINKS: Record<NoStatsforvalterCode, EuPermitLink> = {
 	OV: {
 		id: 'no_sf_ov',
-		label: 'Statsforvalteren Oslo og Viken',
-		url: 'https://www.statsforvalteren.no/ov/'
+		label: 'Statsforvalteren Østfold, Buskerud, Oslo og Akershus',
+		url: 'https://www.statsforvalteren.no/ostfold-buskerud-oslo-og-akershus/'
 	},
 	IN: {
 		id: 'no_sf_in',
@@ -748,12 +748,12 @@ const NO_STATSFORVALTER_LINKS: Record<NoStatsforvalterCode, EuPermitLink> = {
 	TF: {
 		id: 'no_sf_tf',
 		label: 'Statsforvalteren Troms og Finnmark',
-		url: 'https://www.statsforvalteren.no/troms-finnmark/'
+		url: 'https://www.statsforvalteren.no/troms-og-finnmark/'
 	}
 };
 
 const NO_STATSFORVALTER_MATCH: Array<{ code: NoStatsforvalterCode; re: RegExp }> = [
-	{ code: 'OV', re: /oslo|viken|b[aæ]rum|drammen|fredrikstad/i },
+	{ code: 'OV', re: /oslo|viken|b[aæ]rum|drammen|fredrikstad|[oø]stfold|buskerud|akershus|\bmoss\b/i },
 	{ code: 'IN', re: /innlandet|lillehammer|gj[oø]vik|hamar|heds?mark|oppland/i },
 	{ code: 'VT', re: /vestfold|telemark|skien|t[oø]nsberg|porsgrunn/i },
 	{ code: 'AG', re: /\bagder\b|kristiansand|arendal/i },

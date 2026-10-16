@@ -10,6 +10,17 @@ const PROFILE_PRIORITY: Record<GpsProfile, number> = {
 export type GpsConsumerMap = Map<string, GpsProfile>;
 
 export const COMPASS_GPS_CONSUMER_ID = 'compass';
+export const GPS_WARMUP_CONSUMER_ID = 'app-warmup';
+export const GPS_WARMUP_PROFILE: GpsProfile = 'watch';
+
+/** Foreground GNSS warmup: native, precise permission already granted, not power-saving. */
+export function shouldWarmupGps(input: {
+	nativeApp: boolean;
+	permissionGranted: boolean;
+	powerSaving: boolean;
+}): boolean {
+	return input.nativeApp && input.permissionGranted && !input.powerSaving;
+}
 
 export function shouldRunGpsStaleWatchdog(
 	profile: GpsProfile | null,

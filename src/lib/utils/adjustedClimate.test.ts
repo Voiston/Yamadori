@@ -94,6 +94,43 @@ describe('applyEnvironmentExposure', () => {
 		expect(data.shortwaveRadiationMaxTodayWm2).toBe(210);
 	});
 
+	it('recomputes Ks from the scaled ET0 when a water deficit remains', () => {
+		const base = {
+			...buildBaseAgriData(),
+			rainPast7dMm: 0,
+			et0Past7dSumMm: 40,
+			soilTemperature18cmC: 10,
+			airTemperatureC: 18,
+			soilMoisture7cmPct: null,
+			hydricStressKs: 0.2
+		};
+
+		const open = applyEnvironmentExposure(base, base.gdd, 'OPEN');
+		expect(open.data).toBe(base);
+		expect(open.data.hydricStressKs).toBe(0.2);
+		expect(open.data.et0Past7dSumMm).toBe(40);
+
+		const forest = applyEnvironmentExposure(base, base.gdd, 'FOREST_DENSE').data;
+		expect(forest.et0Past7dSumMm).toBe(16);
+		expect(forest.hydricStressKs).toBe(0.8);
+		expect(forest.wsi).toBe(6);
+		expect(forest.soilBufferScore).toBe(32);
+	});
+
+	it('clears Ks when the ET0 sum is null', () => {
+		const base = {
+			...buildBaseAgriData(),
+			et0Past7dSumMm: null,
+			hydricStressKs: 0.2
+		};
+		const forest = applyEnvironmentExposure(base, base.gdd, 'FOREST_DENSE').data;
+
+		expect(forest.et0Past7dSumMm).toBeNull();
+		expect(forest.hydricStressKs).toBeNull();
+		expect(forest.waterBalance7dMm).toBeNull();
+		expect(forest.wsi).toBeNull();
+	});
+
 	it('modulates GDD without zeroing it', () => {
 		const base = buildBaseAgriData();
 		const { gdd } = applyEnvironmentExposure(base, base.gdd, 'EDGE');
@@ -120,10 +157,123 @@ describe('applyEnvironmentExposure', () => {
 		expect(edge.soilTemperature6cmC).toBe(14);
 		expect(edge.soilTemperature18cmC).toBe(10);
 	});
+
+	it('dampens instantaneous forest soil toward colder air without rewriting history', () => {
+		expect(adjustSoilTemperature(11, 4, 0.65)).toBe(8.6);
+		expect(adjustSoilTemperature(11, 2, 0.65)).toBe(7.9);
+
+		const history = [
+			{ date: '2026-06-17', mean6cmC: 11, mean18cmC: 11 },
+			{ date: '2026-06-18', mean6cmC: 11, mean18cmC: 11 },
+			{ date: '2026-06-19', mean6cmC: 11, mean18cmC: 11 },
+			{ date: '2026-06-20', mean6cmC: 11, mean18cmC: 11 },
+			{ date: '2026-06-21', mean6cmC: 11, mean18cmC: 11 }
+		];
+		const base = {
+			...buildBaseAgriData(),
+			airTemperatureC: 4,
+			soilTemperature6cmC: 11,
+			soilTemperature18cmC: 11,
+			soilMean5dC: 11,
+			soilMean6cm7dC: 11,
+			soilMean18cm7dC: 11,
+			soilDailyHistory7d: history,
+			soilConsecutiveStableDays: 5,
+			soilTrend7dRising: true
+		};
+
+		const forest = applyEnvironmentExposure(base, base.gdd, 'FOREST_DENSE').data;
+
+		expect(forest.soilTemperature6cmC).toBe(8.6);
+		expect(forest.soilTemperature18cmC).toBe(8.6);
+		expect(forest.soilMean5dC).toBe(11);
+		expect(forest.soilMean6cm7dC).toBe(11);
+		expect(forest.soilMean18cm7dC).toBe(11);
+		expect(forest.soilDailyHistory7d).toEqual(history);
+		expect(forest.soilConsecutiveStableDays).toBe(5);
+		expect(forest.soilTrend7dRising).toBe(true);
+	});
+
+	it('keeps precomputed stable days when shaded exposure leaves history untouched', () => {
+		const history = [
+			{ date: '2026-06-17', mean6cmC: 17, mean18cmC: 17 },
+			{ date: '2026-06-18', mean6cmC: 17, mean18cmC: 17 },
+			{ date: '2026-06-19', mean6cmC: 17, mean18cmC: 17 },
+			{ date: '2026-06-20', mean6cmC: 17, mean18cmC: 17 },
+			{ date: '2026-06-21', mean6cmC: 17, mean18cmC: 17 }
+		];
+		const base = {
+			...buildBaseAgriData(),
+			airTemperatureC: 20,
+			soilTemperature6cmC: 17,
+			soilTemperature18cmC: 16,
+			soilDailyHistory7d: history,
+			soilConsecutiveStableDays: 4,
+			soilTrend7dRising: true
+		};
+
+		const open = applyEnvironmentExposure(base, base.gdd, 'OPEN').data;
+		const edge = applyEnvironmentExposure(base, base.gdd, 'EDGE').data;
+
+		expect(open.soilDailyHistory7d).toBe(history);
+		expect(open.soilConsecutiveStableDays).toBe(4);
+		expect(edge.soilDailyHistory7d).toEqual(history);
+		expect(edge.soilConsecutiveStableDays).toBe(4);
+		expect(edge.soilTrend7dRising).toBe(true);
+		expect(edge.soilTemperature6cmC).toBe(17);
+	});
 });
 
 describe('scaleGddSnapshot', () => {
 	it('returns null for null input', () => {
 		expect(scaleGddSnapshot(null, 0.7)).toBeNull();
+	});
+
+	it('keeps the species phenology curve when GDD is scaled', () => {
+		const gdd = {
+			baseTempC: 4,
+			baseCategory: 'foret' as const,
+			cumulativeSinceJan1: 100,
+			last7dSum: 20,
+			dailySeries: [{ date: '2026-06-16', meanTempC: 12, dailyGdd: 10, cumulativeGdd: 100 }],
+			phenology: estimatePhenology(100, 'foret', 'Bouleau'),
+			phenologyUnavailableReason: null,
+			speciesLabel: 'Bouleau'
+		};
+
+		const scaled = scaleGddSnapshot(gdd, 0.7);
+
+		expect(scaled?.cumulativeSinceJan1).toBe(70);
+		expect(scaled?.speciesLabel).toBe('Bouleau');
+		expect(scaled?.phenology).toEqual(estimatePhenology(70, 'foret', 'Bouleau'));
+		expect(scaled?.phenology).not.toEqual(estimatePhenology(70, 'foret'));
+	});
+
+	it('returns the same snapshot when the coefficient is 1', () => {
+		const gdd = buildBaseAgriData().gdd;
+		expect(scaleGddSnapshot(gdd, 1)).toBe(gdd);
+	});
+
+	it('keeps phenology null for evergreens', () => {
+		const gdd = {
+			...buildBaseAgriData().gdd!,
+			phenology: null,
+			phenologyUnavailableReason: 'evergreen'
+		};
+
+		expect(scaleGddSnapshot(gdd, 0.7)?.phenology).toBeNull();
+	});
+
+	it('drops logistic phenology when a shaded late-season snapshot is scaled', () => {
+		const base = {
+			...buildBaseAgriData(),
+			fetchedAt: '2026-10-15T12:00:00.000Z'
+		};
+		const scaled = scaleGddSnapshot(base.gdd, 0.7, {
+			latitude: base.latitude,
+			referenceDate: new Date(base.fetchedAt)
+		});
+		expect(scaled?.phenology).toBeNull();
+		expect(scaled?.phenologyUnavailableCode).toBe('late_season');
 	});
 });

@@ -6,7 +6,13 @@
 	import PhotoLightbox from './PhotoLightbox.svelte';
 	import AppLogoImage from './AppLogoImage.svelte';
 
-	let { tree }: { tree: Tree } = $props();
+	let {
+		tree,
+		onaddvisit
+	}: {
+		tree: Tree;
+		onaddvisit?: () => void;
+	} = $props();
 
 	let selectedIndex = $state(0);
 	let showLightbox = $state(false);
@@ -28,6 +34,16 @@
 	let mainPhotoLabel = $derived.by(() => {
 		void appearanceSettingsState.locale;
 		return m.photo_view_full({ label: displayLabel });
+	});
+
+	let noPhotosLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return m.tree_no_photos();
+	});
+
+	let addVisitLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return m.visit_add();
 	});
 
 	function thumbnailLabel(index: number): string {
@@ -67,7 +83,7 @@
 				<img
 					src={selectedPhoto}
 					alt={photoAlt}
-					class="aspect-[4/3] w-full object-cover"
+					class="aspect-[16/10] w-full object-cover"
 					loading="lazy"
 					decoding="async"
 				/>
@@ -75,12 +91,12 @@
 				<img
 					src={selectedThumb}
 					alt={photoAlt}
-					class="aspect-[4/3] w-full object-cover"
+					class="aspect-[16/10] w-full object-cover"
 					loading="lazy"
 					decoding="async"
 				/>
 			{:else if hydrating}
-				<div class="flex aspect-[4/3] w-full items-center justify-center text-sm text-muted">
+				<div class="flex aspect-[16/10] w-full items-center justify-center text-sm text-muted">
 					…
 				</div>
 			{/if}
@@ -113,7 +129,24 @@
 
 	<PhotoLightbox bind:open={showLightbox} src={selectedPhoto || selectedThumb} alt={photoAlt} />
 {:else}
-	<div class="flex aspect-[4/3] w-full items-center justify-center rounded-xl bg-gray-100 text-forest-600">
-		<AppLogoImage class="h-24 w-24 object-contain opacity-80" />
+	<div
+		class="flex aspect-[16/10] w-full flex-col items-center justify-center gap-3 rounded-xl bg-gray-100 px-6 text-center text-forest-600"
+		role="status"
+	>
+		{#if hydrating}
+			<span class="text-sm text-muted">…</span>
+		{:else}
+			<AppLogoImage class="h-16 w-16 object-contain opacity-80" />
+			<p class="text-sm text-muted">{noPhotosLabel}</p>
+			{#if onaddvisit}
+				<button
+					type="button"
+					class="text-sm font-medium text-forest-800 underline-offset-2 hover:underline"
+					onclick={onaddvisit}
+				>
+					{addVisitLabel}
+				</button>
+			{/if}
+		{/if}
 	</div>
 {/if}

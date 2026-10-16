@@ -122,16 +122,14 @@ function pointGeometry(longitude: number, latitude: number): GeoJsonGeometry {
 	return { type: 'Point', coordinates: [longitude, latitude] };
 }
 
-async function fetchGeoJson(url: string): Promise<GeoJsonFeatureCollection | null> {
+async function fetchGeoJson(url: string): Promise<GeoJsonFeatureCollection> {
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
 	try {
 		const response = await fetch(url, { signal: controller.signal });
-		if (!response.ok) return null;
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
 		return (await response.json()) as GeoJsonFeatureCollection;
-	} catch {
-		return null;
 	} finally {
 		clearTimeout(timeoutId);
 	}
@@ -143,7 +141,7 @@ async function fetchNatureLayer(layerId: string, geometry: GeoJsonGeometry): Pro
 		_limit: '1'
 	});
 	const data = await fetchGeoJson(`${APICARTO_NATURE_URL}/${layerId}?${params}`);
-	return (data?.features?.length ?? 0) > 0;
+	return (data.features?.length ?? 0) > 0;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -182,7 +180,7 @@ async function fetchParcelGeometry(
 			_limit: '1'
 		});
 		const data = await fetchGeoJson(`${APICARTO_PARCELLE_URL}?${params}`);
-		return data?.features?.[0]?.geometry ?? null;
+		return data.features?.[0]?.geometry ?? null;
 	});
 }
 
@@ -349,6 +347,23 @@ export async function scanProtectedAreas(
 	if (!canFetchLive) {
 		if (!apiEnabled) {
 			throw new Error(getApiDisabledError('ignProtectedAreas'));
+		}
+		const { resolveOfflineProtectedArea } = await import('$lib/utils/offlineProtectedAreas');
+		const resolved = await resolveOfflineProtectedArea(latitude, longitude);
+		if (resolved.kind === 'ready') {
+			const zoneStatus = emptyZoneStatus();
+			for (const [cardId, presence] of Object.entries(resolved.presence)) {
+				zoneStatus[cardId as ProtectedZoneCardId] = presence;
+			}
+			const hits = buildHits(zoneStatus);
+			return {
+				scannedAt: new Date().toISOString(),
+				hits,
+				veto: VETO_CARD_IDS.some((cardId) => zoneStatus[cardId] !== 'clear'),
+				zoneStatus,
+				fromCache: true,
+				coverage: resolved.partial ? 'partial' : 'full'
+			};
 		}
 		throw new Error('protected_areas_offline_cache_miss');
 	}

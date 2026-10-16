@@ -15,7 +15,6 @@
 		protectedDisabled = false,
 		cadastreTitle = '',
 		protectedTitle = undefined,
-		showCadastreHint = false,
 		offlineAvailable = false,
 		cacheCount = 0,
 		downloadingZone = false,
@@ -35,7 +34,6 @@
 		protectedDisabled?: boolean;
 		cadastreTitle?: string;
 		protectedTitle?: string | undefined;
-		showCadastreHint?: boolean;
 		offlineAvailable?: boolean;
 		cacheCount?: number;
 		downloadingZone?: boolean;
@@ -117,14 +115,6 @@
 			<path d="M4 7h16M4 12h16M4 17h16" />
 		</svg>
 	</button>
-
-	{#if showCadastreHint}
-		<span
-			class="max-w-[11rem] rounded-lg bg-white/90 px-2 py-1.5 text-[11px] leading-snug text-gray-600 shadow-sm backdrop-blur-sm"
-		>
-			{m.map_cadastre_tap_hint()}
-		</span>
-	{/if}
 
 	{#if open}
 		<div

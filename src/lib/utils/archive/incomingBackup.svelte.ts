@@ -60,7 +60,19 @@ export async function deletePendingIncomingBackupFile(): Promise<void> {
 
 export async function dismissPendingIncomingBackup(): Promise<void> {
 	await deletePendingIncomingBackupFile();
+	await clearNativePendingImport();
 	clearPendingIncomingBackup();
+}
+
+async function clearNativePendingImport(): Promise<void> {
+	if (!isNativeApp() || !isAndroidApp()) {
+		return;
+	}
+	try {
+		await YamadoriBackup.clearPendingImport();
+	} catch {
+		// Best-effort cleanup if the plugin is older than this build.
+	}
 }
 
 export function setPendingIncomingBackup(pending: IncomingBackupPending): void {
@@ -79,6 +91,18 @@ export async function consumePendingIncomingBackup(): Promise<IncomingBackupPend
 
 	setPendingIncomingBackup(pending);
 	return pending;
+}
+
+/** On warm resume, recover a native pending import the listener may have missed. */
+export async function pickUpPendingIncomingArchiveIfNeeded(): Promise<boolean> {
+	if (!isNativeApp() || !isAndroidApp()) {
+		return false;
+	}
+	if (incomingBackupState.pending) {
+		return true;
+	}
+	const pending = await consumePendingIncomingBackup();
+	return pending != null;
 }
 
 export async function readPendingBackupBlob(): Promise<{

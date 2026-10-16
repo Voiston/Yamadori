@@ -11,6 +11,7 @@ import { findJpHarvestWindows, resolveJpHarvestZone } from '$lib/geo/jpHarvestCa
 import { findNzHarvestWindows } from '$lib/geo/nzHarvestCalendar';
 import { resolveCountry } from '$lib/geo/resolveCountry';
 import { findUsHarvestWindows } from '$lib/geo/usHarvestCalendar';
+import { REVISIT_NOTIFY_HOUR } from '$lib/utils/revisit';
 import { isInBoundingBox } from '$lib/utils/species-suggestions';
 
 export type HarvestCalendarPrior = {
@@ -150,4 +151,53 @@ export function resolveHarvestCalendarPrior(
 	}
 	const inWindow = monthsFromWindow === 0;
 	return { applicable: true, inWindow, monthsFromWindow };
+}
+
+function nextStartOfMonthAtEight(startMonth: number, now: Date): Date {
+	const year = now.getFullYear();
+	let candidate = new Date(year, startMonth - 1, 1, REVISIT_NOTIFY_HOUR, 0, 0, 0);
+	if (candidate.getTime() <= now.getTime()) {
+		candidate = new Date(year + 1, startMonth - 1, 1, REVISIT_NOTIFY_HOUR, 0, 0, 0);
+	}
+	return candidate;
+}
+
+/** Next local 08:00 on the 1st of a matching harvest-window start month. */
+export function nextHarvestWindowStartDate(
+	species: string,
+	latitude: number,
+	longitude: number,
+	now = new Date()
+): Date | null {
+	const windows = findWindowsForLocation(species, latitude, longitude);
+	if (windows.length === 0) return null;
+
+	let earliest: Date | null = null;
+	for (const window of windows) {
+		const candidate = nextStartOfMonthAtEight(window.startMonth, now);
+		if (!earliest || candidate.getTime() < earliest.getTime()) {
+			earliest = candidate;
+		}
+	}
+	return earliest;
+}
+
+export type HarvestWindowNotifyPlan =
+	| { status: 'unavailable' }
+	| { status: 'open' }
+	| { status: 'upcoming'; at: Date };
+
+export function harvestWindowNotifyPlan(
+	species: string,
+	latitude: number | null,
+	longitude: number | null,
+	now = new Date()
+): HarvestWindowNotifyPlan {
+	if (latitude === null || longitude === null) return { status: 'unavailable' };
+	const prior = resolveHarvestCalendarPrior(species, latitude, longitude, now);
+	if (!prior.applicable) return { status: 'unavailable' };
+	if (prior.inWindow) return { status: 'open' };
+	const at = nextHarvestWindowStartDate(species, latitude, longitude, now);
+	if (!at) return { status: 'unavailable' };
+	return { status: 'upcoming', at };
 }

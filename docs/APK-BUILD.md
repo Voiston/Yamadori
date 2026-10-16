@@ -142,9 +142,23 @@ Si la release échoue mais pas le debug, désactivez temporairement la minificat
 - [ ] Configurer / changer / supprimer mot de passe backup
 - [ ] Activer chiffrement local → exporter → désactiver
 - [ ] Logcat : aucune rejection plugin non surfacée
-- [ ] **Pro / facturation** : les deux produits in-app non consommables **Actifs** sur la même piste (`yamadori_pro` à 29 €, `yamadori_pro_promo` à 19 € — IDs exacts dans [`src/lib/constants/pro.ts`](../src/lib/constants/pro.ts))
-- [ ] 4e arbre → paywall promo : prix Play affiché avant achat ; achat -34 % OK
-- [ ] Après remboursement test Google : attendre la propagation (quelques heures) avant de retester le SKU promo
+- [ ] **Soutien / facturation** : trois produits in-app **consommables** actifs sur la même piste (`yamadori_support_2` à 2,00 €, `yamadori_support_5` à 5,00 €, `yamadori_support_10` à 10,00 € — IDs dans [`src/lib/constants/support.ts`](../src/lib/constants/support.ts)). Ils ne débloquent aucune fonction.
+- [ ] Anciens SKUs `yamadori_pro` et `yamadori_pro_promo` : **désactivés** pour les nouveaux achats (ne pas supprimer). Un compte qui les possède encore voit « Merci d'avoir soutenu Yamadori » dans Réglages, sans badge ni fonction en plus.
+- [ ] Licence test : acheter 2 € deux fois de suite (le second achat doit passer, preuve que le premier a été consommé), annuler la feuille Play, ouvrir les CGV.
+
+### Play Console — soutien
+
+L'application est gratuite. Créer trois produits one-time **consommables** (le prix affiché dans l'app vient de Play ; les montants ci-dessous sont indicatifs) :
+
+| ID produit | Prix indicatif |
+| --- | --- |
+| `yamadori_support_2` | 2,00 € |
+| `yamadori_support_5` | 5,00 € |
+| `yamadori_support_10` | 10,00 € |
+
+Ne pas supprimer `yamadori_pro` ni `yamadori_pro_promo` : les **désactiver** pour les nouveaux achats seulement. Mettre à jour la fiche Play (plus de version Pro). Data safety : ne plus déclarer un jeton d'achat conservé localement.
+
+Ce n'est pas un don fiscal. La copie et les CGV disent « geste de soutien / pourboire ». Le paiement ne doit jamais débloquer une fonction.
 
 ## GPS natif
 

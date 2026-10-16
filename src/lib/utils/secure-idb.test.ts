@@ -15,7 +15,8 @@ vi.mock('idb-keyval', () => ({
 	get: (...args: unknown[]) => mockGet(...args),
 	set: (...args: unknown[]) => mockSet(...args),
 	del: (...args: unknown[]) => mockDel(...args),
-	keys: (...args: unknown[]) => mockKeys(...args)
+	keys: (...args: unknown[]) => mockKeys(...args),
+	createStore: () => ({})
 }));
 
 vi.mock('@capacitor/preferences', () => ({

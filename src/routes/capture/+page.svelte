@@ -2,21 +2,24 @@
 	import { afterNavigate } from '$app/navigation';
 	import CaptureForm from '$lib/components/CaptureForm.svelte';
 	import FirstCaptureGuide from '$lib/components/FirstCaptureGuide.svelte';
+	import FocusModeCoach from '$lib/components/FocusModeCoach.svelte';
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import {
 		advanceOnboardingPhase,
 		onboardingState,
 		setCaptureSavedDuringTutorial
 	} from '$lib/stores/onboarding.svelte';
-	import { openProPaywall } from '$lib/stores/proPaywall.svelte';
 	import { treeStore } from '$lib/stores/trees.svelte';
-	import { goHome } from '$lib/utils/app-navigation';
-	import { canAddTree } from '$lib/utils/featurePolicy';
 	import * as m from '$lib/paraglide/messages.js';
 	import { isNativeApp } from '$lib/utils/platform';
 	import { releaseOnboardingUiLocks } from '$lib/utils/onboardingUi';
 	import { teardownCaptureTutorial } from '$lib/utils/captureTutorialTeardown';
-	import { tick } from 'svelte';
+	import {
+		hasSeenFocusModeCoach,
+		markFocusModeCoachSeen,
+		shouldShowFocusModeCoach
+	} from '$lib/utils/focusModeCoach';
+	import { onMount, tick } from 'svelte';
 
 	const CAPTURE_ENTRY_KEY = 'yamadori-capture-entry';
 
@@ -32,7 +35,6 @@
 	let formKey = $state(bumpCaptureEntry());
 	let skipNextCaptureNavigateBump = true;
 	let guideDismissed = $state(false);
-	let proGateHandled = $state(false);
 
 	let showCaptureGuide = $derived(
 		!guideDismissed &&
@@ -41,17 +43,40 @@
 			onboardingState.phase === 'capture'
 	);
 
-	$effect(() => {
-		if (proGateHandled) return;
-		if (!treeStore.indexReady) return;
-		if (!onboardingState.loaded) return;
-		// First-capture onboarding must remain reachable.
-		if (onboardingState.phase === 'capture') return;
-		if (canAddTree(treeStore.trees.length)) return;
-		proGateHandled = true;
-		openProPaywall('tree_limit');
-		void goHome();
+	let focusCoachReady = $state(false);
+	let focusCoachSeen = $state(false);
+	let focusCoachActive = $state(false);
+
+	onMount(() => {
+		focusCoachSeen = hasSeenFocusModeCoach();
+		focusCoachReady = true;
 	});
+
+	let focusCoachEligible = $derived(
+		focusCoachReady &&
+			shouldShowFocusModeCoach({
+				treesReady: treeStore.indexReady,
+				treeCount: treeStore.trees.length,
+				onboardingDone: onboardingState.loaded && onboardingState.phase === 'done',
+				tutorialActive: showCaptureGuide,
+				simpleMode: appearanceSettingsState.simpleMode,
+				seen: focusCoachSeen
+			})
+	);
+
+	$effect(() => {
+		if (focusCoachEligible) {
+			focusCoachActive = true;
+		}
+	});
+
+	let showFocusCoach = $derived(focusCoachActive);
+
+	function dismissFocusCoach(): void {
+		markFocusModeCoachSeen();
+		focusCoachSeen = true;
+		focusCoachActive = false;
+	}
 
 	async function handleCaptureGuideSkip() {
 		guideDismissed = true;
@@ -85,11 +110,11 @@
 
 {#key formKey}
 	<div class="capture-tutorial-root relative flex min-h-0 flex-1 flex-col">
-		{#if !proGateHandled || canAddTree(treeStore.trees.length) || onboardingState.phase === 'capture'}
-			<CaptureForm tutorialActive={showCaptureGuide} />
-			{#if showCaptureGuide}
-				<FirstCaptureGuide onskip={() => void handleCaptureGuideSkip()} />
-			{/if}
+		<CaptureForm tutorialActive={showCaptureGuide} />
+		{#if showCaptureGuide}
+			<FirstCaptureGuide onskip={() => void handleCaptureGuideSkip()} />
+		{:else if showFocusCoach}
+			<FocusModeCoach ondismiss={dismissFocusCoach} />
 		{/if}
 	</div>
 {/key}

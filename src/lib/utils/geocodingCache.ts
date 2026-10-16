@@ -1,7 +1,17 @@
 import { gridKeyForCoordinates } from '$lib/utils/weatherCache';
-import { createStore, del, get, keys, set } from 'idb-keyval';
+import { createStore } from 'idb-keyval';
+import {
+	encryptedCacheClear,
+	encryptedCacheDel,
+	encryptedCacheEntries,
+	encryptedCacheGet,
+	encryptedCacheSet,
+	GEO_CACHE_STORE_IDS,
+	registerGeoCacheStore
+} from '$lib/utils/encryptedCacheStore';
 
 const geocodeStore = createStore('yamadori-geocode-cache', 'labels');
+registerGeoCacheStore(geocodeStore, GEO_CACHE_STORE_IDS.geocode);
 
 export const MAX_GEOCODE_CACHE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 /** Label keys (`lang:grid`) — separate from raw to avoid thrash. */
@@ -37,10 +47,14 @@ export async function getCachedGeocodeLabel(
 	lang = 'und'
 ): Promise<string | undefined> {
 	const key = geocodeCacheKey(latitude, longitude, lang);
-	const entry = await get<CachedGeocodeEntry>(key, geocodeStore);
+	const entry = await encryptedCacheGet<CachedGeocodeEntry>(
+		geocodeStore,
+		GEO_CACHE_STORE_IDS.geocode,
+		key
+	);
 	if (!entry) return undefined;
 	if (!isGeocodeCacheEntryValid(entry.fetchedAt)) {
-		await del(key, geocodeStore);
+		await encryptedCacheDel(geocodeStore, GEO_CACHE_STORE_IDS.geocode, key);
 		return undefined;
 	}
 	return entry.label;
@@ -54,27 +68,27 @@ async function pruneGeocodeCacheBucket(
 	kind: 'raw' | 'label',
 	maxEntries: number
 ): Promise<void> {
-	const allKeys = await keys(geocodeStore);
-	const entries: { key: string; fetchedMs: number }[] = [];
+	const entries = await encryptedCacheEntries<{ fetchedAt: string }>(
+		geocodeStore,
+		GEO_CACHE_STORE_IDS.geocode
+	);
+	const ranked: { key: string; fetchedMs: number }[] = [];
 
-	for (const key of allKeys) {
-		const keyStr = String(key);
-		if (kind === 'raw' ? !isRawCacheKey(keyStr) : isRawCacheKey(keyStr)) continue;
-
-		const entry = await get<{ fetchedAt: string }>(key, geocodeStore);
-		if (!entry || !isGeocodeCacheEntryValid(entry.fetchedAt)) {
-			await del(key, geocodeStore);
+	for (const { key, value } of entries) {
+		if (kind === 'raw' ? !isRawCacheKey(key) : isRawCacheKey(key)) continue;
+		if (!isGeocodeCacheEntryValid(value.fetchedAt)) {
+			await encryptedCacheDel(geocodeStore, GEO_CACHE_STORE_IDS.geocode, key);
 			continue;
 		}
-		entries.push({ key: keyStr, fetchedMs: Date.parse(entry.fetchedAt) });
+		ranked.push({ key, fetchedMs: Date.parse(value.fetchedAt) });
 	}
 
-	if (entries.length <= maxEntries) return;
+	if (ranked.length <= maxEntries) return;
 
-	entries.sort((a, b) => a.fetchedMs - b.fetchedMs);
-	const toRemove = entries.length - maxEntries;
+	ranked.sort((a, b) => a.fetchedMs - b.fetchedMs);
+	const toRemove = ranked.length - maxEntries;
 	for (let index = 0; index < toRemove; index += 1) {
-		await del(entries[index].key, geocodeStore);
+		await encryptedCacheDel(geocodeStore, GEO_CACHE_STORE_IDS.geocode, ranked[index]!.key);
 	}
 }
 
@@ -94,18 +108,20 @@ export async function saveCachedGeocodeLabel(
 		fetchedAt: new Date().toISOString(),
 		label
 	};
-	await set(key, entry, geocodeStore);
+	await encryptedCacheSet(geocodeStore, GEO_CACHE_STORE_IDS.geocode, key, entry);
 	await pruneGeocodeCache();
 }
 
 export async function getGeocodeCacheStats(): Promise<{ count: number }> {
-	const allKeys = await keys(geocodeStore);
+	const entries = await encryptedCacheEntries<{ fetchedAt: string }>(
+		geocodeStore,
+		GEO_CACHE_STORE_IDS.geocode
+	);
 	let count = 0;
 
-	for (const key of allKeys) {
-		const entry = await get<{ fetchedAt: string }>(key, geocodeStore);
-		if (!entry || !isGeocodeCacheEntryValid(entry.fetchedAt)) {
-			await del(key, geocodeStore);
+	for (const { key, value } of entries) {
+		if (!isGeocodeCacheEntryValid(value.fetchedAt)) {
+			await encryptedCacheDel(geocodeStore, GEO_CACHE_STORE_IDS.geocode, key);
 			continue;
 		}
 		count += 1;
@@ -115,8 +131,7 @@ export async function getGeocodeCacheStats(): Promise<{ count: number }> {
 }
 
 export async function clearGeocodeCache(): Promise<void> {
-	const allKeys = await keys(geocodeStore);
-	await Promise.all(allKeys.map((key) => del(key, geocodeStore)));
+	await encryptedCacheClear(geocodeStore);
 }
 
 export type NominatimRawPayload = {
@@ -145,10 +160,14 @@ export async function getCachedGeocodeRaw(
 	lang = 'und'
 ): Promise<NominatimRawPayload | undefined> {
 	const key = geocodeRawCacheKey(latitude, longitude, zoom, lang);
-	const entry = await get<CachedGeocodeRawEntry>(key, geocodeStore);
+	const entry = await encryptedCacheGet<CachedGeocodeRawEntry>(
+		geocodeStore,
+		GEO_CACHE_STORE_IDS.geocode,
+		key
+	);
 	if (!entry) return undefined;
 	if (!isGeocodeCacheEntryValid(entry.fetchedAt)) {
-		await del(key, geocodeStore);
+		await encryptedCacheDel(geocodeStore, GEO_CACHE_STORE_IDS.geocode, key);
 		return undefined;
 	}
 	return entry.payload;
@@ -166,6 +185,6 @@ export async function saveCachedGeocodeRaw(
 		fetchedAt: new Date().toISOString(),
 		payload
 	};
-	await set(key, entry, geocodeStore);
+	await encryptedCacheSet(geocodeStore, GEO_CACHE_STORE_IDS.geocode, key, entry);
 	await pruneGeocodeCache();
 }

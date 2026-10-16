@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { App } from '@capacitor/app';
 	import { tick, onMount } from 'svelte';
-	import { hapticLight } from '$lib/utils/haptics';
+	import { hapticError, hapticLight } from '$lib/utils/haptics';
 	import { nativeTap } from '$lib/utils/native-touch';
 	import { isNativeApp } from '$lib/utils/platform';
 	import { capturePhoto } from '$lib/utils/nativeCamera';
@@ -12,6 +12,9 @@
 	import { encodePhotoFile, type PhotoEncoding } from '$lib/utils/photo';
 	import * as m from '$lib/paraglide/messages.js';
 	import Skeleton from '$lib/components/Skeleton.svelte';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
+	import { photoFailedCopy } from '$lib/utils/errorCopy';
+	import { resolveErrorCopy, type ErrorCopy } from '$lib/utils/userFacingError';
 
 	let {
 		previewUrl = '',
@@ -34,8 +37,15 @@
 	let frameEl: HTMLDivElement | undefined = $state();
 	let picking = $state(false);
 	let processingPhoto = $state(false);
-	let error = $state('');
-	let pickingTimeoutId: ReturnType<typeof setTimeout> | undefined;
+	let error = $state<ErrorCopy | null>(null);
+
+	function setPhotoError(cause: unknown): void {
+		error =
+			typeof cause === 'string'
+				? photoFailedCopy(cause)
+				: resolveErrorCopy(cause, photoFailedCopy());
+		void hapticError();
+	}
 
 	const displayUrl = $derived(previewUrl);
 	const photoBusy = $derived(picking || processingPhoto);
@@ -45,6 +55,7 @@
 	const previewAlt = $derived(displayUrl ? m.photo_label() : '');
 
 	const PICKING_TIMEOUT_MS = 8000;
+	let pickingTimeoutId: ReturnType<typeof setTimeout> | undefined;
 
 	function setProcessing(busy: boolean) {
 		processingPhoto = busy;
@@ -70,7 +81,7 @@
 			picking = false;
 			setProcessing(false);
 			endCameraCapture();
-			error = m.photo_interrupted();
+			setPhotoError(m.photo_interrupted());
 		}, PICKING_TIMEOUT_MS);
 	}
 
@@ -103,7 +114,8 @@
 			void frameEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		} catch (err) {
 			console.error('Photo preview prepare failed:', err);
-			error = err instanceof Error ? err.message : m.photo_not_received();
+			setPhotoError(err);
+			void hapticError();
 		} finally {
 			setProcessing(false);
 			endCameraCapture();
@@ -124,7 +136,7 @@
 		const input = event.currentTarget as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
-		error = '';
+		error = null;
 		void handleFile(file);
 	}
 
@@ -145,7 +157,7 @@
 		}
 
 		picking = true;
-		error = '';
+		error = null;
 		blurActiveField();
 		beginCameraCapture();
 		startPickingTimeout();
@@ -156,7 +168,7 @@
 				if (result) {
 					await handleCapture(result.file, result.previewUrl);
 				} else {
-					error = m.photo_not_received();
+					setPhotoError(m.photo_not_received());
 					endCameraCapture();
 				}
 				return;
@@ -166,7 +178,8 @@
 			return;
 		} catch (err) {
 			console.error('Photo capture failed:', err);
-			error = err instanceof Error ? err.message : m.photo_not_received();
+			setPhotoError(err);
+			void hapticError();
 			endCameraCapture();
 		} finally {
 			clearPickingTimeout();
@@ -253,7 +266,7 @@
 	</button>
 
 	{#if error}
-		<p class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>
+		<ErrorBanner copy={error} />
 	{/if}
 
 	{#if frontLabel}

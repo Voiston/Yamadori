@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
 	getGpsFixOptions,
 	getGpsOptions,
+	getCapacitorGpsFixOptions,
+	getCapacitorGpsOptions,
 	GPS_CAPTURE_FIX_OPTIONS,
 	GPS_CAPTURE_WATCH_OPTIONS,
 	regionalApiCoordinates
@@ -31,10 +33,20 @@ describe('regionalApiCoordinates', () => {
 });
 
 describe('capture gps options', () => {
-	it('uses a short cache for live watch but not for save fixes', () => {
+	it('requests a fresh GNSS reading for both live watch and save fixes', () => {
 		expect(getGpsOptions('capture')).toEqual(GPS_CAPTURE_WATCH_OPTIONS);
 		expect(getGpsFixOptions('capture')).toEqual(GPS_CAPTURE_FIX_OPTIONS);
-		expect(GPS_CAPTURE_WATCH_OPTIONS.maximumAge).toBeGreaterThan(0);
+		expect(GPS_CAPTURE_WATCH_OPTIONS.maximumAge).toBe(0);
 		expect(GPS_CAPTURE_FIX_OPTIONS.maximumAge).toBe(0);
+	});
+});
+
+describe('capacitor gps options', () => {
+	it('disables network fallback for capture only', () => {
+		expect(getCapacitorGpsOptions('capture').enableLocationFallback).toBe(false);
+		expect(getCapacitorGpsFixOptions('capture').enableLocationFallback).toBe(false);
+		expect(getCapacitorGpsOptions('watch').enableLocationFallback).toBe(true);
+		expect(getCapacitorGpsOptions('proximity').enableLocationFallback).toBe(true);
+		expect(getCapacitorGpsOptions('navigation').enableLocationFallback).toBe(true);
 	});
 });

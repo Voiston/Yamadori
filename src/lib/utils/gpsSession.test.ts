@@ -10,9 +10,12 @@ import {
 	resolveGpsStaleRecovery,
 	resolveGpsStaleThresholdMs,
 	GPS_NAVIGATION_STALE_MS,
+	GPS_WARMUP_CONSUMER_ID,
+	GPS_WARMUP_PROFILE,
 	shouldRunGpsStaleWatchdog,
 	shouldRunLiveGpsRefresh,
-	shouldSuspendForAppBackground
+	shouldSuspendForAppBackground,
+	shouldWarmupGps
 } from '$lib/utils/gpsSession';
 
 describe('resolveActiveProfile', () => {
@@ -146,5 +149,33 @@ describe('resolveGpsLiveRefreshThresholdMs', () => {
 		expect(resolveGpsLiveRefreshThresholdMs('navigation')).toBe(5_000);
 		expect(resolveGpsLiveRefreshThresholdMs('watch')).toBe(6_000);
 		expect(resolveGpsLiveRefreshThresholdMs('proximity')).toBe(10_000);
+	});
+});
+
+describe('shouldWarmupGps', () => {
+	it('starts warmup only on native with granted permission and no power saving', () => {
+		expect(
+			shouldWarmupGps({ nativeApp: true, permissionGranted: true, powerSaving: false })
+		).toBe(true);
+	});
+
+	it('skips web, missing permission, and power saving', () => {
+		expect(
+			shouldWarmupGps({ nativeApp: false, permissionGranted: true, powerSaving: false })
+		).toBe(false);
+		expect(
+			shouldWarmupGps({ nativeApp: true, permissionGranted: false, powerSaving: false })
+		).toBe(false);
+		expect(
+			shouldWarmupGps({ nativeApp: true, permissionGranted: true, powerSaving: true })
+		).toBe(false);
+	});
+
+	it('uses the watch profile so capture stays higher priority', () => {
+		expect(GPS_WARMUP_PROFILE).toBe('watch');
+		const consumers = new Map<string, GpsProfile>();
+		acquireConsumer(consumers, GPS_WARMUP_CONSUMER_ID, GPS_WARMUP_PROFILE);
+		acquireConsumer(consumers, 'capture-form', 'capture');
+		expect(resolveActiveProfile(consumers)).toBe('capture');
 	});
 });

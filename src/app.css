@@ -159,6 +159,198 @@
 		}
 	}
 
+	@keyframes compass-distance-pulse {
+		0%,
+		100% {
+			transform: scale(1);
+		}
+		50% {
+			transform: scale(1.08);
+		}
+	}
+
+	.compass-distance--pulse {
+		display: inline-block;
+		animation: compass-distance-pulse 0.35s var(--motion-ease, ease-out);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.compass-distance--pulse {
+			animation: none;
+		}
+	}
+
+	.gps-iris {
+		position: relative;
+		display: inline-flex;
+		height: 1rem;
+		width: 1rem;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+		/* Worst-case ring: poor scale(3.2) on a 1rem dot → (3.2 - 1) / 2 * 1rem */
+		margin-inline: 1.1rem;
+	}
+
+	.gps-iris--sm {
+		height: 0.5rem;
+		width: 0.5rem;
+		margin-inline: 0.55rem;
+	}
+
+	.gps-iris__dot {
+		position: relative;
+		z-index: 1;
+		display: block;
+		height: 100%;
+		width: 100%;
+		border-radius: 9999px;
+		background: #9ca3af;
+	}
+
+	.gps-iris--excellent .gps-iris__dot {
+		background: #22c55e;
+	}
+
+	.gps-iris--fair .gps-iris__dot {
+		background: #f59e0b;
+	}
+
+	.gps-iris--poor .gps-iris__dot {
+		background: #ef4444;
+	}
+
+	.gps-iris__ring {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		z-index: 0;
+		height: 100%;
+		width: 100%;
+		border-radius: 9999px;
+		border: 2px solid currentColor;
+		opacity: 0.45;
+		transform: translate(-50%, -50%) scale(var(--gps-iris-scale, 2));
+		pointer-events: none;
+	}
+
+	.gps-iris--excellent {
+		color: #16a34a;
+		--gps-iris-scale: 1.35;
+	}
+
+	.gps-iris--fair {
+		color: #d97706;
+		--gps-iris-scale: 2.1;
+	}
+
+	.gps-iris--poor {
+		color: #dc2626;
+		--gps-iris-scale: 3.2;
+	}
+
+	.gps-iris--excellent .gps-iris__ring {
+		opacity: 0.35;
+	}
+
+	.gps-iris--fair .gps-iris__ring {
+		animation: gps-iris-breathe 1.6s ease-in-out infinite;
+	}
+
+	.gps-iris--poor .gps-iris__ring {
+		animation: gps-iris-breathe 2s ease-in-out infinite;
+	}
+
+	@keyframes gps-iris-breathe {
+		0%,
+		100% {
+			opacity: 0.28;
+		}
+		50% {
+			opacity: 0.55;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.gps-iris--fair .gps-iris__ring,
+		.gps-iris--poor .gps-iris__ring {
+			animation: none;
+		}
+	}
+
+	.cadastre-pin {
+		position: relative;
+		display: flex;
+		height: 3rem;
+		width: 3rem;
+		align-items: center;
+		justify-content: center;
+		pointer-events: none;
+	}
+
+	.cadastre-pin__dot {
+		position: relative;
+		z-index: 1;
+		height: 14px;
+		width: 14px;
+		border-radius: 50%;
+		border: 2px solid #7c3aed;
+		background: #ede9fe;
+		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+	}
+
+	.cadastre-pin--outdoor .cadastre-pin__dot {
+		height: 16px;
+		width: 16px;
+		border: 3px solid #000000;
+		background: #ffffff;
+		box-shadow: none;
+	}
+
+	.cadastre-pin__ring {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		z-index: 0;
+		height: 14px;
+		width: 14px;
+		margin: -7px 0 0 -7px;
+		border-radius: 50%;
+		border: 2px solid #7c3aed;
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.cadastre-pin--outdoor .cadastre-pin__ring {
+		border-color: #000000;
+		border-width: 3px;
+	}
+
+	.cadastre-pin--ping .cadastre-pin__ring {
+		animation: cadastre-sonar 0.9s ease-out 2;
+	}
+
+	.cadastre-pin--ping .cadastre-pin__ring--delay {
+		animation-delay: 0.22s;
+	}
+
+	@keyframes cadastre-sonar {
+		0% {
+			transform: scale(1);
+			opacity: 0.7;
+		}
+		100% {
+			transform: scale(4.2);
+			opacity: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.cadastre-pin--ping .cadastre-pin__ring {
+			animation: none;
+		}
+	}
+
 	.nav-tab-icon {
 		display: flex;
 		height: 2rem;
@@ -328,54 +520,6 @@
 		background-color: rgb(255 255 255 / 0.4);
 	}
 
-	.pro-badge {
-		display: inline-flex;
-		border-radius: 9999px;
-		border: 1px solid color-mix(in srgb, #fcd34d 40%, transparent);
-		background-color: color-mix(in srgb, #fbbf24 20%, transparent);
-		padding: 0.125rem 0.75rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-		color: #fef3c7;
-	}
-
-	.pro-badge--on-light {
-		border-color: color-mix(in srgb, var(--color-forest-800) 20%, transparent);
-		background-color: color-mix(in srgb, var(--color-forest-800) 10%, transparent);
-		color: var(--color-forest-800);
-	}
-
-	.pro-surface {
-		overflow: hidden;
-		border-radius: var(--radius-card);
-		border: 1px solid #e5e7eb;
-		background-color: #ffffff;
-		box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-	}
-
-	.pro-surface-hero {
-		background: linear-gradient(
-			to bottom right,
-			var(--color-forest-800),
-			var(--color-forest-900)
-		);
-		color: #ffffff;
-		padding: 1rem 1.25rem;
-	}
-
-	.pro-promo {
-		border-radius: var(--radius-card);
-		border: 1px solid color-mix(in srgb, var(--color-forest-600) 35%, transparent);
-		background: linear-gradient(
-			to bottom right,
-			color-mix(in srgb, var(--color-forest-50) 90%, white),
-			color-mix(in srgb, var(--color-forest-100) 80%, white)
-		);
-		padding: 0.75rem 1rem;
-	}
-
 	@keyframes skeleton-shimmer {
 		0% {
 			background-position: 100% 0;
@@ -415,7 +559,7 @@
 	}
 
 	.map-download-panel-top {
-		top: 7rem;
+		top: 0.75rem;
 	}
 
 	.map-follow-toggle--active {
@@ -612,23 +756,8 @@ html[data-outdoor] [class*='bg-green-50'],
 html[data-outdoor] [class*='bg-red-50'],
 html[data-outdoor] .app-card,
 html[data-outdoor] .app-card-muted,
-html[data-outdoor] .app-section-list,
-html[data-outdoor] .pro-surface,
-html[data-outdoor] .pro-promo {
+html[data-outdoor] .app-section-list {
 	background-color: #ffffff !important;
-}
-
-html[data-outdoor] .pro-surface-hero {
-	background: #ffffff !important;
-	color: #000000 !important;
-	border-bottom: 2px solid #000000 !important;
-}
-
-html[data-outdoor] .pro-badge,
-html[data-outdoor] .pro-badge--on-light {
-	border-color: #000000 !important;
-	background-color: #ffffff !important;
-	color: #000000 !important;
 }
 
 html[data-outdoor] [class*='bg-forest-800'],
@@ -801,14 +930,8 @@ html[data-dark] [class*='bg-green-50'],
 html[data-dark] [class*='bg-red-50'],
 html[data-dark] .app-card,
 html[data-dark] .app-card-muted,
-html[data-dark] .app-section-list,
-html[data-dark] .pro-surface,
-html[data-dark] .pro-promo {
+html[data-dark] .app-section-list {
 	background-color: #000000 !important;
-}
-
-html[data-dark] .pro-surface-hero {
-	background: linear-gradient(to bottom right, #243024, #000000) !important;
 }
 
 html[data-dark] .app-section-list > * + * {
@@ -817,9 +940,7 @@ html[data-dark] .app-section-list > * + * {
 
 html[data-dark] .app-card,
 html[data-dark] .app-card-muted,
-html[data-dark] .app-section-list,
-html[data-dark] .pro-surface,
-html[data-dark] .pro-promo {
+html[data-dark] .app-section-list {
 	border-color: #374151 !important;
 }
 
@@ -926,12 +1047,6 @@ html[data-dark] .sheet-grabber {
 
 html[data-dark] .sheet-grabber--on-dark {
 	background-color: rgb(255 255 255 / 0.4) !important;
-}
-
-html[data-dark] .pro-badge--on-light {
-	border-color: #4a7c4a !important;
-	background-color: color-mix(in srgb, #4a7c4a 25%, transparent) !important;
-	color: #86efac !important;
 }
 
 html[data-dark] .outdoor-mode-toggle--active svg {

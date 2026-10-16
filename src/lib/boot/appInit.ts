@@ -9,28 +9,35 @@ import { initBackupPasswordSettings, clearBackupPasswordMemoryCache } from '$lib
 import { initCaptureSettings } from '$lib/stores/captureSettings.svelte';
 import { initCompassSettings } from '$lib/stores/compassSettings.svelte';
 import {
-	initPowerSavingMode,
-	powerSavingModeState,
-	setPowerSavingMode
+	initPowerSavingMode
 } from '$lib/stores/powerSavingMode.svelte';
-import { initDevProOverride } from '$lib/stores/devProOverride.svelte';
 import { initParking } from '$lib/stores/parking.svelte';
-import { initProEntitlement, proEntitlementState } from '$lib/stores/proEntitlement.svelte';
-import { initProPromo } from '$lib/stores/proPromo.svelte';
-import { initProListPromoDismiss } from '$lib/stores/proListPromoDismiss.svelte';
 import { initSecuritySettings, securitySettingsState } from '$lib/stores/securitySettings.svelte';
 import { initTrees, treeStore } from '$lib/stores/trees.svelte';
 import { parkingStore } from '$lib/stores/parking.svelte';
 import { cleanupLegacySyncData } from '$lib/utils/cleanupLegacySync';
-import { initBackupReminder } from '$lib/utils/backupReminder.svelte';
-import { syncProEntitlementFromStore, handleBillingAppResume } from '$lib/utils/billing';
+import { initBackupReminder, backupReminderState } from '$lib/utils/backupReminder.svelte';
+import { handleBillingAppResume, initSupportBilling, syncSupportPurchasesFromStore } from '$lib/utils/billing';
+import { supportBillingState } from '$lib/stores/supportBilling.svelte';
+import { showOkToast } from '$lib/stores/appToast.svelte';
+import * as m from '$lib/paraglide/messages.js';
 import { initIncomingBackupListener } from '$lib/utils/archive';
+import {
+	handleIncomingArchiveReady,
+	resumeIncomingArchiveIfNeeded
+} from '$lib/utils/archive/incomingTreeShare.svelte';
 import { registerTileCacheInterceptor } from '$lib/utils/map/tileCache';
 import { initNativeUi, initViewportInsets } from '$lib/utils/nativeInit';
 import { initOnlineState } from '$lib/utils/online.svelte';
 import { initOnboarding, onboardingState } from '$lib/stores/onboarding.svelte';
 import { getBackNavigationTarget } from '$lib/utils/app-navigation';
 import { isAndroidApp } from '$lib/utils/platform';
+import { listenRevisitNotificationTaps } from '$lib/utils/revisitNotifications';
+import {
+	listenBackupNotificationTaps,
+	syncBackupReminderNotification
+} from '$lib/utils/backupNotifications';
+import { syncRevisitReminders } from '$lib/utils/revisitReminders';
 
 export type AppBootCleanup = () => void;
 
@@ -43,7 +50,7 @@ type AppBootOptions = {
 };
 
 export function canRenderRouteContent(routeId: string | null): boolean {
-	if (routeId === '/settings' || routeId === '/settings/privacy') {
+	if (routeId === '/settings' || routeId?.startsWith('/settings/') === true) {
 		return appearanceSettingsState.loaded;
 	}
 	if (routeId === '/' || routeId === '/map') {
@@ -59,9 +66,6 @@ function scheduleDeferredBoot(): void {
 	const run = () => {
 		void cleanupLegacySyncData();
 		void initBackupReminder();
-		void initProPromo();
-		void initProListPromoDismiss();
-		void initDevProOverride();
 		registerTileCacheInterceptor();
 	};
 
@@ -77,6 +81,8 @@ export function runAppBoot(options: AppBootOptions): AppBootCleanup {
 	let appStateListener: { remove: () => Promise<void> } | undefined;
 	let resumeListener: { remove: () => Promise<void> } | undefined;
 	let incomingBackupCleanup: (() => void) | undefined;
+	let notificationTapCleanup: (() => void) | undefined;
+	let backupNotificationTapCleanup: (() => void) | undefined;
 	let cleanupViewportInsets: (() => void) | undefined;
 	let removeVisibilityListener: (() => void) | undefined;
 
@@ -103,8 +109,22 @@ export function runAppBoot(options: AppBootOptions): AppBootCleanup {
 		void App.addListener('appStateChange', ({ isActive }) => {
 			if (isActive) {
 				handleBillingAppResume();
-				if (!proEntitlementState.purchasePending) {
-					void syncProEntitlementFromStore();
+				if (!supportBillingState.purchasePending) {
+					void syncSupportPurchasesFromStore();
+				}
+				if (treeStore.loaded) {
+					void syncRevisitReminders(treeStore.trees);
+					if (backupReminderState.loaded) {
+						void syncBackupReminderNotification(treeStore.trees, {
+							lastExportAt: backupReminderState.lastExportAt
+						});
+					}
+				}
+				if (isAndroidApp()) {
+					void resumeIncomingArchiveIfNeeded({
+						base: options.base,
+						getRouteId: options.getRouteId
+					});
 				}
 			} else {
 				clearBackupPasswordMemoryCache();
@@ -115,15 +135,32 @@ export function runAppBoot(options: AppBootOptions): AppBootCleanup {
 
 		void App.addListener('resume', () => {
 			handleBillingAppResume();
+			if (isAndroidApp()) {
+				void resumeIncomingArchiveIfNeeded({
+					base: options.base,
+					getRouteId: options.getRouteId
+				});
+			}
 		}).then((listener) => {
 			resumeListener = listener;
 		});
 
 		if (isAndroidApp()) {
+			void listenRevisitNotificationTaps((treeId) => {
+				void goto(`${options.base}/tree/${encodeURIComponent(treeId)}`);
+			}).then((cleanup) => {
+				notificationTapCleanup = cleanup;
+			});
+			void listenBackupNotificationTaps(() => {
+				void goto(`${options.base}/settings#backup-export`);
+			}).then((cleanup) => {
+				backupNotificationTapCleanup = cleanup;
+			});
 			void initIncomingBackupListener(() => {
-				if (options.getRouteId() !== '/settings') {
-					void goto(`${options.base}/settings`);
-				}
+				void handleIncomingArchiveReady({
+					base: options.base,
+					getRouteId: options.getRouteId
+				});
 			}).then((cleanup) => {
 				incomingBackupCleanup = cleanup;
 			});
@@ -149,7 +186,11 @@ export function runAppBoot(options: AppBootOptions): AppBootCleanup {
 	void initCompassSettings();
 	void initPowerSavingMode();
 	void initCaptureSettings();
-	void initProEntitlement();
+	void initSupportBilling().then((sync) => {
+		if (sync.consumed > 0) {
+			showOkToast(m.support_purchase_success());
+		}
+	});
 	void initParking();
 
 	void initSecuritySettings()
@@ -158,6 +199,12 @@ export function runAppBoot(options: AppBootOptions): AppBootCleanup {
 			// Labels refresh persists trees; only run once thumbs hydration finished
 			// (mediaHydration !== 'full' persists are media-safe).
 			if (!treeStore.loaded) return;
+			void syncRevisitReminders(treeStore.trees);
+			if (backupReminderState.loaded) {
+				void syncBackupReminderNotification(treeStore.trees, {
+					lastExportAt: backupReminderState.lastExportAt
+				});
+			}
 			return import('$lib/utils/refreshLocationLabels').then((mod) =>
 				mod.refreshLocationLabelsForUiLocale(appearanceSettingsState.locale)
 			);
@@ -177,6 +224,8 @@ export function runAppBoot(options: AppBootOptions): AppBootCleanup {
 		cleanupOnline();
 		cleanupViewportInsets?.();
 		incomingBackupCleanup?.();
+		notificationTapCleanup?.();
+		backupNotificationTapCleanup?.();
 		removeVisibilityListener?.();
 		void backListener?.remove();
 		void appStateListener?.remove();

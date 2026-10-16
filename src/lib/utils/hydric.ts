@@ -15,12 +15,32 @@ function clamp(value: number, min: number, max: number): number {
  */
 export const HYDRIC_AWC_MM = 40;
 
+/**
+ * Editorial wilting point and field capacity (m³/m³) for a mineral soil.
+ * Open-Meteo `soil_moisture_0_to_7cm` is volumetric water content, not a 0–100 % saturation.
+ * No texture map — same transparency rule as `HYDRIC_AWC_MM`.
+ */
+export const HYDRIC_WILTING_POINT_M3 = 0.1;
+export const HYDRIC_FIELD_CAPACITY_M3 = 0.32;
+
+/**
+ * Map a soil-moisture reading to available-water percent (0–100).
+ * Values ≤ 1 are Open-Meteo m³/m³, normalized between wilting point and field capacity.
+ * Values > 1 are an already-normalized reserve percent (tests and stored snapshots).
+ */
+export function availableWaterPctFromSoilMoisture(soilMoisture: number): number {
+	if (soilMoisture > 1) return clamp(Math.round(soilMoisture), 0, 100);
+	const span = HYDRIC_FIELD_CAPACITY_M3 - HYDRIC_WILTING_POINT_M3;
+	const fraction = clamp((soilMoisture - HYDRIC_WILTING_POINT_M3) / span, 0, 1);
+	return Math.round(fraction * 100);
+}
+
 /** Tampon hydrique du sol (0–100) : humidité mesurée ou proxy pluie + température racinaire. */
 export function computeSoilBufferScore(
 	data: Pick<AgriData, 'soilMoisture7cmPct' | 'rainPast7dMm' | 'soilTemperature18cmC'>
 ): number {
 	if (data.soilMoisture7cmPct !== null) {
-		return clamp(Math.round(data.soilMoisture7cmPct), 0, 100);
+		return availableWaterPctFromSoilMoisture(data.soilMoisture7cmPct);
 	}
 
 	const rainScore = clamp(Math.round((data.rainPast7dMm / 30) * 100), 0, 100);
@@ -48,7 +68,8 @@ export function computeSoilMoistureCreditMm(
 	awcMm: number = HYDRIC_AWC_MM
 ): number {
 	if (data.soilMoisture7cmPct !== null) {
-		return round1((clamp(data.soilMoisture7cmPct, 0, 100) / 100) * awcMm);
+		const availablePct = availableWaterPctFromSoilMoisture(data.soilMoisture7cmPct);
+		return round1((availablePct / 100) * awcMm);
 	}
 	const buffer = computeSoilBufferScore(data);
 	return round1((buffer / 100) * awcMm * 0.5);

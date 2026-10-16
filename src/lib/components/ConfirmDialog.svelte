@@ -3,8 +3,10 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { portal, APP_SHELL_PORTAL_TARGET } from '$lib/utils/portal';
 	import { modalFocus } from '$lib/utils/modalFocus';
-	import { hapticSuccess, hapticWarning } from '$lib/utils/haptics';
+	import { hapticWarning } from '$lib/utils/haptics';
 	import { sheetBackdrop, sheetPanel } from '$lib/utils/motion';
+
+	/** Blocking decision before continuing. For a finished action, use a toast or ErrorBanner. */
 
 	let {
 		open = $bindable(false),
@@ -57,8 +59,6 @@
 	function handleConfirm() {
 		if (variant === 'danger') {
 			void hapticWarning();
-		} else {
-			void hapticSuccess();
 		}
 		onconfirm?.();
 		open = false;

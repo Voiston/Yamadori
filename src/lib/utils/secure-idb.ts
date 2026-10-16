@@ -216,6 +216,14 @@ async function resolvePlaintext<T>(raw: unknown, keyMaterial: Uint8Array | null)
 	return decryptValue<T>(raw, keyMaterial);
 }
 
+export async function getLocalEncryptionKeyMaterial(): Promise<Uint8Array | null> {
+	return getEncryptionKeyMaterial();
+}
+
+export async function ensureLocalEncryptionKeyMaterial(): Promise<Uint8Array> {
+	return getOrCreateEncryptionKeyMaterial();
+}
+
 export async function secureIdbGet<T>(key: string): Promise<T | undefined> {
 	const raw = await get<unknown>(key);
 	if (raw === undefined) return undefined;
@@ -415,6 +423,11 @@ export async function migrateLocalEncryption(
 			await set(storageKey, value);
 		}
 
+		if (!enabled && wasEnabled && decryptKeyMaterial) {
+			const { rewriteGeoCachesForEncryption } = await import('$lib/utils/encryptedCacheStore');
+			await rewriteGeoCachesForEncryption(false, decryptKeyMaterial);
+		}
+
 		if (!enabled) {
 			await clearEncryptionKeyMaterial();
 		} else if (!wasEnabled && encryptKeyMaterial) {
@@ -422,6 +435,11 @@ export async function migrateLocalEncryption(
 		}
 
 		await writeEncryptionEnabledPref(enabled);
+
+		if (enabled && !wasEnabled && encryptKeyMaterial) {
+			const { rewriteGeoCachesForEncryption } = await import('$lib/utils/encryptedCacheStore');
+			await rewriteGeoCachesForEncryption(true, encryptKeyMaterial);
+		}
 
 		await reportMigrationProgress(onProgress, { percent: 100, phase: 'finalize' });
 	} catch (error) {

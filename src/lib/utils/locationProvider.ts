@@ -1,5 +1,10 @@
-import * as m from '$lib/paraglide/messages.js';
 import { Geolocation } from '@capacitor/geolocation';
+import { formatErrorToast, UserFacingError, type ErrorCopy } from '$lib/utils/userFacingError';
+import {
+	geolocationErrorCopy,
+	locationPermissionErrorCopy,
+	locationUnsupportedCopy
+} from '$lib/utils/errorCopy';
 import {
 	getCapacitorGpsFixOptions,
 	getCapacitorGpsOptions,
@@ -34,32 +39,15 @@ export type LocationPermissionStatus =
 	| 'unsupported';
 
 const GEOLOCATION_PERMISSION_DENIED = 1;
+const GEOLOCATION_POSITION_UNAVAILABLE = 2;
+const GEOLOCATION_TIMEOUT = 3;
 
 export function geolocationErrorMessage(error: unknown): string {
-	if (error && typeof error === 'object' && 'code' in error) {
-		const code = (error as GeolocationPositionError).code;
-		if (code === GEOLOCATION_PERMISSION_DENIED) {
-			return m.location_denied_yrs_required();
-		}
-	}
-	if (error instanceof Error && error.message) {
-		return error.message;
-	}
-	return m.location_unavailable();
+	return formatErrorToast(geolocationErrorCopy(error));
 }
 
 export function locationPermissionErrorMessage(status: LocationPermissionStatus): string {
-	switch (status) {
-		case 'coarse-only':
-			return m.location_precise_required();
-		case 'prompt':
-		case 'denied':
-			return m.location_denied_yrs_required();
-		case 'unsupported':
-			return m.location_unsupported();
-		default:
-			return m.location_unavailable();
-	}
+	return formatErrorToast(locationPermissionErrorCopy(status));
 }
 
 export async function getLocationPermissionStatus(): Promise<LocationPermissionStatus> {
@@ -182,7 +170,7 @@ export async function getCurrentPosition(
 ): Promise<LocationReading> {
 	const profile = resolveProfile(profileOrPurpose);
 	if (!isLocationSupported()) {
-		throw new Error(m.location_unsupported());
+		throw new UserFacingError(locationUnsupportedCopy());
 	}
 
 	if (isNativeApp()) {
@@ -193,7 +181,7 @@ export async function getCurrentPosition(
 	return new Promise((resolve, reject) => {
 		navigator.geolocation.getCurrentPosition(
 			(position) => resolve(fromGeolocationPosition(position)),
-			(err) => reject(new Error(geolocationErrorMessage(err))),
+			(err) => reject(new UserFacingError(geolocationErrorCopy(err))),
 			getGpsFixOptions(profile)
 		);
 	});
@@ -201,18 +189,18 @@ export async function getCurrentPosition(
 
 export async function startWatching(
 	onUpdate: (reading: LocationReading) => void,
-	onError: (message: string) => void,
+	onError: (copy: ErrorCopy) => void,
 	profileOrPurpose: GpsProfile | GpsPurpose = 'watch'
 ): Promise<LocationWatchHandle> {
 	const profile = resolveProfile(profileOrPurpose);
 	if (!isLocationSupported()) {
-		throw new Error(m.location_unsupported());
+		throw new UserFacingError(locationUnsupportedCopy());
 	}
 
 	if (isNativeApp()) {
 		const id = await Geolocation.watchPosition(toCapacitorWatchOptions(profile), (position, err) => {
 			if (err) {
-				onError(err.message || 'Position indisponible');
+				onError(geolocationErrorCopy(err));
 				return;
 			}
 			if (position) {
@@ -224,7 +212,7 @@ export async function startWatching(
 
 	const watchId = navigator.geolocation.watchPosition(
 		(position) => onUpdate(fromGeolocationPosition(position)),
-		(err) => onError(geolocationErrorMessage(err)),
+		(err) => onError(geolocationErrorCopy(err)),
 		getGpsOptions(profile)
 	);
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgriData } from '$lib/types/agri';
 import {
 	HYDRIC_AWC_MM,
+	availableWaterPctFromSoilMoisture,
 	computeHydricFromAgriInputs,
 	computeHydricStressKs,
 	computeRadiationStressIndex,
@@ -21,9 +22,27 @@ const baseHydricData: Pick<
 	soilTemperature18cmC: 11
 };
 
+describe('availableWaterPctFromSoilMoisture', () => {
+	it('normalizes Open-Meteo m³/m³ between wilting point and field capacity', () => {
+		expect(availableWaterPctFromSoilMoisture(0.274)).toBe(79);
+		expect(availableWaterPctFromSoilMoisture(0.08)).toBe(0);
+		expect(availableWaterPctFromSoilMoisture(0.4)).toBe(100);
+		expect(availableWaterPctFromSoilMoisture(0.32)).toBe(100);
+	});
+
+	it('keeps an already-normalized reserve percent above 1', () => {
+		expect(availableWaterPctFromSoilMoisture(42)).toBe(42);
+		expect(availableWaterPctFromSoilMoisture(100)).toBe(100);
+	});
+});
+
 describe('computeSoilBufferScore', () => {
 	it('uses soil moisture when available', () => {
 		expect(computeSoilBufferScore({ ...baseHydricData, soilMoisture7cmPct: 42 })).toBe(42);
+	});
+
+	it('scores volumetric water content as available water, not as a raw percent', () => {
+		expect(computeSoilBufferScore({ ...baseHydricData, soilMoisture7cmPct: 0.274 })).toBe(79);
 	});
 
 	it('falls back to rain and soil temperature proxy', () => {
@@ -79,6 +98,27 @@ describe('computeSoilMoistureCreditMm', () => {
 			computeSoilMoistureCreditMm({
 				...baseHydricData,
 				soilMoisture7cmPct: 100
+			})
+		).toBe(HYDRIC_AWC_MM);
+	});
+
+	it('credits most of the AWC near field capacity and none below wilting point', () => {
+		expect(
+			computeSoilMoistureCreditMm({
+				...baseHydricData,
+				soilMoisture7cmPct: 0.274
+			})
+		).toBe(31.6);
+		expect(
+			computeSoilMoistureCreditMm({
+				...baseHydricData,
+				soilMoisture7cmPct: 0.08
+			})
+		).toBe(0);
+		expect(
+			computeSoilMoistureCreditMm({
+				...baseHydricData,
+				soilMoisture7cmPct: 0.4
 			})
 		).toBe(HYDRIC_AWC_MM);
 	});

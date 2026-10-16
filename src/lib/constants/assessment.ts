@@ -13,7 +13,8 @@ import type { PhenologyStageId } from '$lib/types/gdd';
 import {
 	getFieldOnlyPhenologyStages,
 	getPhenologyStages,
-	isEvergreenSpecies
+	isEvergreenSpecies,
+	isPinusSpecies
 } from '$lib/constants/gdd-config';
 
 const DEADWOOD_FEATURES: readonly DeadwoodFeature[] = ['jin', 'shari', 'sabamiki'];
@@ -75,11 +76,15 @@ export function getCaliberOptions(): { value: Caliber; label: string }[] {
 export function getPhenologyObservedOptions(
 	species?: string | null
 ): { value: PhenologyStageId; label: string }[] {
-	const stages = getPhenologyStages().map((stage) => ({
-		value: stage.id as PhenologyStageId,
-		label: stage.label
-	}));
-	if (species && isEvergreenSpecies(species)) {
+	const evergreen = Boolean(species && isEvergreenSpecies(species));
+	const hiddenForEvergreen = new Set<PhenologyStageId>(['pointe_verte', 'feuillaison']);
+	const stages = getPhenologyStages()
+		.filter((stage) => !evergreen || !hiddenForEvergreen.has(stage.id))
+		.map((stage) => ({
+			value: stage.id as PhenologyStageId,
+			label: stage.label
+		}));
+	if (species && isPinusSpecies(species)) {
 		stages.push(
 			...getFieldOnlyPhenologyStages().map((stage) => ({
 				value: stage.id,

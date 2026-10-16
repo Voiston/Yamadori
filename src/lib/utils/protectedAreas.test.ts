@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
+import type { LngLat } from '$lib/utils/map/downloadRegion';
 
 const memoryStore = new Map<string, unknown>();
 
@@ -13,7 +14,12 @@ vi.mock('idb-keyval', () => ({
 	}),
 	keys: vi.fn(async () => [...memoryStore.keys()])
 }));
-import { clearProtectedAreasPersistentCache } from '$lib/utils/protectedAreasCache';
+import {
+	clearProtectedAreasPersistentCache,
+	getCachedProtectedAreaScan
+} from '$lib/utils/protectedAreasCache';
+import { clearOfflineProtectedIndex, prefetchOfflineProtectedAreas } from '$lib/utils/offlineProtectedAreas';
+import { cadastreCacheKey } from '$lib/utils/cadastre';
 import {
 	clearProtectedAreasMemoryCache,
 	getProtectedZoneCardClasses,
@@ -52,6 +58,7 @@ describe('scanProtectedAreas', () => {
 		memoryStore.clear();
 		clearProtectedAreasMemoryCache();
 		await clearProtectedAreasPersistentCache();
+		await clearOfflineProtectedIndex();
 		apiSettingsState.loaded = true;
 		apiSettingsState.ignProtectedAreas = true;
 	});
@@ -188,5 +195,116 @@ describe('scanProtectedAreas', () => {
 		const offline = await scanProtectedAreas(48.85, 2.35, { online: false });
 		expect(offline.fromCache).toBe(true);
 		expect(offline.zoneStatus.pnr).toBe('certain');
+	});
+
+	it('reads a complete downloaded trace without calling the network', async () => {
+		const ring: LngLat[] = [
+			[2.3, 46.4],
+			[2.6, 46.4],
+			[2.6, 46.6],
+			[2.3, 46.6],
+			[2.3, 46.4]
+		];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => ({ ok: true, json: async () => ({ features: [] }) }))
+		);
+		await prefetchOfflineProtectedAreas(ring);
+		vi.mocked(fetch).mockClear();
+		vi.mocked(fetch).mockRejectedValue(new TypeError('offline'));
+
+		const result = await scanProtectedAreas(46.5, 2.5, { online: false });
+		expect(result.zoneStatus.znieff).toBe('clear');
+		expect(result.zoneStatus.pn).toBe('clear');
+		expect(result.veto).toBe(false);
+		expect(result.coverage).toBe('full');
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	it('marks a downloaded ZNIEFF as caution and not a veto', async () => {
+		const ring: LngLat[] = [
+			[2.3, 46.4],
+			[2.6, 46.4],
+			[2.6, 46.6],
+			[2.3, 46.6],
+			[2.3, 46.4]
+		];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				if (url.includes('/nature/znieff1')) {
+					return {
+						ok: true,
+						json: async () => ({
+							features: [
+								{
+									geometry: {
+										type: 'Polygon',
+										coordinates: [
+											[
+												[2.45, 46.45],
+												[2.55, 46.45],
+												[2.55, 46.55],
+												[2.45, 46.55],
+												[2.45, 46.45]
+											]
+										]
+									}
+								}
+							]
+						})
+					};
+				}
+				return { ok: true, json: async () => ({ features: [] }) };
+			})
+		);
+		await prefetchOfflineProtectedAreas(ring);
+
+		const result = await scanProtectedAreas(46.5, 2.5, { online: false });
+		expect(result.zoneStatus.znieff).toBe('certain');
+		expect(result.veto).toBe(false);
+		expect(result.hits.some((hit) => hit.id === 'znieff1' && hit.level === 'caution')).toBe(true);
+	});
+
+	it('refuses an offline point outside the downloaded trace', async () => {
+		const ring: LngLat[] = [
+			[2.3, 46.4],
+			[2.6, 46.4],
+			[2.6, 46.6],
+			[2.3, 46.6],
+			[2.3, 46.4]
+		];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => ({ ok: true, json: async () => ({ features: [] }) }))
+		);
+		await prefetchOfflineProtectedAreas(ring);
+
+		await expect(scanProtectedAreas(46.9, 2.9, { online: false })).rejects.toThrow(
+			/offline_cache_miss/
+		);
+	});
+
+	it('does not report a clear scan when the downloaded trace is incomplete', async () => {
+		vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('offline'))));
+		await prefetchOfflineProtectedAreas([
+			[2.3, 46.4],
+			[2.6, 46.4],
+			[2.6, 46.6],
+			[2.3, 46.6],
+			[2.3, 46.4]
+		]);
+
+		await expect(scanProtectedAreas(46.5, 2.5, { online: false })).rejects.toThrow(
+			/offline_cache_miss/
+		);
+	});
+
+	it('does not persist a scan when the live service fails', async () => {
+		vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('offline'))));
+		await expect(scanProtectedAreas(46.5, 2.5, { online: true })).rejects.toThrow(
+			/protected_areas_scan_failed/
+		);
+		expect(await getCachedProtectedAreaScan(cadastreCacheKey(46.5, 2.5))).toBeUndefined();
 	});
 });

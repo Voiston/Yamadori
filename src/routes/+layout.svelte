@@ -5,6 +5,8 @@
 	import AppBootSplash from '$lib/components/AppBootSplash.svelte';
 
 	import AppToast from '$lib/components/AppToast.svelte';
+	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
+	import IncomingTreeShareDialog from '$lib/components/IncomingTreeShareDialog.svelte';
 
 	import BottomNav from '$lib/components/BottomNav.svelte';
 
@@ -47,14 +49,21 @@
 	import { MOTION_MS, prefersReducedMotion } from '$lib/utils/motion';
 
 	import {
-
-		dismissBackupReminderForSession,
-
-		getActiveBackupWarning
-
+		backupReminderState,
+		dismissBackupReminder,
+		getActiveBackupWarning,
+		shouldShowBackupHomeCard
 	} from '$lib/utils/backupReminder.svelte';
+	import { syncBackupReminderNotification } from '$lib/utils/backupNotifications';
 
-	import { resyncLocationWatchAfterParkingChange } from '$lib/utils/userPosition.svelte';
+	import { resyncLocationWatchAfterParkingChange, acquireLocationWatch, releaseLocationWatch } from '$lib/utils/userPosition.svelte';
+	import { getLocationPermissionStatus } from '$lib/utils/locationProvider';
+	import { powerSavingModeState } from '$lib/stores/powerSavingMode.svelte';
+	import {
+		GPS_WARMUP_CONSUMER_ID,
+		GPS_WARMUP_PROFILE,
+		shouldWarmupGps
+	} from '$lib/utils/gpsSession';
 
 	import {
 		advanceOnboardingPhase,
@@ -82,8 +91,6 @@
 		}
 		return treeStore.loadError ?? parkingStore.loadError;
 	});
-
-	let ProPaywallDialog = $state<Component | null>(null);
 
 	let LocalEncryptionMigrationOverlay = $state<Component | null>(null);
 
@@ -125,6 +132,41 @@
 		if (canRenderChildren && bootMinElapsed) {
 			bootDismissed = true;
 		}
+	});
+
+	$effect(() => {
+		const powerSaving = powerSavingModeState.active;
+		const onboardingReady = onboardingState.loaded;
+		void onboardingState.phase;
+
+		if (!nativeApp || !onboardingReady || powerSaving) {
+			releaseLocationWatch(GPS_WARMUP_CONSUMER_ID);
+			return;
+		}
+
+		let cancelled = false;
+
+		void getLocationPermissionStatus().then((status) => {
+			if (cancelled) {
+				return;
+			}
+			if (
+				!shouldWarmupGps({
+					nativeApp: true,
+					permissionGranted: status === 'granted',
+					powerSaving: false
+				})
+			) {
+				releaseLocationWatch(GPS_WARMUP_CONSUMER_ID);
+				return;
+			}
+			acquireLocationWatch(GPS_WARMUP_CONSUMER_ID, GPS_WARMUP_PROFILE);
+		});
+
+		return () => {
+			cancelled = true;
+			releaseLocationWatch(GPS_WARMUP_CONSUMER_ID);
+		};
 	});
 
 
@@ -364,8 +406,6 @@
 
 		void Promise.all([
 
-			import('$lib/components/ProPaywallDialog.svelte'),
-
 			import('$lib/components/LocalEncryptionMigrationOverlay.svelte'),
 
 			import('$lib/components/TreeStorageMigrationOverlay.svelte'),
@@ -378,8 +418,6 @@
 
 			([
 
-				proPaywall,
-
 				localEncryptionOverlay,
 
 				treeStorageOverlay,
@@ -389,8 +427,6 @@
 				onboardingProtection
 
 			]) => {
-
-				ProPaywallDialog = proPaywall.default;
 
 				LocalEncryptionMigrationOverlay = localEncryptionOverlay.default;
 
@@ -453,9 +489,19 @@
 
 	);
 
+	let isHome = $derived(routeId === '/');
+
 	let isSettings = $derived(routeId === '/settings');
 
 	let isPrivacy = $derived(routeId === '/settings/privacy');
+
+	let isLegalNotice = $derived(routeId === '/settings/legal');
+
+	let isTerms = $derived(routeId === '/settings/terms');
+
+	let isSale = $derived(routeId === '/settings/sale');
+
+	let isSettingsDoc = $derived(isPrivacy || isLegalNotice || isTerms || isSale);
 
 
 
@@ -472,6 +518,12 @@
 		if (isCompass) return m.onboarding_compass_title().replace(/\s*\([^)]*\)$/, '');
 
 		if (isPrivacy) return m.settings_privacy_link();
+
+		if (isLegalNotice) return m.settings_legal_notice_link();
+
+		if (isTerms) return m.settings_terms_link();
+
+		if (isSale) return m.settings_sale_link();
 
 		if (isSettings) return m.nav_settings();
 
@@ -491,15 +543,23 @@
 
 
 
-	let backupWarning = $derived(
-
-		treeStore.loaded && parkingStore.loaded && !isSettings && !isPrivacy
-
+	let backupWarning = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		return treeStore.loaded && parkingStore.loaded && !isSettings && !isSettingsDoc
 			? getActiveBackupWarning(treeStore.trees, parkingStore.position)
+			: null;
+	});
 
-			: null
-
+	let showBackupHeaderBanner = $derived(
+		Boolean(backupWarning && !(isHome && shouldShowBackupHomeCard(backupWarning)))
 	);
+
+	$effect(() => {
+		if (!treeStore.loaded || !backupReminderState.loaded) return;
+		void syncBackupReminderNotification(treeStore.trees, {
+			lastExportAt: backupReminderState.lastExportAt
+		});
+	});
 
 	let appMetaDescription = $derived.by(() => {
 
@@ -670,21 +730,25 @@
 
 		</div>
 
-		{#if backupWarning}
+		{#if showBackupHeaderBanner && backupWarning}
 
-			<div class="flex items-center gap-2 border-t border-amber-200 bg-amber-50 px-4 py-1.5">
+			<div class="flex items-start gap-2 border-t border-amber-200 bg-amber-50 px-4 py-2">
 
 				<a
 
 					href="{base}/settings#backup-export"
 
-					class="min-w-0 flex-1 truncate whitespace-nowrap text-xs font-medium text-amber-900"
+					class="min-w-0 flex-1 text-amber-900"
 
 					aria-label={m.layout_export_backup()}
 
 				>
 
-					{backupWarning.message}
+					<span class="block text-xs font-medium">{backupWarning.message}</span>
+
+					<span class="mt-0.5 block text-[11px] leading-snug text-amber-800">{backupWarning.why}</span>
+
+					<span class="mt-1 block text-xs font-semibold underline underline-offset-2">{m.backup_export_cta()}</span>
 
 				</a>
 
@@ -696,7 +760,7 @@
 
 					aria-label={m.action_close()}
 
-					onclick={dismissBackupReminderForSession}
+					onclick={() => void dismissBackupReminder(backupWarning.reason)}
 
 				>
 
@@ -711,41 +775,12 @@
 	</header>
 
 	{#if initError}
-
-		<div
-
-			class="flex flex-col gap-1 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 sm:flex-row sm:items-center sm:gap-3"
-
-			role="alert"
-
-		>
-
-			<p class="min-w-0 flex-1">{initError.message}</p>
-
-			{#if initError.helpMessage}
-
-				<p class="min-w-0 flex-1 text-xs text-amber-800">{initError.helpMessage}</p>
-
-			{/if}
-
-			{#if initError.suggestImport}
-
-				<a
-
-					href="{base}/settings#backup-import"
-
-					class="shrink-0 text-xs font-semibold text-amber-950 underline underline-offset-2"
-
-				>
-
-					{m.layout_init_error_import_action()}
-
-				</a>
-
-			{/if}
-
-		</div>
-
+		<ErrorBanner
+			copy={initError}
+			tone="danger"
+			class="rounded-none border-x-0"
+			onretry={() => location.reload()}
+		/>
 	{/if}
 
 
@@ -794,12 +829,6 @@
 	{/if}
 
 
-
-	{#if ProPaywallDialog}
-
-		<ProPaywallDialog />
-
-	{/if}
 
 	{#if !bootDismissed}
 		<div
@@ -853,6 +882,7 @@
 
 {/if}
 
+<IncomingTreeShareDialog />
 <AppToast />
 
 

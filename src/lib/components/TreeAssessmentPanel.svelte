@@ -14,6 +14,7 @@
 	import { appearanceSettingsState } from '$lib/stores/appearanceSettings.svelte';
 	import { updateAssessment } from '$lib/stores/trees.svelte';
 	import type { DeadwoodFeature, Tree, TreeAssessment } from '$lib/types/tree';
+	import { getCombinedYamadoriVerdict } from '$lib/utils/yrs';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let { tree }: { tree: Tree } = $props();
@@ -97,6 +98,21 @@
 		void appearanceSettingsState.locale;
 		return getAssessmentSummary(tree.assessment);
 	});
+
+	let yrsCaptureLabel = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (!tree.yrsAtCapture) return '';
+		return m.yrs_at_capture_label({
+			score: String(tree.yrsAtCapture.score),
+			decision: tree.yrsAtCapture.decision
+		});
+	});
+
+	let combinedYamadoriVerdict = $derived.by(() => {
+		void appearanceSettingsState.locale;
+		if (!tree.yrsAtCapture) return null;
+		return getCombinedYamadoriVerdict(tree.assessment.potentialScore, tree.yrsAtCapture);
+	});
 </script>
 
 <section class="app-card">
@@ -112,6 +128,12 @@
 				<p class="mt-1 text-sm text-muted">{summary}</p>
 			{:else}
 				<p class="mt-1 text-sm text-muted">{m.assessment_evaluate()}</p>
+			{/if}
+			{#if yrsCaptureLabel}
+				<p class="mt-1 text-xs text-forest-800">{yrsCaptureLabel}</p>
+			{/if}
+			{#if combinedYamadoriVerdict}
+				<p class="mt-0.5 text-xs font-medium text-forest-800">{combinedYamadoriVerdict}</p>
 			{/if}
 		</div>
 		<svg

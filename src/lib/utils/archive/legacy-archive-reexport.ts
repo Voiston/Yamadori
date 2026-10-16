@@ -20,7 +20,8 @@ export function rebuiltArchiveToExportInput(
 		parking: rebuilt.parking,
 		appearanceSettings: rebuilt.appearanceSettings,
 		apiSettings: rebuilt.apiSettings,
-		appVersion
+		appVersion,
+		kind: rebuilt.kind
 	};
 }
 
