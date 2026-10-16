@@ -39,7 +39,7 @@ vi.mock('$lib/utils/backupReminder.svelte', () => ({
 }));
 
 vi.mock('$lib/utils/nativeInit', () => ({
-	getAppVersionLabel: vi.fn().mockResolvedValue('1.0.5')
+	getAppVersionLabel: vi.fn().mockResolvedValue('1.0.6')
 }));
 
 vi.mock('$lib/stores/appearanceSettings.svelte', () => ({

@@ -22,7 +22,7 @@ vi.mock('$lib/utils/archive', () => ({
 }));
 
 vi.mock('$lib/utils/nativeInit', () => ({
-	getAppVersionLabel: vi.fn().mockResolvedValue('1.0.5')
+	getAppVersionLabel: vi.fn().mockResolvedValue('1.0.6')
 }));
 
 vi.mock('$lib/stores/trees.svelte', () => ({
@@ -78,7 +78,7 @@ describe('exportTreeShare', () => {
 				kind: 'tree-share',
 				trees: [hydratedTree],
 				parking: null,
-				appVersion: '1.0.5'
+				appVersion: '1.0.6'
 			})
 		);
 		expect(mockDeliverArchive).toHaveBeenCalledWith(
